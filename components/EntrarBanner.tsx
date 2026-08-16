@@ -28,6 +28,7 @@ type EntrarBannerProps = {
 // Ajuste aqui se as rotas do seu projeto tiverem outros nomes.
 function isQualifyingRoute(pathname: string) {
   if (pathname === '/' || pathname === '/index') return true;
+  if (pathname === '/pedidos' || pathname.startsWith('/pedidos/')) return true;
   return false;
 }
 

@@ -1,4 +1,5 @@
 import { View, Text, ScrollView, StyleSheet, Pressable, Image, Alert, ActivityIndicator, Linking } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useState, useEffect, useCallback } from 'react';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,7 +12,7 @@ import { formatCardDisplay } from '../utils/usePaymentCards';
 import { SOFT_LOGOUT_KEY, emitAuthUiChange, getEffectiveSession } from '../utils/authSession';
 import PaymentMethodModal from '../components/PaymentMethodModal';
 import LogoutRememberModal from '../components/LogoutRememberModal';
-import AuthBottomSheet from '../components/AuthBottomSheet';
+import { requestAuthSheet } from '../utils/authSheetRequest';
 import ProfileAccordionItem from '../components/ProfileAccordionItem';
 import ProfileSuccessToast from '../components/ProfileSuccessToast';
 import { isAdminUser, checkIsAdmin } from '../utils/isAdmin';
@@ -32,6 +33,7 @@ export default function Profile() {
   const router = useRouter();
   const { onScroll, resetHeader } = useScrollHandler();
   const headerHeight = useHeaderHeight();
+  const insets = useSafeAreaInsets();
 
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -42,9 +44,9 @@ export default function Profile() {
   const [selectedCardInfo, setSelectedCardInfo] = useState(null);
   const [paymentModalVisible, setPaymentModalVisible] = useState(false);
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
-  // Tela de perfil deslogado (soft logout) — sheet de auth e toast de
-  // "histórico limpo", só usados no bloco `if (!user)` abaixo.
-  const [authSheetVisible, setAuthSheetVisible] = useState(false);
+  // Tela de perfil deslogado (soft logout) — toast de "histórico limpo",
+  // só usado no bloco `if (!user)` abaixo. O AuthBottomSheet é o global
+  // de _layout.js (via requestAuthSheet()).
   const [historyToastVisible, setHistoryToastVisible] = useState(false);
 
   useFocusEffect(
@@ -242,7 +244,7 @@ export default function Profile() {
     if (user) {
       action();
     } else {
-      setAuthSheetVisible(true);
+      requestAuthSheet();
     }
   };
 
@@ -270,7 +272,7 @@ export default function Profile() {
         />
 
         <ScrollView
-          contentContainerStyle={sg.scrollContent}
+          contentContainerStyle={[sg.scrollContent, { paddingTop: insets.top + 10 }]}
           showsVerticalScrollIndicator={false}
         >
           {/* Header */}
@@ -285,7 +287,7 @@ export default function Profile() {
             </View>
           </View>
 
-          <Pressable style={sg.loginButton} onPress={() => setAuthSheetVisible(true)}>
+          <Pressable style={sg.loginButton} onPress={() => requestAuthSheet()}>
             <Text style={sg.loginButtonText}>Entrar ou cadastrar-se</Text>
           </Pressable>
 
@@ -295,10 +297,10 @@ export default function Profile() {
             onPress={() => requireAuth(() => router.push('/notifications'))}
           >
             <View style={sg.iconBox}>
-              <Ionicons name="notifications-outline" size={22} color="#1A1A1A" />
+              <Ionicons name="notifications-outline" size={19} color="#7A7A7A" />
             </View>
             <Text style={sg.simpleRowTitle}>Notificações</Text>
-            <Ionicons name="chevron-forward" size={18} color="#1A1A1A" />
+            <Ionicons name="chevron-forward" size={15} color="#B0B0B0" />
           </Pressable>
           <View style={sg.divider} />
 
@@ -310,7 +312,7 @@ export default function Profile() {
             items={[
               {
                 label: 'Endereços',
-                onPress: () => requireAuth(() => router.push('/addresses')),
+                onPress: () => router.push('/addresses'),
               },
             ]}
           />
@@ -325,25 +327,21 @@ export default function Profile() {
             ]}
           />
 
-          {/* Ajuda e Termos -> sem navegação por enquanto */}
+          {/* Ajuda e Termos */}
           <ProfileAccordionItem
             icon="help-circle-outline"
             title="Ajuda e Termos"
             subtitle="Central de ajuda, termos de uso e políticas"
             items={[
-              { label: 'Ajuda', onPress: () => {} },
-              { label: 'Termos de Uso', onPress: () => {} },
-              { label: 'Política de Privacidade', onPress: () => {} },
+              { label: 'Ajuda', onPress: () => router.push('/ajuda') },
+              { label: 'Termos de Uso', onPress: () => router.push({ pathname: '/ajuda/artigo/termos-de-uso', params: { headerTitle: 'TERMOS DE USO' } }) },
+              { label: 'Política de Privacidade', onPress: () => router.push({ pathname: '/ajuda/artigo/declaracao-de-privacidade', params: { headerTitle: 'DECLARAÇÃO DE PRIVACIDADE' } }) },
             ]}
           />
 
           <Text style={sg.versionText}>Batata Top v2.2.0</Text>
         </ScrollView>
 
-        <AuthBottomSheet
-          visible={authSheetVisible}
-          onClose={() => setAuthSheetVisible(false)}
-        />
       </View>
     );
   }
@@ -478,12 +476,9 @@ export default function Profile() {
           <View style={s.menuDivider} />
 
           {/* Ajuda */}
-          <Pressable style={s.menuItem} onPress={() => {
-            const msg = encodeURIComponent('Oi! 👋 Tô precisando de uma ajuda com meu pedido na Batata Top, pode me ajudar?');
-            Linking.openURL(`https://wa.me/5514997361015?text=${msg}`);
-          }}>
-            <View style={[s.menuIconBg, { backgroundColor: '#DCFCE7' }]}>
-              <Ionicons name="help-circle-outline" size={20} color="#16A34A" />
+          <Pressable style={s.menuItem} onPress={() => router.push('/ajuda')}>
+            <View style={[s.menuIconBg, { backgroundColor: '#FFF3D6' }]}>
+              <Ionicons name="help-circle-outline" size={20} color="#E3A008" />
             </View>
             <View style={s.menuItemTextCol}>
               <Text style={s.menuItemLabel}>Ajuda</Text>
@@ -556,69 +551,69 @@ const sg = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 40,
+    paddingTop: 10,
+    paddingBottom: 36,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 24,
+    marginBottom: 20,
   },
   headerText: {
     flex: 1,
-    fontSize: 22,
-    fontWeight: '700',
+    fontSize: 17,
+    fontWeight: '500',
     color: '#1A1A1A',
-    paddingRight: 12,
+    paddingRight: 10,
   },
   illustrationWrapper: {
-    width: 110,
-    height: 110,
+    width: 148,
+    height: 148,
     alignItems: 'center',
     justifyContent: 'center',
   },
   illustration: {
-    width: 100,
-    height: 100,
+    width: 142,
+    height: 142,
   },
   loginButton: {
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: '#FFB800',
     borderRadius: 8,
-    paddingVertical: 15,
+    paddingVertical: 12,
     alignItems: 'center',
-    marginBottom: 28,
+    marginBottom: 22,
   },
   loginButtonText: {
     color: '#FFB800',
-    fontWeight: '700',
-    fontSize: 15,
+    fontWeight: '500',
+    fontSize: 13.5,
   },
   iconBox: {
-    width: 26,
+    width: 22,
     alignItems: 'center',
-    marginRight: 14,
+    marginRight: 10,
   },
   simpleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 18,
+    paddingVertical: 13,
   },
   simpleRowTitle: {
     flex: 1,
-    fontSize: 16,
-    fontWeight: '500',
+    fontSize: 14.5,
+    fontWeight: '400',
     color: '#1A1A1A',
   },
   divider: {
     height: 1,
-    backgroundColor: '#EFEFEF',
+    backgroundColor: '#F2F2F2',
   },
   versionText: {
-    fontSize: 12,
-    color: '#B0B0B0',
-    marginTop: 20,
+    fontSize: 11,
+    color: '#C2C2C2',
+    marginTop: 18,
   },
 });
 

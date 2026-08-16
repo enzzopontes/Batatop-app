@@ -572,6 +572,9 @@ function Header({ onHeightChange, onRegisterReset }) {
   const isWelcomePage = pathname.includes('welcome');
   const isLocationPage = pathname.includes('location');
   const isCardapioPage = pathname.includes('cardapio');
+  const isPedidosPage = pathname.includes('pedidos');
+  const isProfilePage = pathname === '/profile';
+  const isAjudaPage = pathname.includes('ajuda');
 
   useEffect(() => {
     if (!authResolved) return;
@@ -590,7 +593,7 @@ function Header({ onHeightChange, onRegisterReset }) {
     }
   }, [isAddressPage, user, authResolved]);
 
-  if (isAuthPage || isProdutoPage || isCheckoutPage || isAddressPage || isWelcomePage || isLocationPage || isCardapioPage) return null;
+  if (isAuthPage || isProdutoPage || isCheckoutPage || isAddressPage || isWelcomePage || isLocationPage || isCardapioPage || isPedidosPage || isProfilePage || isAjudaPage) return null;
 
   return (
     <>
