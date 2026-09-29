@@ -23,7 +23,7 @@ if (
  * ProfileAccordionItem
  *
  * Réplica do accordion de "Configurações / Conta / Ajuda e Termos" do
- * perfil deslogado do iFood — usado só na tela de perfil (profile.js).
+ * perfil (deslogado e logado) estilo iFood — usado em profile.js.
  *
  * Bug do iFood que corrigimos aqui: lá o `subtitle` (texto exibido fechado)
  * lista coisas que não existem quando você abre. Aqui o `subtitle` tem que
@@ -38,7 +38,10 @@ if (
  * - icon: nome do ícone Ionicons (string)
  * - title: string
  * - subtitle: string
- * - items: [{ label: string, onPress: () => void }]
+ * - items: [{ label: string, onPress?: () => void, disabled?: bool, danger?: bool }]
+ *   - disabled: opção ainda sem tela/rota no projeto — fica visível (fiel à
+ *     referência) mas sem toque e com texto apagado. Nunca inventa rota.
+ *   - danger: destaca em vermelho (ex: "Sair da conta").
  */
 export default function ProfileAccordionItem({ icon, title, subtitle, items = [] }) {
   const [expanded, setExpanded] = useState(false);
@@ -141,9 +144,27 @@ export default function ProfileAccordionItem({ icon, title, subtitle, items = []
                   ],
                 }}
               >
-                <Pressable style={styles.itemRow} onPress={item.onPress}>
-                  <Text style={styles.itemLabel}>{item.label}</Text>
-                  <Ionicons name="chevron-forward" size={14} color={COLORS.textMuted} />
+                <Pressable
+                  style={styles.itemRow}
+                  onPress={item.disabled ? undefined : item.onPress}
+                  disabled={item.disabled}
+                >
+                  <Text
+                    style={[
+                      styles.itemLabel,
+                      item.disabled && styles.itemLabelDisabled,
+                      item.danger && styles.itemLabelDanger,
+                    ]}
+                  >
+                    {item.label}
+                  </Text>
+                  {!item.disabled && (
+                    <Ionicons
+                      name="chevron-forward"
+                      size={14}
+                      color={item.danger ? '#EF4444' : COLORS.textMuted}
+                    />
+                  )}
                 </Pressable>
               </Animated.View>
             );
@@ -198,6 +219,14 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     fontWeight: '400',
     color: COLORS.text,
+  },
+  itemLabelDisabled: {
+    color: COLORS.textMuted,
+    opacity: 0.55,
+  },
+  itemLabelDanger: {
+    color: '#EF4444',
+    fontWeight: '600',
   },
   divider: {
     height: StyleSheet.hairlineWidth,

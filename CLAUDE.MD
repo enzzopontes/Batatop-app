@@ -92,7 +92,6 @@ batata-top/                          # App mobile (este repositório)
 │   ├── HelpModal.js
 │   ├── LogoutRememberModal.js
 │   ├── MapSelector.tsx
-│   ├── PaymentMethodModal.js
 │   └── ThemedAlert.js
 ├── constants/theme.js
 ├── data/produtos.js                 # LEGADO — mock; produção usa Supabase

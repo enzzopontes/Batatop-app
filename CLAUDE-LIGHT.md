@@ -28,7 +28,7 @@ app/
 ├── addresses.js
 ├── auth/                # login, register, telefone, codigo
 └── admin/                # dashboard, pedidos, produtos, cupons, caixa
-components/               # AddressCard, PaymentMethodModal, ThemedAlert, etc.
+components/               # AddressCard, ThemedAlert, etc.
 utils/                    # cartStore, authSession, mercadoPago, isAdmin, supabase
 constants/theme.js         # cores/espaçamentos — nunca hardcodar
 ```

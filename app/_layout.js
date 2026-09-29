@@ -573,8 +573,9 @@ function Header({ onHeightChange, onRegisterReset }) {
   const isLocationPage = pathname.includes('location');
   const isCardapioPage = pathname.includes('cardapio');
   const isPedidosPage = pathname.includes('pedidos');
-  const isProfilePage = pathname === '/profile';
+  const isProfilePage = pathname === '/profile' || pathname.startsWith('/profile/');
   const isAjudaPage = pathname.includes('ajuda');
+  const isAdminPage = pathname.startsWith('/admin');
 
   useEffect(() => {
     if (!authResolved) return;
@@ -593,7 +594,7 @@ function Header({ onHeightChange, onRegisterReset }) {
     }
   }, [isAddressPage, user, authResolved]);
 
-  if (isAuthPage || isProdutoPage || isCheckoutPage || isAddressPage || isWelcomePage || isLocationPage || isCardapioPage || isPedidosPage || isProfilePage || isAjudaPage) return null;
+  if (isAuthPage || isProdutoPage || isCheckoutPage || isAddressPage || isWelcomePage || isLocationPage || isCardapioPage || isPedidosPage || isProfilePage || isAjudaPage || isAdminPage) return null;
 
   return (
     <>
@@ -685,7 +686,7 @@ function BottomTabBar({ onHeightChange }) {
   // Mesma regra que o Header já usa (isAuthPage) — a tab bar não deve
   // aparecer em cima da tela de login/cadastro, endereços (tela cheia,
   // estilo iFood) nem da tela de welcome/onboarding.
-  if (pathname.includes('produto') || pathname.includes('auth') || pathname.includes('addresses') || pathname.includes('welcome') || pathname.includes('location') || pathname.includes('cupons')) return null;
+  if (pathname.includes('produto') || pathname.includes('auth') || pathname.includes('addresses') || pathname.includes('welcome') || pathname.includes('location') || pathname.includes('cupons') || pathname.includes('payments')) return null;
 
   const tabs = [
     { name: 'index',    label: 'Início',   icon: 'home',       iconOutline: 'home-outline' },
@@ -793,8 +794,14 @@ export default function RootLayout() {
     <HeaderAnimContext.Provider value={rootHeaderAnimCtxValue}>
     <SafeAreaProvider>
       <StatusBar
-        backgroundColor={showSplash ? '#FF0000' : (authSheetVisible ? 'transparent' : '#FFFFFF')}
-        translucent={!showSplash && authSheetVisible}
+        backgroundColor={
+          showSplash
+            ? '#FF0000'
+            : authSheetVisible || pathname.includes('payments')
+            ? 'transparent'
+            : '#FFFFFF'
+        }
+        translucent={!showSplash && (authSheetVisible || pathname.includes('payments'))}
         barStyle={showSplash || authSheetVisible ? 'light-content' : 'dark-content'}
       />
       {showSplash ? (

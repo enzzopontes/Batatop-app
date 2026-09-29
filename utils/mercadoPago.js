@@ -99,6 +99,9 @@ export async function tokenizeCard({
 
     const data = await response.json();
     if (response.ok) {
+      if (data.luhn_validation === false) {
+        return { success: false, error: 'Número do cartão inválido na validação bancária.' };
+      }
       return { success: true, token: data.id };
     } else {
       return { success: false, error: data.cause?.[0]?.description || data.message || 'Erro ao tokenizar dados do cartão' };
