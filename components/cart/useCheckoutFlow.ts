@@ -1,0 +1,678 @@
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter, useFocusEffect } from 'expo-router';
+import * as Haptics from 'expo-haptics';
+import { supabase } from '../../supabaseConfig';
+import { useCart } from '../../utils/cartStore';
+import { getEffectiveSession, subscribeAuthUiChange } from '../../utils/authSession';
+import { requestAuthSheet } from '../../utils/authSheetRequest';
+import { getSelectedAddressId } from '../../utils/addressVerification';
+import {
+  getPreferredPaymentMethod,
+  setPreferredPaymentMethod,
+  getPreferredCardId,
+  setPreferredCardId,
+} from '../../utils/paymentPrefs';
+import { usePaymentCards, SavedCard } from '../../utils/usePaymentCards';
+import {
+  createPixPayment,
+  chargeWithSavedCard,
+  tokenizeCard,
+  guessPaymentMethodId,
+  createCardPayment,
+} from '../../utils/mercadoPago';
+import { notifyAdminNewOrder } from '../../utils/notifyNewOrder';
+import { MIN_ORDER_VALUE, DELIVERY_FEE, STORE_ADDRESS } from '../../constants/store';
+import { showThemedAlert } from '../ThemedAlert';
+
+export type CheckoutStep = 'itens' | 'entrega' | 'pagamento';
+export type DeliveryType = 'delivery' | 'retirada';
+export type PaymentMethod =
+  | 'pix'
+  | 'cartão de crédito'
+  | 'cartão de débito'
+  | 'dinheiro'
+  | 'cartão de crédito (entrega)'
+  | 'cartão de débito (entrega)';
+
+export interface Address {
+  id: string;
+  street: string;
+  number: string;
+  complement: string | null;
+  neighborhood: string;
+  city: string;
+  cep: string;
+  is_default: boolean;
+}
+
+export function useCheckoutFlow() {
+  const router = useRouter();
+  const { items, total: totalCents, add: addToCart, remove: removeFromCart, updateQty, clear: clearCart, coupon, setCoupon } = useCart();
+  const { cards: savedCards, loadCards: loadSavedCards } = usePaymentCards();
+
+  // Navigation & Step state
+  const [step, setStep] = useState<CheckoutStep>('itens');
+  const [showPaymentSelector, setShowPaymentSelector] = useState(false);
+  const [showCardWizard, setShowCardWizard] = useState(false);
+  const [minOrderSheetVisible, setMinOrderSheetVisible] = useState(false);
+
+  // User & Session
+  const [user, setUser] = useState<any>(null);
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+
+  // Delivery
+  const [deliveryType, setDeliveryType] = useState<DeliveryType>('delivery');
+  const [selectedAddress, setSelectedAddress] = useState<Address | null>(null);
+  const [loadingAddress, setLoadingAddress] = useState(false);
+
+  // Payment
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix');
+  const [selectedSavedCard, setSelectedSavedCard] = useState<SavedCard | null>(null);
+  const [savedCardCvv, setSavedCardCvv] = useState('');
+
+  // Manual card fallback states (if user enters card without saving)
+  const [useManualCardForm, setUseManualCardForm] = useState(false);
+  const [cardName, setCardName] = useState('');
+  const [cardNumber, setCardNumber] = useState('');
+  const [cardExpiry, setCardExpiry] = useState('');
+  const [cardCvv, setCardCvv] = useState('');
+  const [cardCpf, setCardCpf] = useState('');
+
+  // Extra options
+  const [wantsCutlery, setWantsCutlery] = useState<boolean | null>(null);
+  const [cashChange, setCashChange] = useState('');
+  const [orderNotes, setOrderNotes] = useState('');
+
+  // Process / Submission
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Calculations
+  const subtotal = totalCents / 100;
+  const deliveryFee = deliveryType === 'delivery' ? DELIVERY_FEE : 0;
+
+  // Coupon discount calculation
+  let discount = 0;
+  let couponInvalidReason: string | null = null;
+  if (coupon) {
+    if (coupon.min_order_value && subtotal < Number(coupon.min_order_value)) {
+      couponInvalidReason = `Pedido mínimo de R$ ${Number(coupon.min_order_value).toFixed(2).replace('.', ',')}`;
+      discount = 0;
+    } else {
+      discount =
+        coupon.discount_type === 'percent'
+          ? subtotal * (Number(coupon.discount_value) / 100)
+          : Number(coupon.discount_value);
+    }
+  }
+  const total = Math.max(0, subtotal + deliveryFee - discount);
+
+  // Load Session and Profile
+  const refreshUser = useCallback(async () => {
+    const session = await getEffectiveSession();
+    if (session?.user) {
+      setUser(session.user);
+      setName((prev) => prev || session.user.user_metadata?.full_name || '');
+      setPhone((prev) => prev || session.user.phone || session.user.user_metadata?.phone || '');
+    } else {
+      setUser(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshUser();
+    const unsub = subscribeAuthUiChange(() => {
+      refreshUser();
+      loadAddress();
+    });
+    return () => {
+      unsub();
+    };
+  }, [refreshUser]);
+
+  // Load selected address
+  const loadAddress = useCallback(async () => {
+    try {
+      const session = await getEffectiveSession();
+      if (!session?.user) {
+        setSelectedAddress(null);
+        return;
+      }
+      setLoadingAddress(true);
+      const selectedId = await getSelectedAddressId();
+      const { data, error } = await supabase
+        .from('addresses')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .order('is_default', { ascending: false });
+
+      if (error || !data || data.length === 0) {
+        setSelectedAddress(null);
+        return;
+      }
+
+      const addresses = data as Address[];
+      if (selectedId) {
+        const found = addresses.find((a) => a.id === selectedId);
+        if (found) {
+          setSelectedAddress(found);
+          return;
+        }
+      }
+      // Fallback: default or first address
+      const def = addresses.find((a) => a.is_default) || addresses[0];
+      setSelectedAddress(def || null);
+    } catch (e) {
+      console.error('Erro ao carregar endereço selecionado:', e);
+    } finally {
+      setLoadingAddress(false);
+    }
+  }, []);
+
+  // Reload address on screen focus
+  useFocusEffect(
+    useCallback(() => {
+      loadAddress();
+    }, [loadAddress])
+  );
+
+  // Load preferred payment method and saved card on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const savedMethod = await getPreferredPaymentMethod();
+        if (savedMethod) {
+          setPaymentMethod(savedMethod as PaymentMethod);
+        }
+        if (savedMethod === 'cartão de crédito' || savedMethod === 'cartão de débito') {
+          const cards = await loadSavedCards();
+          const preferredCardId = await getPreferredCardId();
+          const match = preferredCardId
+            ? cards.find((c) => c.id === preferredCardId)
+            : cards.find((c) => c.is_default) || cards[0];
+          if (match) {
+            setSelectedSavedCard(match);
+            setUseManualCardForm(false);
+          } else {
+            setUseManualCardForm(true);
+          }
+        }
+      } catch (e) {
+        console.error('Erro ao ler preferências de pagamento:', e);
+      }
+    })();
+  }, [loadSavedCards]);
+
+  // Select payment method helper
+  const selectPaymentMethod = useCallback(
+    async (method: PaymentMethod, card?: SavedCard) => {
+      setPaymentMethod(method);
+      await setPreferredPaymentMethod(method);
+
+      if (card) {
+        setSelectedSavedCard(card);
+        setUseManualCardForm(false);
+        await setPreferredCardId(card.id);
+      } else if (method === 'cartão de crédito' || method === 'cartão de débito') {
+        const cards = savedCards.length > 0 ? savedCards : await loadSavedCards();
+        const match = cards.find((c) => c.card_type === method);
+        if (match) {
+          setSelectedSavedCard(match);
+          setUseManualCardForm(false);
+          await setPreferredCardId(match.id);
+        } else {
+          setSelectedSavedCard(null);
+          setUseManualCardForm(true);
+          await setPreferredCardId(null);
+        }
+      } else {
+        setSelectedSavedCard(null);
+        setUseManualCardForm(false);
+        await setPreferredCardId(null);
+      }
+      setShowPaymentSelector(false);
+    },
+    [savedCards, loadSavedCards]
+  );
+
+  // Validation
+  const validateOrder = (): string | null => {
+    if (!name.trim()) return 'Informe seu nome para o pedido';
+    if (!phone.trim()) return 'Informe seu telefone (WhatsApp)';
+    if (wantsCutlery === null) return 'Informe se deseja talheres';
+    if (deliveryType === 'delivery') {
+      if (!selectedAddress) return 'Selecione um endereço para entrega';
+      if (!selectedAddress.street || !selectedAddress.number) return 'Endereço de entrega incompleto';
+    }
+    if (items.length === 0) return 'Sua sacola está vazia';
+
+    if (paymentMethod === 'cartão de crédito' || paymentMethod === 'cartão de débito') {
+      if (selectedSavedCard && !useManualCardForm) {
+        if (!savedCardCvv || savedCardCvv.length < 3) return 'Digite o CVV do cartão salvo para confirmar';
+      } else {
+        if (!cardName.trim()) return 'Informe o nome impresso no cartão';
+        if (cardNumber.replace(/\D/g, '').length < 15) return 'Número de cartão inválido';
+        if (cardExpiry.replace(/\D/g, '').length !== 4) return 'Validade do cartão inválida';
+        if (cardCvv.length < 3) return 'CVV do cartão inválido';
+        if (cardCpf.replace(/\D/g, '').length !== 11) return 'CPF do titular inválido';
+      }
+    }
+    return null;
+  };
+
+  // Submit Order
+  const submitOrder = async () => {
+    if (submitting) return;
+
+    // Check effective session
+    const session = await getEffectiveSession();
+    if (!session?.user) {
+      requestAuthSheet();
+      return;
+    }
+
+    const validationError = validateOrder();
+    if (validationError) {
+      setErrorMessage(validationError);
+      showThemedAlert('Atenção', validationError);
+      return;
+    }
+
+    setSubmitting(true);
+    setErrorMessage(null);
+
+    try {
+      // 1. Sequencial order_number
+      let orderNumber = 1;
+      try {
+        const { data: maxOrderData } = await supabase
+          .from('orders')
+          .select('order_number')
+          .order('order_number', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (maxOrderData && maxOrderData.order_number) {
+          orderNumber = Number(maxOrderData.order_number) + 1;
+        }
+      } catch {
+        orderNumber = Math.floor(1000 + Math.random() * 9000);
+      }
+
+      const customerAddress =
+        deliveryType === 'delivery' && selectedAddress
+          ? `${selectedAddress.street}, ${selectedAddress.number}`
+          : STORE_ADDRESS.full;
+
+      const customerNeighborhood =
+        deliveryType === 'delivery' && selectedAddress
+          ? selectedAddress.neighborhood
+          : STORE_ADDRESS.neighborhood;
+
+      const totalFinal = Math.round(total * 100) / 100;
+      const email = session.user.email || 'cliente@batatatop.com';
+
+      // 2. Cobrança PIX / Cartão ANTES do insert (Regra 7 mantida)
+      let pixDetails: any = null;
+      if (paymentMethod === 'pix') {
+        const pixResult = await createPixPayment(totalFinal, email, name.trim(), orderNumber);
+        if (pixResult.success) {
+          pixDetails = {
+            qr_code: pixResult.qrCode,
+            qr_code_base64: pixResult.qrCodeBase64,
+            payment_id: pixResult.paymentId,
+            order_id: pixResult.orderId,
+            simulation: pixResult.simulation,
+          };
+        } else {
+          setSubmitting(false);
+          const err = pixResult.error || 'Erro ao gerar chave PIX';
+          setErrorMessage(err);
+          showThemedAlert('Erro no PIX', err);
+          return;
+        }
+      }
+
+      let cardDetails: any = null;
+      if (paymentMethod === 'cartão de crédito' || paymentMethod === 'cartão de débito') {
+        if (selectedSavedCard && !useManualCardForm) {
+          const cardResult = await chargeWithSavedCard({
+            amount: totalFinal,
+            cardId: selectedSavedCard.mp_card_id,
+            securityCode: savedCardCvv,
+            paymentMethodId: selectedSavedCard.payment_method_id,
+            email,
+            name: selectedSavedCard.cardholder_name || name.trim(),
+            docNumber: cardCpf || '00000000000',
+            orderNumber,
+          });
+
+          if (cardResult.success) {
+            if (cardResult.status === 'rejected') {
+              setSubmitting(false);
+              const err = 'Pagamento recusado pelo cartão. Verifique o CVV e tente novamente.';
+              setErrorMessage(err);
+              showThemedAlert('Pagamento recusado', err);
+              return;
+            }
+            cardDetails = {
+              payment_id: cardResult.paymentId,
+              status: cardResult.status,
+              status_detail: cardResult.statusDetail,
+              simulation: cardResult.simulation,
+              brand: selectedSavedCard.payment_method_id,
+              last4: selectedSavedCard.last_four,
+              saved_card: true,
+            };
+          } else {
+            setSubmitting(false);
+            const err = cardResult.error || 'Erro ao processar pagamento do cartão salvo';
+            setErrorMessage(err);
+            showThemedAlert('Erro no cartão', err);
+            return;
+          }
+        } else {
+          const [expMonth, expYear] = cardExpiry.split('/');
+          const fullYear = `20${expYear}`;
+
+          const tokenResult = await tokenizeCard({
+            cardNumber,
+            expirationMonth: expMonth,
+            expirationYear: fullYear,
+            securityCode: cardCvv,
+            cardholderName: cardName.trim(),
+            docNumber: cardCpf,
+          });
+
+          if (!tokenResult.success || !tokenResult.token) {
+            setSubmitting(false);
+            const err = tokenResult.error || 'Erro ao processar dados do cartão';
+            setErrorMessage(err);
+            showThemedAlert('Erro no cartão', err);
+            return;
+          }
+
+          const pmId = guessPaymentMethodId(cardNumber);
+          const cardResult = await createCardPayment({
+            amount: totalFinal,
+            token: tokenResult.token,
+            paymentMethodId: pmId,
+            email,
+            name: cardName.trim(),
+            docNumber: cardCpf,
+            orderNumber,
+          });
+
+          if (cardResult.success) {
+            if (cardResult.status === 'rejected') {
+              setSubmitting(false);
+              const err = 'Pagamento recusado pelo cartão. Verifique os dados e tente novamente.';
+              setErrorMessage(err);
+              showThemedAlert('Pagamento recusado', err);
+              return;
+            }
+            cardDetails = {
+              payment_id: cardResult.paymentId,
+              status: cardResult.status,
+              status_detail: cardResult.statusDetail,
+              simulation: cardResult.simulation,
+              brand: pmId,
+              last4: cardNumber.replace(/\D/g, '').slice(-4),
+            };
+          } else {
+            setSubmitting(false);
+            const err = cardResult.error || 'Erro ao processar pagamento do cartão';
+            setErrorMessage(err);
+            showThemedAlert('Erro no cartão', err);
+            return;
+          }
+        }
+      }
+
+      // Notas e troco
+      let finalNotes = orderNotes.trim();
+      if (paymentMethod === 'dinheiro' && cashChange.trim()) {
+        const changeVal = cashChange.trim().replace(/\D/g, '');
+        if (changeVal) {
+          finalNotes = `${finalNotes ? finalNotes + '\n' : ''}* Precisa de troco para R$ ${changeVal},00 *`;
+        }
+      }
+
+      // 3. Insert em orders
+      const orderPayload = {
+        user_id: session.user.id,
+        customer_name: name.trim(),
+        customer_phone: phone.trim(),
+        customer_address: customerAddress,
+        customer_neighborhood: customerNeighborhood,
+        customer_complement:
+          deliveryType === 'delivery' && selectedAddress ? selectedAddress.complement || null : null,
+        payment_method: paymentMethod,
+        total_amount: total,
+        discount_amount: discount,
+        coupon_code: coupon?.code || null,
+        status: paymentMethod === 'pix' ? 'awaiting_payment' : 'pending',
+        notes: finalNotes || null,
+        delivery_type: deliveryType,
+        order_number: orderNumber,
+        wants_cutlery: wantsCutlery,
+        metadata: {
+          cep: deliveryType === 'delivery' && selectedAddress ? selectedAddress.cep : null,
+          source: 'mobile_app',
+          delivery_fee: deliveryFee,
+          pix: pixDetails,
+          card: cardDetails,
+        },
+      };
+
+      const { data: created, error: orderError } = await supabase
+        .from('orders')
+        .insert(orderPayload)
+        .select('id')
+        .single();
+
+      if (orderError || !created) {
+        setSubmitting(false);
+        const err = orderError?.message || 'Erro ao criar pedido';
+        setErrorMessage(err);
+        showThemedAlert('Erro no pedido', err);
+        return;
+      }
+
+      // 4. Insert em order_items
+      const itemRows = items.map((i: any) => ({
+        order_id: created.id,
+        product_id: i.id,
+        product_name: i.nome,
+        product_price: i.precoNum / 100,
+        quantity: i.quantity,
+        notes: i.observacoes || null,
+        adicionais: (i.adicionais || []).map((a: any) => a.name),
+      }));
+      await supabase.from('order_items').insert(itemRows);
+
+      // 5. Incrementa cupom
+      if (coupon?.id) {
+        await supabase
+          .from('coupons')
+          .update({ current_uses: (coupon.current_uses ?? 0) + 1 })
+          .eq('id', coupon.id);
+      }
+
+      // 6. Push notification admin
+      notifyAdminNewOrder(created.id);
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      clearCart();
+      setSubmitting(false);
+
+      // 7. Navega para tela de acompanhamento
+      router.replace(`/pedidos/${created.id}`);
+    } catch (e: any) {
+      console.error('Erro ao finalizar pedido:', e);
+      setSubmitting(false);
+      const msg = e?.message || 'Erro inesperado ao criar o pedido. Tente novamente.';
+      setErrorMessage(msg);
+      showThemedAlert('Erro', msg);
+    }
+  };
+
+  // Step advancement logic
+  const handleContinue = async () => {
+    if (step === 'itens') {
+      if (items.length === 0) return;
+      if (MIN_ORDER_VALUE > 0 && subtotal < MIN_ORDER_VALUE) {
+        setMinOrderSheetVisible(true);
+        return;
+      }
+      const session = await getEffectiveSession();
+      if (!session) {
+        requestAuthSheet();
+        return;
+      }
+      setStep('entrega');
+      return;
+    }
+
+    if (step === 'entrega') {
+      if (deliveryType === 'delivery' && !selectedAddress) {
+        showThemedAlert(
+          'Endereço necessário',
+          'Por favor, selecione ou cadastre um endereço para entrega em Iacanga-SP.',
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            { text: 'Cadastrar endereço', onPress: () => router.push('/addresses') },
+          ]
+        );
+        return;
+      }
+      setStep('pagamento');
+      return;
+    }
+
+    if (step === 'pagamento') {
+      await submitOrder();
+    }
+  };
+
+  // Back handling
+  const handleBack = () => {
+    if (showPaymentSelector) {
+      setShowPaymentSelector(false);
+      return;
+    }
+    if (showCardWizard) {
+      setShowCardWizard(false);
+      return;
+    }
+    if (step === 'pagamento') {
+      setStep('entrega');
+      return;
+    }
+    if (step === 'entrega') {
+      setStep('itens');
+      return;
+    }
+    if (step === 'itens') {
+      router.back();
+    }
+  };
+
+  // Clear cart prompt
+  const handleClearCart = () => {
+    showThemedAlert('Limpar sacola?', 'Deseja remover todos os itens da sacola?', [
+      { text: 'Não', style: 'cancel' },
+      {
+        text: 'Sim, limpar',
+        style: 'destructive',
+        onPress: () => {
+          clearCart();
+          router.back();
+        },
+      },
+    ]);
+  };
+
+  // Peça também item addition
+  const handleAddQuickItem = (product: any) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    addToCart({
+      id: product.id,
+      nome: product.nome,
+      preco: product.precoFormatado || `R$ ${Number(product.preco).toFixed(2).replace('.', ',')}`,
+      precoNum: Math.round(Number(product.preco) * 100),
+      imagem: product.imagem,
+      quantidade: 1,
+      adicionais: [],
+      observacoes: '',
+    });
+  };
+
+  // Stub onEditItem (Regra 20)
+  const onEditItem = (item: any) => {
+    // TODO: Edição de item na sacola não suportada pelo modelo atual (item é imutável)
+    console.log('onEditItem stub called for item:', item.cartItemId || item.id);
+  };
+
+  return {
+    step,
+    setStep,
+    items,
+    subtotal,
+    deliveryFee,
+    discount,
+    total,
+    coupon,
+    couponInvalidReason,
+    deliveryType,
+    setDeliveryType,
+    selectedAddress,
+    loadingAddress,
+    paymentMethod,
+    selectedSavedCard,
+    savedCardCvv,
+    setSavedCardCvv,
+    useManualCardForm,
+    setUseManualCardForm,
+    cardName,
+    setCardName,
+    cardNumber,
+    setCardNumber,
+    cardExpiry,
+    setCardExpiry,
+    cardCvv,
+    setCardCvv,
+    cardCpf,
+    setCardCpf,
+    wantsCutlery,
+    setWantsCutlery,
+    cashChange,
+    setCashChange,
+    orderNotes,
+    setOrderNotes,
+    name,
+    setName,
+    phone,
+    setPhone,
+    submitting,
+    errorMessage,
+    showPaymentSelector,
+    setShowPaymentSelector,
+    showCardWizard,
+    setShowCardWizard,
+    minOrderSheetVisible,
+    setMinOrderSheetVisible,
+    selectPaymentMethod,
+    submitOrder,
+    handleContinue,
+    handleBack,
+    handleClearCart,
+    handleAddQuickItem,
+    onEditItem,
+    removeFromCart,
+    updateQty,
+    clearCart,
+    setCoupon,
+  };
+}

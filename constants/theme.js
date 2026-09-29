@@ -33,6 +33,16 @@ export const COLORS = {
   warning: '#F2C94C',
   error: '#EB5757',
   info: '#2D9CDB',
+
+  // Tokens Checkout / Delivery
+  brandRed: '#E61E2A',
+  warningBg: '#FEF8EC',
+  warningBorder: '#FCE8C3',
+  warningText: '#8A6100',
+  grayLight: '#F4F4F5',
+  grayBorder: '#E4E4E7',
+  grayText: '#71717A',
+  darkBorder: '#18181B',
 };
 
 export const TYPOGRAPHY = {

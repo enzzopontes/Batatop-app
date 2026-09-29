@@ -568,7 +568,7 @@ function Header({ onHeightChange, onRegisterReset }) {
   const isAuthPage    = pathname.includes('auth');
   const isProdutoPage = pathname.includes('produto');
   const isAddressPage = pathname.includes('addresses');
-  const isCheckoutPage = pathname.includes('checkout');
+  const isCartPage = pathname === '/cart';
   const isWelcomePage = pathname.includes('welcome');
   const isLocationPage = pathname.includes('location');
   const isCardapioPage = pathname.includes('cardapio');
@@ -594,7 +594,7 @@ function Header({ onHeightChange, onRegisterReset }) {
     }
   }, [isAddressPage, user, authResolved]);
 
-  if (isAuthPage || isProdutoPage || isCheckoutPage || isAddressPage || isWelcomePage || isLocationPage || isCardapioPage || isPedidosPage || isProfilePage || isAjudaPage || isAdminPage) return null;
+  if (isAuthPage || isProdutoPage || isCartPage || isAddressPage || isWelcomePage || isLocationPage || isCardapioPage || isPedidosPage || isProfilePage || isAjudaPage || isAdminPage) return null;
 
   return (
     <>

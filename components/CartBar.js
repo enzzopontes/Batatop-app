@@ -24,7 +24,7 @@ export default function CartBar({ tabBarHeight }) {
   const translateY = useRef(new Animated.Value(120)).current;
   const wasVisible = useRef(false);
 
-  const isCartPage = pathname.includes('cart') || pathname.includes('checkout');
+  const isCartPage = pathname.includes('cart');
   const isWelcomePage = pathname.includes('welcome');
   const isLocationPage = pathname.includes('location');
   const isAdminPage = pathname.includes('/admin');
