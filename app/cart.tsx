@@ -62,7 +62,12 @@ export default function CartScreen() {
             exiting={FadeOut.duration(200)}
             style={styles.stepContainer}
           >
-            <StepEntrega onBack={flow.handleBack} />
+            <StepEntrega
+              deliveryType={flow.deliveryType}
+              setDeliveryType={flow.setDeliveryType}
+              selectedAddress={flow.selectedAddress}
+              loadingAddress={flow.loadingAddress}
+            />
           </Animated.View>
         );
       case 'pagamento':
