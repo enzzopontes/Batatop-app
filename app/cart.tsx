@@ -12,6 +12,7 @@ import StepEntrega from '../components/cart/StepEntrega';
 import StepPagamento from '../components/cart/StepPagamento';
 import PaymentSelector from '../components/cart/PaymentSelector';
 import MinOrderSheet from '../components/cart/MinOrderSheet';
+import CardWizard from '../components/CardWizard';
 
 export default function CartScreen() {
   const insets = useSafeAreaInsets();
@@ -78,7 +79,42 @@ export default function CartScreen() {
             exiting={FadeOut.duration(200)}
             style={styles.stepContainer}
           >
-            <StepPagamento onBack={flow.handleBack} />
+            <StepPagamento
+              paymentMethod={flow.paymentMethod}
+              selectedSavedCard={flow.selectedSavedCard}
+              savedCardCvv={flow.savedCardCvv}
+              setSavedCardCvv={flow.setSavedCardCvv}
+              useManualCardForm={flow.useManualCardForm}
+              setUseManualCardForm={flow.setUseManualCardForm}
+              cardName={flow.cardName}
+              setCardName={flow.setCardName}
+              cardNumber={flow.cardNumber}
+              setCardNumber={flow.setCardNumber}
+              cardExpiry={flow.cardExpiry}
+              setCardExpiry={flow.setCardExpiry}
+              cardCvv={flow.cardCvv}
+              setCardCvv={flow.setCardCvv}
+              cardCpf={flow.cardCpf}
+              setCardCpf={flow.setCardCpf}
+              wantsCutlery={flow.wantsCutlery}
+              setWantsCutlery={flow.setWantsCutlery}
+              cashChange={flow.cashChange}
+              setCashChange={flow.setCashChange}
+              orderNotes={flow.orderNotes}
+              setOrderNotes={flow.setOrderNotes}
+              name={flow.name}
+              setName={flow.setName}
+              phone={flow.phone}
+              setPhone={flow.setPhone}
+              subtotal={flow.subtotal}
+              deliveryFee={flow.deliveryFee}
+              discount={flow.discount}
+              total={flow.total}
+              coupon={flow.coupon}
+              deliveryType={flow.deliveryType}
+              onRemoveCoupon={() => flow.setCoupon(null)}
+              onOpenPaymentSelector={() => flow.setShowPaymentSelector(true)}
+            />
           </Animated.View>
         );
       default:
@@ -91,8 +127,34 @@ export default function CartScreen() {
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.white} />
       <ThemedAlertHost />
 
-      {flow.showPaymentSelector ? (
-        <PaymentSelector onBack={() => flow.setShowPaymentSelector(false)} />
+      {flow.showCardWizard ? (
+        <CardWizard
+          cardType={flow.paymentMethod === 'cartão de débito' ? 'cartão de débito' : 'cartão de crédito'}
+          existingCardsCount={flow.savedCards.length}
+          addCard={flow.addCard}
+          savingCard={flow.savingCard}
+          onClose={() => flow.setShowCardWizard(false)}
+          onSaved={async () => {
+            const reloadedCards = await flow.loadSavedCards();
+            if (reloadedCards && reloadedCards.length > 0) {
+              const latest = reloadedCards[0];
+              flow.selectPaymentMethod(latest.card_type, latest);
+            }
+            flow.setShowCardWizard(false);
+          }}
+        />
+      ) : flow.showPaymentSelector ? (
+        <PaymentSelector
+          currentMethod={flow.paymentMethod}
+          selectedCard={flow.selectedSavedCard}
+          savedCards={flow.savedCards}
+          onSelectPayment={flow.selectPaymentMethod}
+          onAddNewCard={() => {
+            flow.setShowPaymentSelector(false);
+            flow.setShowCardWizard(true);
+          }}
+          onBack={() => flow.setShowPaymentSelector(false)}
+        />
       ) : (
         <>
           <CartHeader

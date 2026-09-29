@@ -48,7 +48,7 @@ export interface Address {
 export function useCheckoutFlow() {
   const router = useRouter();
   const { items, total: totalCents, add: addToCart, remove: removeFromCart, updateQty, clear: clearCart, coupon, setCoupon } = useCart();
-  const { cards: savedCards, loadCards: loadSavedCards } = usePaymentCards();
+  const { cards: savedCards, loadCards: loadSavedCards, addCard, savingCard } = usePaymentCards();
 
   // Navigation & Step state
   const [step, setStep] = useState<CheckoutStep>('itens');
@@ -630,6 +630,10 @@ export function useCheckoutFlow() {
     selectedAddress,
     loadingAddress,
     paymentMethod,
+    savedCards,
+    addCard,
+    savingCard,
+    loadSavedCards,
     selectedSavedCard,
     savedCardCvv,
     setSavedCardCvv,
