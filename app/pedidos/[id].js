@@ -7,7 +7,6 @@ import {
   ActivityIndicator,
   Linking,
   Image,
-  Alert,
   Modal,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
@@ -106,7 +105,7 @@ function ProgressBar({ status }) {
 export default function DetalhesPedido() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
-  const { buscarPedidoPorId, loading } = usePedidos();
+  const { buscarPedidoPorId } = usePedidos();
   const headerHeight = useHeaderHeight();
   const { onScroll, resetHeader } = useScrollHandler();
 
@@ -120,28 +119,61 @@ export default function DetalhesPedido() {
   );
 
   const [pedido, setPedido] = useState(null);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [erro, setErro] = useState(false);
   const [copied, setCopied] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [helpModalVisible, setHelpModalVisible] = useState(false);
+  const [remainingSeconds, setRemainingSeconds] = useState(null);
 
-  useEffect(() => {
-    if (!id) return;
-
-    const carregar = async () => {
+  const carregarPedido = useCallback(async ({ silent = false } = {}) => {
+    if (!id) return null;
+    if (!silent) setInitialLoading(true);
+    try {
       const resultado = await buscarPedidoPorId(id);
       if (resultado.success) {
         setPedido(resultado.data);
-      } else {
+        return resultado.data;
+      } else if (!silent) {
         setErro(true);
       }
+    } catch {
+      if (!silent) setErro(true);
+    } finally {
+      if (!silent) setInitialLoading(false);
+    }
+    return null;
+  }, [id, buscarPedidoPorId]);
+
+  // a) Assinar Realtime UPDATE na linha do pedido e refazer o fetch ao receber
+  useEffect(() => {
+    if (!id) return;
+
+    carregarPedido();
+
+    // Nome único por montagem para evitar conflitos no StrictMode
+    const channelName = `order-detail-${id}-${Date.now()}`;
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'orders',
+          filter: `id=eq.${id}`,
+        },
+        () => {
+          carregarPedido({ silent: true });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
     };
-
-    carregar();
-  }, [id]);
-
-  const [remainingSeconds, setRemainingSeconds] = useState(null);
+  }, [id, carregarPedido]);
 
   // ── Contagem regressiva do PIX (30 minutos) ─────────────────────────────────
   useEffect(() => {
@@ -164,18 +196,16 @@ export default function DetalhesPedido() {
           .from('orders')
           .update({ status: 'cancelled', updated_at: new Date().toISOString() })
           .eq('id', pedido.id)
-          .then(() => buscarPedidoPorId(id).then((res) => res.success && setPedido(res.data)));
+          .then(() => carregarPedido({ silent: true }));
       }
     };
 
     tick();
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, [pedido?.id, pedido?.status, pedido?.paymentMethod, pedido?.createdAt, pedido?.metadata?.pix?.expirationDate]);
+  }, [pedido?.id, pedido?.status, pedido?.paymentMethod, pedido?.createdAt, pedido?.metadata?.pix?.expirationDate, carregarPedido]);
 
-  // ── Polling: enquanto aguarda pagamento PIX, checa a cada 5s se já caiu ────
-  // Quando confirmado, atualiza o status no Supabase e recarrega o pedido —
-  // isso tira o pedido da categoria "A Pagar" automaticamente.
+  // b) Polling: quando pix-status retornar approved: refazer fetch, parar polling e esconder QR
   useEffect(() => {
     if (!pedido || pedido.status !== 'awaiting_payment') return;
     const mpPaymentId =
@@ -185,9 +215,11 @@ export default function DetalhesPedido() {
       pedido.metadata?.card?.payment_id;
     if (!mpPaymentId) return;
 
+    let isPollingActive = true;
     const interval = setInterval(async () => {
+      if (!isPollingActive) return;
       const result = await checkPixStatus(mpPaymentId);
-      if (!result.success) return;
+      if (!result.success || !isPollingActive) return;
 
       const isPaid =
         result.statusDetail === 'accredited' ||
@@ -196,32 +228,51 @@ export default function DetalhesPedido() {
         result.status === 'processed';
 
       if (isPaid) {
+        isPollingActive = false;
         clearInterval(interval);
+        // Otimista: esconde o bloco do QR e atualiza status na tela imediatamente
+        setPedido((prev) => (prev ? { ...prev, status: 'pending' } : prev));
         await supabase
           .from('orders')
           .update({ status: 'pending', updated_at: new Date().toISOString() })
           .eq('id', pedido.id);
 
-        const resultado = await buscarPedidoPorId(id);
-        if (resultado.success) setPedido(resultado.data);
+        await carregarPedido({ silent: true });
       } else if (
         result.status === 'cancelled' ||
         result.status === 'rejected' ||
         result.statusDetail === 'expired'
       ) {
+        isPollingActive = false;
         clearInterval(interval);
+        setPedido((prev) => (prev ? { ...prev, status: 'cancelled' } : prev));
         await supabase
           .from('orders')
           .update({ status: 'cancelled', updated_at: new Date().toISOString() })
           .eq('id', pedido.id);
 
-        const resultado = await buscarPedidoPorId(id);
-        if (resultado.success) setPedido(resultado.data);
+        await carregarPedido({ silent: true });
       }
     }, 5000);
 
-    return () => clearInterval(interval);
-  }, [pedido?.id, pedido?.status]);
+    return () => {
+      isPollingActive = false;
+      clearInterval(interval);
+    };
+  }, [pedido?.id, pedido?.status, carregarPedido]);
+
+  // c) Fallback: refetch a cada 30s enquanto o status não for final (delivered/cancelled)
+  useEffect(() => {
+    if (!pedido) return;
+    const isFinal = pedido.status === 'delivered' || pedido.status === 'cancelled';
+    if (isFinal) return;
+
+    const fallbackTimer = setInterval(() => {
+      carregarPedido({ silent: true });
+    }, 30000);
+
+    return () => clearInterval(fallbackTimer);
+  }, [pedido?.status, carregarPedido]);
 
   const handleCancelOrder = () => {
     if (!pedido) return;
@@ -241,8 +292,7 @@ export default function DetalhesPedido() {
 
       if (error) throw error;
 
-      const resultado = await buscarPedidoPorId(id);
-      if (resultado.success) setPedido(resultado.data);
+      await carregarPedido({ silent: true });
 
       const msg = encodeURIComponent(
         `Olá, gostaria de cancelar meu pedido #${numLocal}.\n\n*Detalhes do Pedido:*\nCliente: ${pedido.customerName}\nTotal: R$ ${pedido.total.toFixed(2).replace('.', ',')}`
@@ -265,7 +315,7 @@ export default function DetalhesPedido() {
   };
 
   // ── Loading ──────────────────────────────────────────────────────────────────
-  if (loading || (!pedido && !erro)) {
+  if ((initialLoading && !pedido) || (!pedido && !erro)) {
     return (
       <View style={s.centered}>
         <ActivityIndicator size="large" color={COLORS.primary} />
