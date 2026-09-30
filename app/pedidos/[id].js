@@ -20,6 +20,7 @@ import { useHeaderHeight, useScrollHandler } from '../_layout';
 import { supabase } from '../../supabaseConfig';
 import { checkPixStatus } from '../../utils/mercadoPago';
 import HelpModal from '../../components/HelpModal';
+import { ThemedAlertHost, showThemedAlert } from '../../components/ThemedAlert';
 
 // ─── Constantes de status ─────────────────────────────────────────────────────
 
@@ -140,21 +141,58 @@ export default function DetalhesPedido() {
     carregar();
   }, [id]);
 
+  const [remainingSeconds, setRemainingSeconds] = useState(null);
+
+  // ── Contagem regressiva do PIX (30 minutos) ─────────────────────────────────
+  useEffect(() => {
+    if (!pedido || pedido.status !== 'awaiting_payment' || pedido.paymentMethod !== 'pix') {
+      setRemainingSeconds(null);
+      return;
+    }
+
+    const expTime = pedido.metadata?.pix?.expirationDate
+      ? new Date(pedido.metadata.pix.expirationDate).getTime()
+      : pedido.createdAt
+      ? new Date(pedido.createdAt).getTime() + 30 * 60 * 1000
+      : Date.now() + 30 * 60 * 1000;
+
+    const tick = () => {
+      const diff = Math.max(0, Math.floor((expTime - Date.now()) / 1000));
+      setRemainingSeconds(diff);
+      if (diff <= 0) {
+        supabase
+          .from('orders')
+          .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+          .eq('id', pedido.id)
+          .then(() => buscarPedidoPorId(id).then((res) => res.success && setPedido(res.data)));
+      }
+    };
+
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [pedido?.id, pedido?.status, pedido?.paymentMethod, pedido?.createdAt, pedido?.metadata?.pix?.expirationDate]);
+
   // ── Polling: enquanto aguarda pagamento PIX, checa a cada 5s se já caiu ────
   // Quando confirmado, atualiza o status no Supabase e recarrega o pedido —
   // isso tira o pedido da categoria "A Pagar" automaticamente.
   useEffect(() => {
     if (!pedido || pedido.status !== 'awaiting_payment') return;
-    const mpOrderId = pedido.metadata?.pix?.order_id;
-    if (!mpOrderId) return;
+    const mpPaymentId =
+      pedido.metadata?.pix?.payment_id ||
+      pedido.metadata?.pix?.id ||
+      pedido.metadata?.pix?.order_id ||
+      pedido.metadata?.card?.payment_id;
+    if (!mpPaymentId) return;
 
     const interval = setInterval(async () => {
-      const result = await checkPixStatus(mpOrderId);
+      const result = await checkPixStatus(mpPaymentId);
       if (!result.success) return;
 
       const isPaid =
         result.statusDetail === 'accredited' ||
         result.paymentStatus === 'approved' ||
+        result.status === 'approved' ||
         result.status === 'processed';
 
       if (isPaid) {
@@ -162,6 +200,19 @@ export default function DetalhesPedido() {
         await supabase
           .from('orders')
           .update({ status: 'pending', updated_at: new Date().toISOString() })
+          .eq('id', pedido.id);
+
+        const resultado = await buscarPedidoPorId(id);
+        if (resultado.success) setPedido(resultado.data);
+      } else if (
+        result.status === 'cancelled' ||
+        result.status === 'rejected' ||
+        result.statusDetail === 'expired'
+      ) {
+        clearInterval(interval);
+        await supabase
+          .from('orders')
+          .update({ status: 'cancelled', updated_at: new Date().toISOString() })
           .eq('id', pedido.id);
 
         const resultado = await buscarPedidoPorId(id);
@@ -198,7 +249,7 @@ export default function DetalhesPedido() {
       );
       Linking.openURL(`https://wa.me/5514997361015?text=${msg}`);
     } catch (err) {
-      Alert.alert('Erro', 'Não foi possível cancelar o pedido. Entre em contato pelo WhatsApp.');
+      showThemedAlert('Erro', 'Não foi possível cancelar o pedido. Entre em contato pelo WhatsApp.');
     } finally {
       setCancelling(false);
     }
@@ -261,6 +312,7 @@ export default function DetalhesPedido() {
 
   return (
     <View style={s.container}>
+      <ThemedAlertHost />
       <ScrollView
         style={s.scroll}
         contentContainerStyle={[s.scrollContent, { paddingTop: headerHeight + 16 }]}
@@ -294,6 +346,21 @@ export default function DetalhesPedido() {
           <ProgressBar status={pedido.status} />
         </View>
 
+        {/* Aviso de cancelamento / expiração */}
+        {pedido.status === 'cancelled' && (
+          <View style={[s.card, s.cancelledCard]}>
+            <View style={s.cancelledRow}>
+              <Ionicons name="alert-circle-outline" size={24} color="#DC2626" />
+              <View style={{ flex: 1 }}>
+                <Text style={s.cancelledTitle}>Pedido Cancelado</Text>
+                <Text style={s.cancelledText}>
+                  Este pedido foi cancelado ou o prazo para pagamento via Pix expirou.
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
+
         {/* Mercado Pago Payment Card */}
         {pedido.status === 'awaiting_payment' && (pedido.paymentMethod === 'pix' || pedido.paymentMethod?.toLowerCase() === 'pix') && pedido.metadata?.pix && (
           <View style={[s.card, s.paymentBox]}>
@@ -304,6 +371,21 @@ export default function DetalhesPedido() {
             <Text style={s.paymentSubText}>
               Aponte a câmera para o QR Code abaixo ou copie a chave Pix Copia e Cola para efetuar o pagamento.
             </Text>
+
+            {remainingSeconds !== null && (
+              <View style={s.timerBox}>
+                <Ionicons
+                  name="time-outline"
+                  size={16}
+                  color={remainingSeconds <= 300 ? '#DC2626' : '#B45309'}
+                />
+                <Text style={[s.timerText, remainingSeconds <= 300 && { color: '#DC2626' }]}>
+                  {remainingSeconds > 0
+                    ? `Tempo restante: ${Math.floor(remainingSeconds / 60)}:${String(remainingSeconds % 60).padStart(2, '0')}`
+                    : 'Código Pix expirado'}
+                </Text>
+              </View>
+            )}
 
             {pedido.metadata.pix.qr_code_base64 ? (
               <View style={s.qrContainer}>
@@ -840,6 +922,44 @@ const s = StyleSheet.create({
     borderColor: '#FFF3E0',
     backgroundColor: '#FFFDF9',
     padding: 16,
+  },
+  timerBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#FEF3C7',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: RADIUS.md ?? 8,
+    marginBottom: 14,
+  },
+  timerText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  cancelledCard: {
+    borderWidth: 1.5,
+    borderColor: '#FEE2E2',
+    backgroundColor: '#FEF2F2',
+    padding: 16,
+  },
+  cancelledRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  cancelledTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#DC2626',
+    marginBottom: 2,
+  },
+  cancelledText: {
+    fontSize: 12,
+    color: '#991B1B',
+    lineHeight: 16,
   },
   paymentSubText: {
     fontSize: 12,

@@ -310,6 +310,26 @@ export function useCheckoutFlow() {
           ? selectedAddress.neighborhood
           : STORE_ADDRESS.neighborhood;
 
+function getCardRejectionMessage(statusDetail?: string): string {
+  switch (statusDetail) {
+    case 'cc_rejected_insufficient_amount':
+      return 'Saldo insuficiente';
+    case 'cc_rejected_bad_filled_card_number':
+    case 'cc_rejected_bad_filled_date':
+    case 'cc_rejected_bad_filled_security_code':
+    case 'cc_rejected_bad_filled_other':
+      return 'Confira os dados do cartão';
+    case 'cc_rejected_call_for_authorize':
+      return 'Ligue para o banco para autorizar';
+    case 'cc_rejected_card_disabled':
+      return 'Cartão desabilitado, fale com o banco';
+    case 'cc_rejected_high_risk':
+      return 'Recusado por segurança, tente outra forma';
+    default:
+      return 'Pagamento recusado, tente outro cartão ou forma de pagamento';
+  }
+}
+
       const totalFinal = Math.round(total * 100) / 100;
       const email = session.user.email || 'cliente@batatatop.com';
 
@@ -327,9 +347,12 @@ export function useCheckoutFlow() {
           };
         } else {
           setSubmitting(false);
-          const err = pixResult.error || 'Erro ao gerar chave PIX';
+          const isConfigErr = pixResult.error?.startsWith('config:');
+          const err = isConfigErr
+            ? 'O serviço de pagamento está temporariamente indisponível. Por favor, tente outra forma de pagamento.'
+            : (pixResult.error || 'Erro ao gerar chave PIX');
           setErrorMessage(err);
-          showThemedAlert('Erro no PIX', err);
+          showThemedAlert(isConfigErr ? 'Serviço indisponível' : 'Erro no PIX', err);
           return;
         }
       }
@@ -348,30 +371,34 @@ export function useCheckoutFlow() {
             orderNumber,
           });
 
-          if (cardResult.success) {
-            if (cardResult.status === 'rejected') {
-              setSubmitting(false);
-              const err = 'Pagamento recusado pelo cartão. Verifique o CVV e tente novamente.';
-              setErrorMessage(err);
-              showThemedAlert('Pagamento recusado', err);
-              return;
-            }
-            cardDetails = {
-              payment_id: cardResult.paymentId,
-              status: cardResult.status,
-              status_detail: cardResult.statusDetail,
-              simulation: cardResult.simulation,
-              brand: selectedSavedCard.payment_method_id,
-              last4: selectedSavedCard.last_four,
-              saved_card: true,
-            };
-          } else {
+          if (cardResult.status === 'rejected') {
             setSubmitting(false);
-            const err = cardResult.error || 'Erro ao processar pagamento do cartão salvo';
+            const err = getCardRejectionMessage(cardResult.statusDetail);
             setErrorMessage(err);
-            showThemedAlert('Erro no cartão', err);
+            showThemedAlert('Pagamento recusado', err);
             return;
           }
+
+          if (!cardResult.success && !cardResult.status) {
+            setSubmitting(false);
+            const isConfigErr = cardResult.error?.startsWith('config:');
+            const err = isConfigErr
+              ? 'O serviço de pagamento está temporariamente indisponível. Escolha outra forma de pagamento.'
+              : (cardResult.error || 'Erro ao processar pagamento do cartão salvo');
+            setErrorMessage(err);
+            showThemedAlert(isConfigErr ? 'Serviço indisponível' : 'Erro no cartão', err);
+            return;
+          }
+
+          cardDetails = {
+            payment_id: cardResult.paymentId,
+            status: cardResult.status,
+            status_detail: cardResult.statusDetail,
+            simulation: cardResult.simulation,
+            brand: selectedSavedCard.payment_method_id,
+            last4: selectedSavedCard.last_four,
+            saved_card: true,
+          };
         } else {
           const [expMonth, expYear] = cardExpiry.split('/');
           const fullYear = `20${expYear}`;
@@ -387,9 +414,12 @@ export function useCheckoutFlow() {
 
           if (!tokenResult.success || !tokenResult.token) {
             setSubmitting(false);
-            const err = tokenResult.error || 'Erro ao processar dados do cartão';
+            const isConfigErr = tokenResult.error?.startsWith('config:');
+            const err = isConfigErr
+              ? 'O serviço de pagamento está temporariamente indisponível. Escolha outra forma de pagamento.'
+              : (tokenResult.error || 'Erro ao processar dados do cartão');
             setErrorMessage(err);
-            showThemedAlert('Erro no cartão', err);
+            showThemedAlert(isConfigErr ? 'Serviço indisponível' : 'Erro no cartão', err);
             return;
           }
 
@@ -404,29 +434,33 @@ export function useCheckoutFlow() {
             orderNumber,
           });
 
-          if (cardResult.success) {
-            if (cardResult.status === 'rejected') {
-              setSubmitting(false);
-              const err = 'Pagamento recusado pelo cartão. Verifique os dados e tente novamente.';
-              setErrorMessage(err);
-              showThemedAlert('Pagamento recusado', err);
-              return;
-            }
-            cardDetails = {
-              payment_id: cardResult.paymentId,
-              status: cardResult.status,
-              status_detail: cardResult.statusDetail,
-              simulation: cardResult.simulation,
-              brand: pmId,
-              last4: cardNumber.replace(/\D/g, '').slice(-4),
-            };
-          } else {
+          if (cardResult.status === 'rejected') {
             setSubmitting(false);
-            const err = cardResult.error || 'Erro ao processar pagamento do cartão';
+            const err = getCardRejectionMessage(cardResult.statusDetail);
             setErrorMessage(err);
-            showThemedAlert('Erro no cartão', err);
+            showThemedAlert('Pagamento recusado', err);
             return;
           }
+
+          if (!cardResult.success && !cardResult.status) {
+            setSubmitting(false);
+            const isConfigErr = cardResult.error?.startsWith('config:');
+            const err = isConfigErr
+              ? 'O serviço de pagamento está temporariamente indisponível. Escolha outra forma de pagamento.'
+              : (cardResult.error || 'Erro ao processar pagamento do cartão');
+            setErrorMessage(err);
+            showThemedAlert(isConfigErr ? 'Serviço indisponível' : 'Erro no cartão', err);
+            return;
+          }
+
+          cardDetails = {
+            payment_id: cardResult.paymentId,
+            status: cardResult.status,
+            status_detail: cardResult.statusDetail,
+            simulation: cardResult.simulation,
+            brand: pmId,
+            last4: cardNumber.replace(/\D/g, '').slice(-4),
+          };
         }
       }
 
@@ -439,7 +473,18 @@ export function useCheckoutFlow() {
         }
       }
 
-      // 3. Insert em orders
+      // 3. Determina status do pedido
+      let orderInitialStatus = 'pending';
+      if (paymentMethod === 'pix') {
+        orderInitialStatus = 'awaiting_payment';
+      } else if (
+        (paymentMethod === 'cartão de crédito' || paymentMethod === 'cartão de débito') &&
+        (cardDetails?.status === 'in_process' || cardDetails?.status === 'pending')
+      ) {
+        orderInitialStatus = 'awaiting_payment';
+      }
+
+      // 4. Insert em orders
       const orderPayload = {
         user_id: session.user.id,
         customer_name: name.trim(),
@@ -452,7 +497,7 @@ export function useCheckoutFlow() {
         total_amount: total,
         discount_amount: discount,
         coupon_code: coupon?.code || null,
-        status: paymentMethod === 'pix' ? 'awaiting_payment' : 'pending',
+        status: orderInitialStatus,
         notes: finalNotes || null,
         delivery_type: deliveryType,
         order_number: orderNumber,
@@ -506,6 +551,16 @@ export function useCheckoutFlow() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       clearCart();
       setSubmitting(false);
+
+      if (
+        orderInitialStatus === 'awaiting_payment' &&
+        (paymentMethod === 'cartão de crédito' || paymentMethod === 'cartão de débito')
+      ) {
+        showThemedAlert(
+          'Pagamento em análise',
+          'Seu pagamento está sendo analisado pelo Mercado Pago. Você pode acompanhar o status pelo pedido.'
+        );
+      }
 
       // 7. Navega para tela de acompanhamento
       router.replace(`/pedidos/${created.id}`);

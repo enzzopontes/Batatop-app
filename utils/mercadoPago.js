@@ -3,17 +3,29 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
 async function callBackend(path, body, method = 'POST') {
   try {
+    if (!API_BASE_URL) {
+      console.error('[mercadoPago] EXPO_PUBLIC_API_BASE_URL não está configurada');
+      return { success: false, error: 'config: EXPO_PUBLIC_API_BASE_URL ausente' };
+    }
+
     const response = await fetch(`${API_BASE_URL}/api/mercadopago/${path}`, {
       method,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: method !== 'GET' && method !== 'HEAD' ? JSON.stringify(body) : undefined,
     });
-    const data = await response.json();
 
-    // Log de debug: mostra a resposta completa do backend no console do Expo.
-    // Útil pra ver o campo "details" com o erro real do Mercado Pago.
-    if (!data.success) {
-      console.log(`[mercadoPago] Erro em "${path}":`, JSON.stringify(data, null, 2));
+    const data = await response.json().catch(() => ({}));
+
+    // Se o backend respondeu com erro (ex: 500 config ausente) ou success false
+    if (!response.ok || !data.success) {
+      console.log(`[mercadoPago] Erro em "${path}":`, data.error || response.status);
+      return {
+        success: false,
+        status: data.status,
+        statusDetail: data.statusDetail || data.status_detail,
+        error: data.error || (response.status === 500 ? 'Erro de configuração no servidor' : 'Erro no processamento'),
+        details: data.details,
+      };
     }
 
     return data;
@@ -23,7 +35,7 @@ async function callBackend(path, body, method = 'POST') {
   }
 }
 
-// ── Funções que usavam Access Token: agora passam pelo backend (Vercel) ─────
+// ── Funções que passam pelo backend (Vercel) com Access Token ────────────────
 
 export async function createPaymentPreference(amount, orderNumber, itemsList = []) {
   return callBackend('preference', { amount, orderNumber, itemsList });
@@ -33,17 +45,47 @@ export async function createPixPayment(amount, email, name, orderNumber) {
   return callBackend('pix', { amount, email, name, orderNumber });
 }
 
-export async function checkPixStatus(orderId) {
+export async function checkPixStatus(id) {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/mercadopago/pix-status?orderId=${encodeURIComponent(orderId)}`);
-    return await response.json();
+    if (!API_BASE_URL) {
+      return { success: false, error: 'config: EXPO_PUBLIC_API_BASE_URL ausente' };
+    }
+    const response = await fetch(`${API_BASE_URL}/api/mercadopago/pix-status?id=${encodeURIComponent(id)}`);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.success) {
+      return {
+        success: false,
+        status: data.status,
+        statusDetail: data.statusDetail || data.status_detail,
+        error: data.error || 'Erro ao consultar status do Pix',
+      };
+    }
+    return data;
   } catch (err) {
     return { success: false, error: err.message || 'Erro de conexão com o servidor' };
   }
 }
 
-export async function createCardPayment({ amount, token, paymentMethodId, email, name, docNumber, orderNumber }) {
-  return callBackend('card-payment', { amount, token, paymentMethodId, email, name, docNumber, orderNumber });
+export async function createCardPayment({
+  amount,
+  token,
+  paymentMethodId,
+  issuerId = null,
+  email,
+  name,
+  docNumber,
+  orderNumber,
+}) {
+  return callBackend('card-payment', {
+    amount,
+    token,
+    paymentMethodId,
+    issuerId,
+    email,
+    name,
+    docNumber,
+    orderNumber,
+  });
 }
 
 export async function createCustomer({ email, firstName, lastName }) {
@@ -58,11 +100,10 @@ export async function deleteCustomerCard({ customerId, cardId }) {
   return callBackend('delete-card', { customerId, cardId }, 'DELETE');
 }
 
-// ── Funções que continuam direto no client (só usam a Public Key, é assim ──
-// ── que o Checkout Transparente do Mercado Pago é projetado) ────────────────
+// ── Funções no cliente com Public Key (Checkout Transparente) ────────────────
 
 /**
- * Tokeniza um cartão de crédito/débito utilizando a Public Key (Checkout Transparente).
+ * Tokeniza um cartão utilizando a Public Key.
  */
 export async function tokenizeCard({
   cardNumber,
@@ -74,8 +115,12 @@ export async function tokenizeCard({
   docNumber,
 }) {
   try {
-    const cleanCardNumber = cardNumber.replace(/\D/g, '');
-    const cleanDocNumber = docNumber.replace(/\D/g, '');
+    if (!MERCADO_PAGO_PUBLIC_KEY) {
+      return { success: false, error: 'config: EXPO_PUBLIC_MERCADO_PAGO_PUBLIC_KEY ausente' };
+    }
+
+    const cleanCardNumber = (cardNumber || '').replace(/\D/g, '');
+    const cleanDocNumber = (docNumber || '').replace(/\D/g, '');
 
     const response = await fetch(`https://api.mercadopago.com/v1/card_tokens?public_key=${MERCADO_PAGO_PUBLIC_KEY}`, {
       method: 'POST',
@@ -97,7 +142,7 @@ export async function tokenizeCard({
       }),
     });
 
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
     if (response.ok) {
       if (data.luhn_validation === false) {
         return { success: false, error: 'Número do cartão inválido na validação bancária.' };
@@ -116,6 +161,10 @@ export async function tokenizeCard({
  */
 export async function tokenizeSavedCardCvv({ cardId, securityCode }) {
   try {
+    if (!MERCADO_PAGO_PUBLIC_KEY) {
+      return { success: false, error: 'config: EXPO_PUBLIC_MERCADO_PAGO_PUBLIC_KEY ausente' };
+    }
+
     const response = await fetch(
       `https://api.mercadopago.com/v1/card_tokens?public_key=${MERCADO_PAGO_PUBLIC_KEY}`,
       {
@@ -128,7 +177,7 @@ export async function tokenizeSavedCardCvv({ cardId, securityCode }) {
       }
     );
 
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
     if (response.ok) {
       return { success: true, token: data.id };
     }
@@ -150,6 +199,7 @@ export async function chargeWithSavedCard({
   cardId,
   securityCode,
   paymentMethodId,
+  issuerId = null,
   email,
   name,
   docNumber,
@@ -164,6 +214,7 @@ export async function chargeWithSavedCard({
     amount,
     token: tokenResult.token,
     paymentMethodId,
+    issuerId,
     email,
     name,
     docNumber,
@@ -171,12 +222,16 @@ export async function chargeWithSavedCard({
   });
 }
 
+/**
+ * Identifica a bandeira pelo BIN do cartão.
+ * A verificação de Elo deve vir antes de Visa pois grande parte dos BINs Elo iniciam com 4.
+ */
 export function guessPaymentMethodId(cardNumber) {
-  const clean = cardNumber.replace(/\D/g, '');
-  if (clean.startsWith('4')) return 'visa';
+  const clean = (cardNumber || '').replace(/\D/g, '');
+  if (/^(4011|4312|4389|4514|4576|4573|5041|5067|5090|6277|6362|6363|650|651|655)/.test(clean)) return 'elo';
+  if (/^4/.test(clean)) return 'visa';
   if (/^(5[1-5]|222[1-9]|22[3-9]|2[3-6]|27[0-1]|2720)/.test(clean)) return 'master';
   if (/^(34|37)/.test(clean)) return 'amex';
-  if (/^(4011|4312|4389|4514|4576|4573|5041|5067|5090|6277|6362|6363)/.test(clean)) return 'elo';
   if (/^(606282|3841)/.test(clean)) return 'hipercard';
   return 'visa'; // default fallback
 }
