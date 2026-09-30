@@ -391,6 +391,9 @@ export default function DetalhesPedido() {
               {timeStr ? (
                 <Text style={s.statusTime}>Realizado às {timeStr}</Text>
               ) : null}
+              {pedido.metadata?.eta_minutes && pedido.status !== 'delivered' && pedido.status !== 'cancelled' ? (
+                <Text style={s.etaText}>Previsão: ~{pedido.metadata.eta_minutes} min</Text>
+              ) : null}
             </View>
           </View>
           <ProgressBar status={pedido.status} />
@@ -827,6 +830,12 @@ const s = StyleSheet.create({
   statusTime: {
     fontSize: TYPOGRAPHY.sizes.sm ?? 13,
     color: COLORS.textMuted ?? '#999',
+    marginTop: 2,
+  },
+  etaText: {
+    fontSize: TYPOGRAPHY.sizes.xs ?? 12,
+    fontWeight: '700',
+    color: COLORS.primary ?? '#E3A008',
     marginTop: 2,
   },
 
