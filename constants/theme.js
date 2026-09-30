@@ -35,7 +35,7 @@ export const COLORS = {
   info: '#2D9CDB',
 
   // Tokens Checkout / Delivery
-  brandRed: '#E61E2A',
+  primaryText: '#A16207',
   warningBg: '#FEF8EC',
   warningBorder: '#FCE8C3',
   warningText: '#8A6100',

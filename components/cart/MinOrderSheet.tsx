@@ -30,7 +30,7 @@ export default function MinOrderSheet({ visible, onClose }: MinOrderSheetProps) 
       <View style={styles.overlay}>
         <Pressable style={styles.backdrop} onPress={onClose} />
 
-        <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 16) + 12 }]}>
+        <View style={[styles.sheet, { paddingBottom: insets.bottom > 0 ? insets.bottom : SPACING[4] }]}>
           <View style={styles.handle} />
 
           <Text style={styles.title}>Valor mínimo do pedido</Text>
@@ -76,7 +76,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING[5],
     paddingTop: SPACING[3],
     alignItems: 'center',
-    shadowColor: '#000',
+    shadowColor: COLORS.text,
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.1,
     shadowRadius: 10,
@@ -105,7 +105,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   actionBtn: {
-    backgroundColor: COLORS.brandRed,
+    backgroundColor: COLORS.primary,
     width: '100%',
     height: 48,
     borderRadius: RADIUS.md,
@@ -114,7 +114,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   actionBtnText: {
-    color: COLORS.white,
+    color: COLORS.text,
     fontWeight: '700',
     fontSize: 15,
   },
@@ -124,7 +124,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   cancelBtnText: {
-    color: COLORS.brandRed,
+    color: COLORS.primaryText,
     fontWeight: '700',
     fontSize: 15,
   },

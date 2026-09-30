@@ -78,7 +78,7 @@ const styles = StyleSheet.create({
   clearText: {
     fontSize: 14,
     fontWeight: '600',
-    color: COLORS.brandRed,
+    color: COLORS.primaryText,
   },
   placeholder: {
     width: 36,

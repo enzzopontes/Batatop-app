@@ -6,6 +6,7 @@ import {
   ScrollView,
   Pressable,
   TextInput,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,6 +14,8 @@ import * as Haptics from 'expo-haptics';
 import { COLORS, SPACING, RADIUS } from '../../constants/theme';
 import { PaymentMethod, DeliveryType } from './useCheckoutFlow';
 import { SavedCard, formatCardDisplay } from '../../utils/usePaymentCards';
+
+const LOGO = require('../../assets/logo.png');
 
 interface StepPagamentoProps {
   paymentMethod: PaymentMethod;
@@ -149,10 +152,10 @@ export default function StepPagamento({
       {/* 1. Loja no topo */}
       <View style={styles.storeRow}>
         <View style={styles.storeLogoCircle}>
-          <Ionicons name="restaurant" size={20} color={COLORS.primary} />
+          <Image source={LOGO} style={styles.storeLogoImg} resizeMode="contain" />
         </View>
         <View style={styles.storeInfo}>
-          <Text style={styles.storeName}>Batata Top - Iacanga</Text>
+          <Text style={styles.storeName}>Batata Top</Text>
           <Pressable
             onPress={() => router.push('/cardapio')}
             hitSlop={8}
@@ -415,7 +418,7 @@ export default function StepPagamento({
 
         {coupon ? (
           <Pressable onPress={onRemoveCoupon} hitSlop={8} accessibilityLabel="Remover cupom">
-            <Text style={styles.couponActionText}>Remover</Text>
+            <Text style={styles.couponRemoveActionText}>Remover</Text>
           </Pressable>
         ) : (
           <Pressable
@@ -490,6 +493,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
+    overflow: 'hidden',
+  },
+  storeLogoImg: {
+    width: '100%',
+    height: '100%',
   },
   storeInfo: {
     flex: 1,
@@ -502,7 +510,7 @@ const styles = StyleSheet.create({
   addMoreLink: {
     fontSize: 13,
     fontWeight: '600',
-    color: COLORS.brandRed,
+    color: COLORS.primaryText,
     marginTop: 2,
   },
   sectionTitle: {
@@ -580,8 +588,8 @@ const styles = StyleSheet.create({
     borderColor: COLORS.grayBorder,
   },
   cutleryPillActive: {
-    backgroundColor: COLORS.brandRed,
-    borderColor: COLORS.brandRed,
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
   },
   cutleryPillText: {
     fontSize: 13,
@@ -589,7 +597,7 @@ const styles = StyleSheet.create({
     color: COLORS.text,
   },
   cutleryPillTextActive: {
-    color: COLORS.white,
+    color: COLORS.text,
   },
   cardInput: {
     backgroundColor: COLORS.white,
@@ -620,7 +628,7 @@ const styles = StyleSheet.create({
   inlineActionText: {
     fontSize: 13,
     fontWeight: '600',
-    color: COLORS.brandRed,
+    color: COLORS.primaryText,
   },
   cardFormHeader: {
     flexDirection: 'row',
@@ -654,7 +662,12 @@ const styles = StyleSheet.create({
   couponActionText: {
     fontSize: 14,
     fontWeight: '600',
-    color: COLORS.brandRed,
+    color: COLORS.primaryText,
+  },
+  couponRemoveActionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.error,
   },
   summarySection: {
     marginBottom: SPACING[6],

@@ -26,7 +26,7 @@ export default function CartFooter({
   const deliveryLabel = deliveryType === 'delivery' ? 'com entrega' : 'retirada';
 
   return (
-    <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 12) + 8 }]}>
+    <View style={[styles.container, { paddingBottom: insets.bottom > 0 ? insets.bottom : SPACING[3] }]}>
       {step === 'pagamento' ? (
         <Pressable
           style={[styles.reviewButton, submitting && styles.buttonDisabled]}
@@ -35,7 +35,7 @@ export default function CartFooter({
           accessibilityLabel={`Revisar pedido no valor de ${formattedTotal}`}
         >
           {submitting ? (
-            <ActivityIndicator color={COLORS.white} size="small" />
+            <ActivityIndicator color={COLORS.text} size="small" />
           ) : (
             <Text style={styles.reviewButtonText}>
               Revisar pedido • {formattedTotal}
@@ -76,7 +76,7 @@ const styles = StyleSheet.create({
     paddingTop: SPACING[3],
     borderTopWidth: 1,
     borderTopColor: COLORS.borderLight,
-    shadowColor: '#000',
+    shadowColor: COLORS.text,
     shadowOffset: { width: 0, height: -3 },
     shadowOpacity: 0.05,
     shadowRadius: 5,
@@ -107,7 +107,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   continueButton: {
-    backgroundColor: COLORS.brandRed,
+    backgroundColor: COLORS.primary,
     height: 48,
     paddingLeft: 18,
     paddingRight: 14,
@@ -118,7 +118,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   continueButtonText: {
-    color: COLORS.white,
+    color: COLORS.text,
     fontSize: 15,
     fontWeight: '700',
   },
@@ -126,24 +126,24 @@ const styles = StyleSheet.create({
     width: 20,
     height: 20,
     borderRadius: RADIUS.full,
-    backgroundColor: COLORS.white,
+    backgroundColor: COLORS.text,
     alignItems: 'center',
     justifyContent: 'center',
   },
   badgeText: {
-    color: COLORS.brandRed,
+    color: COLORS.primary,
     fontSize: 11,
     fontWeight: '800',
   },
   reviewButton: {
-    backgroundColor: COLORS.brandRed,
+    backgroundColor: COLORS.primary,
     height: 48,
     borderRadius: RADIUS.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
   reviewButtonText: {
-    color: COLORS.white,
+    color: COLORS.text,
     fontSize: 15,
     fontWeight: '700',
   },

@@ -13,6 +13,8 @@ import { COLORS, SPACING, RADIUS } from '../../constants/theme';
 import { MIN_ORDER_VALUE } from '../../constants/store';
 import { useProdutos } from '../../app/hooks/useProdutos';
 
+const LOGO = require('../../assets/logo.png');
+
 interface StepItensProps {
   items: any[];
   subtotal: number;
@@ -65,7 +67,7 @@ export default function StepItens({
     return (
       <View style={styles.emptyContainer}>
         <View style={styles.emptyIconCircle}>
-          <Ionicons name="bag-handle-outline" size={48} color={COLORS.brandRed} />
+          <Ionicons name="bag-handle-outline" size={48} color={COLORS.primary} />
         </View>
         <Text style={styles.emptyTitle}>Sua sacola está vazia</Text>
         <Text style={styles.emptySubtitle}>
@@ -91,10 +93,10 @@ export default function StepItens({
       {/* 1. Linha da Loja */}
       <View style={styles.storeRow}>
         <View style={styles.storeLogoCircle}>
-          <Ionicons name="restaurant" size={20} color={COLORS.primary} />
+          <Image source={LOGO} style={styles.storeLogoImg} resizeMode="contain" />
         </View>
         <View style={styles.storeInfo}>
-          <Text style={styles.storeName}>Batata Top - Iacanga</Text>
+          <Text style={styles.storeName}>Batata Top</Text>
           <Pressable
             onPress={() => router.push('/cardapio')}
             hitSlop={8}
@@ -145,7 +147,7 @@ export default function StepItens({
                   hitSlop={6}
                   accessibilityLabel="Editar item"
                 >
-                  <Ionicons name="pencil" size={10} color={COLORS.brandRed} />
+                  <Ionicons name="pencil" size={10} color={COLORS.primaryText} />
                 </Pressable>
               </View>
 
@@ -185,7 +187,7 @@ export default function StepItens({
                   <Ionicons
                     name={item.quantity === 1 ? 'trash-outline' : 'remove'}
                     size={14}
-                    color={COLORS.brandRed}
+                    color={item.quantity === 1 ? COLORS.error : COLORS.text}
                   />
                 </Pressable>
 
@@ -197,7 +199,7 @@ export default function StepItens({
                   hitSlop={6}
                   accessibilityLabel="Aumentar quantidade"
                 >
-                  <Ionicons name="add" size={16} color={COLORS.brandRed} />
+                  <Ionicons name="add" size={16} color={COLORS.primary} />
                 </Pressable>
               </View>
             </View>
@@ -237,7 +239,7 @@ export default function StepItens({
                     hitSlop={6}
                     accessibilityLabel={`Adicionar ${prod.nome}`}
                   >
-                    <Ionicons name="add" size={18} color={COLORS.brandRed} />
+                    <Ionicons name="add" size={18} color={COLORS.primary} />
                   </Pressable>
                 </View>
                 <Text style={styles.pecaPrice}>
@@ -275,7 +277,7 @@ export default function StepItens({
 
         {coupon ? (
           <Pressable onPress={onRemoveCoupon} hitSlop={8} accessibilityLabel="Remover cupom">
-            <Text style={styles.couponActionText}>Remover</Text>
+            <Text style={styles.couponRemoveActionText}>Remover</Text>
           </Pressable>
         ) : (
           <Pressable
@@ -350,6 +352,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
+    overflow: 'hidden',
+  },
+  storeLogoImg: {
+    width: '100%',
+    height: '100%',
   },
   storeInfo: {
     flex: 1,
@@ -362,7 +369,7 @@ const styles = StyleSheet.create({
   addMoreLink: {
     fontSize: 13,
     fontWeight: '600',
-    color: COLORS.brandRed,
+    color: COLORS.primaryText,
     marginTop: 2,
   },
   minOrderWarning: {
@@ -424,7 +431,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
+    shadowColor: COLORS.text,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.15,
     shadowRadius: 2,
@@ -523,7 +530,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
+    shadowColor: COLORS.text,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.15,
     shadowRadius: 2,
@@ -567,7 +574,12 @@ const styles = StyleSheet.create({
   couponActionText: {
     fontSize: 14,
     fontWeight: '600',
-    color: COLORS.brandRed,
+    color: COLORS.primaryText,
+  },
+  couponRemoveActionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.error,
   },
   summarySection: {
     marginBottom: SPACING[6],
@@ -638,13 +650,13 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   emptyButton: {
-    backgroundColor: COLORS.brandRed,
+    backgroundColor: COLORS.primary,
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: RADIUS.md,
   },
   emptyButtonText: {
-    color: COLORS.white,
+    color: COLORS.text,
     fontWeight: '700',
     fontSize: 14,
   },

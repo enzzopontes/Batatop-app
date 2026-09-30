@@ -234,7 +234,7 @@ const styles = StyleSheet.create({
   changeActionText: {
     fontSize: 14,
     fontWeight: '600',
-    color: COLORS.brandRed,
+    color: COLORS.primaryText,
   },
   optionsHeader: {
     flexDirection: 'row',
@@ -287,7 +287,7 @@ const styles = StyleSheet.create({
     height: 20,
     borderRadius: 10,
     borderWidth: 2,
-    borderColor: COLORS.brandRed,
+    borderColor: COLORS.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -295,7 +295,7 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: COLORS.brandRed,
+    backgroundColor: COLORS.primary,
   },
   retiradaBanner: {
     backgroundColor: COLORS.grayLight,

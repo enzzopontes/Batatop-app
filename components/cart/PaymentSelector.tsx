@@ -89,7 +89,10 @@ export default function PaymentSelector({
 
       <ScrollView
         style={styles.body}
-        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 40 }]}
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: (insets.bottom > 0 ? insets.bottom : SPACING[4]) + SPACING[4] },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         {tab === 'app' ? (
@@ -301,7 +304,7 @@ const styles = StyleSheet.create({
   },
   tabActive: {
     borderBottomWidth: 2,
-    borderBottomColor: COLORS.brandRed,
+    borderBottomColor: COLORS.primary,
   },
   tabText: {
     fontSize: 14,
@@ -309,7 +312,7 @@ const styles = StyleSheet.create({
     color: COLORS.grayText,
   },
   tabTextActive: {
-    color: COLORS.brandRed,
+    color: COLORS.primaryText,
     fontWeight: '700',
   },
   body: {
@@ -370,13 +373,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   radioOuterSelected: {
-    borderColor: COLORS.darkBorder,
+    borderColor: COLORS.primary,
   },
   radioInnerSelected: {
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: COLORS.darkBorder,
+    backgroundColor: COLORS.primary,
   },
   addNewCardBtn: {
     paddingVertical: 16,
@@ -387,6 +390,6 @@ const styles = StyleSheet.create({
   addNewCardText: {
     fontSize: 14,
     fontWeight: '700',
-    color: COLORS.brandRed,
+    color: COLORS.primaryText,
   },
 });
