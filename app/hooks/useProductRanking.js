@@ -19,15 +19,13 @@ export const useProductRanking = () => {
 
       if (productsError) throw productsError;
 
-      // 2. Busca TODOS os itens vendidos da tabela order_items
-      // Sem o filtro de 30 dias (created_at) para evitar o bug de coluna inexistente
+      // 2. Busca itens mais vendidos via RPC agregada no Postgres (get_product_ranking)
       const { data: salesData, error: salesError } = await supabase
-        .from('order_items')
-        .select('product_id, product_name, quantity');
+        .rpc('get_product_ranking', { p_limit: 50 });
 
       if (salesError) throw salesError;
 
-      // 3. Agrupa e soma as quantidades vendidas por produto
+      // 3. Mapeia quantidades vendidas por produto
       const salesCounts = {};
       
       // Inicializa a contagem para todos os produtos com 0
@@ -35,21 +33,12 @@ export const useProductRanking = () => {
         salesCounts[p.id] = 0;
       });
 
-      // Conta as vendas dos itens de pedido
+      // Conta as vendas dos itens retornados pela RPC
       if (salesData && salesData.length > 0) {
         salesData.forEach(item => {
-          const qty = Number(item.quantity) || 1;
-          
+          const qty = Number(item.total_quantity ?? item.total_sold ?? item.quantity ?? 0);
           if (item.product_id && salesCounts[item.product_id] !== undefined) {
-            salesCounts[item.product_id] += qty;
-          } else if (item.product_name) {
-            // Fallback robusto por nome caso o product_id não exista/esteja nulo
-            const matched = productsData.find(
-              p => p.name.trim().toLowerCase() === item.product_name.trim().toLowerCase()
-            );
-            if (matched) {
-              salesCounts[matched.id] += qty;
-            }
+            salesCounts[item.product_id] = qty;
           }
         });
       }

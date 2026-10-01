@@ -512,29 +512,29 @@ export function useCheckoutFlow() {
       }
       const finalNotes = notesParts.join(' | ');
 
-      // 3. Insert em orders
+      // 3. Insert em orders (apenas colunas existentes no schema)
       const orderPayload = {
         user_id: session.user.id,
         customer_name: name.trim(),
         customer_phone: phone.trim(),
         customer_address: customerAddress,
         customer_neighborhood: customerNeighborhood,
-        subtotal: subtotalFinal,
-        delivery_fee: deliveryFee,
+        customer_complement:
+          deliveryType === 'delivery' && selectedAddress ? selectedAddress.complement || null : null,
+        total_amount: totalFinal,
         discount_amount: discountFinal,
         coupon_code: coupon?.code || null,
-        total: totalFinal,
         payment_method: paymentMethod,
-        payment_status: paymentInitialStatus,
         status: orderInitialStatus,
         notes: finalNotes || null,
         delivery_type: deliveryType,
         order_number: orderNumber,
         wants_cutlery: wantsCutlery ?? false,
         metadata: {
+          subtotal: subtotalFinal,
+          delivery_fee: deliveryFee,
           cep: deliveryType === 'delivery' && selectedAddress ? selectedAddress.cep : null,
           source: 'mobile_app',
-          delivery_fee: deliveryFee,
           pix: pixDetails,
           card: cardDetails,
         },
@@ -566,12 +566,17 @@ export function useCheckoutFlow() {
       }));
       await supabase.from('order_items').insert(itemRows);
 
-      // 5. Incrementa cupom
+      // 5. Cupom: solução provisória via RPC segura até o webhook assumir na aprovação do pagamento
       if (coupon?.id) {
-        await supabase
-          .from('coupons')
-          .update({ current_uses: (coupon.current_uses ?? 0) + 1 })
-          .eq('id', coupon.id);
+        try {
+          const { error: rpcErr } = await supabase.rpc('apply_coupon_usage_rpc', {
+            p_coupon_id: coupon.id,
+            p_order_id: created.id,
+          });
+          if (rpcErr) console.warn('Erro ao registrar cupom via RPC:', rpcErr);
+        } catch (err) {
+          console.warn('Falha RPC cupom:', err);
+        }
       }
 
       // 6. Push notification admin
