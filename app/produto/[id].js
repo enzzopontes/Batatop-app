@@ -52,9 +52,9 @@ function resolveImage(imageUrl, categoria) {
 }
 
 export default function ProdutoDetail() {
-  const { id } = useLocalSearchParams();
+  const { id, editCartItemId, initialQty, initialObs, initialAdicionais } = useLocalSearchParams();
   const router = useRouter();
-  const { add: addToCart, setHideFloating } = useCart();
+  const { add: addToCart, updateItem, setHideFloating } = useCart();
   const insets = useSafeAreaInsets();
 
   const [produto, setProduto] = useState(null);
@@ -62,13 +62,13 @@ export default function ProdutoDetail() {
   const [bebidas, setBebidas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [useFallback, setUseFallback] = useState(false);
-  const [quantidade, setQuantidade] = useState(1);
+  const [quantidade, setQuantidade] = useState(initialQty ? Math.max(1, Number(initialQty)) : 1);
   // { [adicionalId]: quantidade (0 = não selecionado) }
   const [adicionaisSelecionados, setAdicionaisSelecionados] = useState({});
   // { [bebidaId]: quantidade (0 = não selecionado) } — só vira item do
   // carrinho de fato quando a pessoa aperta "Adicionar" no rodapé.
   const [bebidasSelecionadas, setBebidasSelecionadas] = useState({});
-  const [observacoes, setObservacoes] = useState('');
+  const [observacoes, setObservacoes] = useState(initialObs ? String(initialObs) : '');
 
   // Verificação de endereço (GPS vs endereço selecionado) — ver
   // app/hooks/useAddressVerification.js
@@ -95,6 +95,26 @@ export default function ProdutoDetail() {
       fetchBebidas();
     }
   }, [id]);
+
+  useEffect(() => {
+    if (initialAdicionais) {
+      try {
+        const parsed = JSON.parse(initialAdicionais);
+        if (Array.isArray(parsed)) {
+          const map = {};
+          parsed.forEach((a) => {
+            const key = a.id || a.adicional_id;
+            if (key) {
+              map[key] = (map[key] || 0) + 1;
+            }
+          });
+          setAdicionaisSelecionados(map);
+        }
+      } catch (e) {
+        console.warn('Erro ao parsear initialAdicionais:', e);
+      }
+    }
+  }, [initialAdicionais]);
 
   const fetchProduto = async () => {
     try {
@@ -363,6 +383,18 @@ export default function ProdutoDetail() {
     if (!produto || isAdding) return;
     setIsAdding(true);
     try {
+      if (editCartItemId) {
+        const items = buildCartItems();
+        if (items.length > 0) {
+          updateItem(editCartItemId, items[0]);
+          for (let i = 1; i < items.length; i++) {
+            addToCart(items[i]);
+          }
+        }
+        voltarOuHome();
+        return;
+      }
+
       // Gate de endereço: verifica se o GPS atual bate com o endereço
       // selecionado (raio de 30m — ver app/hooks/useAddressVerification.js).
       // Roda antes do gate de login: sem sessão, o hook devolve
@@ -689,7 +721,7 @@ export default function ProdutoDetail() {
           ) : (
             <Ionicons name="cart-outline" size={20} color="#333" style={{ marginRight: 8 }} />
           )}
-          <Text style={s.botaoAdicionarText}>Adicionar</Text>
+          <Text style={s.botaoAdicionarText}>{editCartItemId ? 'Salvar alterações' : 'Adicionar'}</Text>
           <Text style={s.botaoAdicionarPreco}>{formatPreco(calcularPrecoTotal())}</Text>
         </TouchableOpacity>
       </Animated.View>

@@ -75,9 +75,9 @@ export default function PaymentsScreen() {
         <View style={s.container}>
           <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
 
-          {/* Degrade suave do topo até "Formas de pagamento" igual à foto */}
+          {/* Degradê suave amarelo do topo até "Formas de pagamento" */}
           <LinearGradient
-            colors={['#E8D7DF', '#F5E7ED', '#FFFFFF']}
+            colors={['#FDE68A', '#FEF3C7', '#FFFFFF']}
             locations={[0, 0.45, 1]}
             style={[s.gradientHeader, { height: 160 + insets.top }]}
             pointerEvents="none"

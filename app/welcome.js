@@ -40,7 +40,6 @@ export default function WelcomeScreen() {
       if (existingStatus !== 'granted') {
         const { status } = await safeRequestNotificationPermissions();
         finalStatus = status;
-        console.log('[welcome] status DEPOIS de pedir:', status); // TEMP — remover depois
       }
 
       if (finalStatus !== 'granted') {

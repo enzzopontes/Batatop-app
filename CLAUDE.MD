@@ -41,17 +41,27 @@ O backend compartilhado (pagamentos + push de pedidos) está no site **Next.js**
 
 ### Principais Funcionalidades
 
-- **Home / Tela Inicial (`app/index.js`)**: Destaques, cupons de desconto e acesso rápido ao cardápio. Inclui componente de cópia de cupom com feedback visual/haptics.
+- **Home / Tela Inicial (`app/index.js`)**: Destaques, cupons de desconto, categorias e acesso rápido ao cardápio. Inclui componente de cópia de cupom com feedback visual/haptics.
+- **Boas-vindas & Localização (`app/welcome.js` e `app/location.js`)**: Fluxo de onboarding no primeiro acesso, solicitando permissões de notificações e seleção/confirmação da localização do usuário.
 - **Cardápio (`app/cardapio.js`)**: Listagem de produtos com filtros por categoria e busca textual.
-- **Produto (`app/produto/[id].js`)**: Detalhe do produto com seleção de adicionais e observações.
-- **Carrinho (`app/cart.js`)**: Visualização, edição de quantidades e remoção de itens.
-- **Checkout (`app/checkout.tsx`)**: Fluxo completo de finalização de pedido — endereço, tipo de entrega (delivery ou retirada), método de pagamento (Dinheiro, PIX, Cartão de Crédito, Cartão de Débito), integração com Mercado Pago (Checkout Transparente) e cartões salvos. Ao concluir, chama `notifyAdminNewOrder(orderId)`.
-- **Pedidos (`app/pedidos.js` + `app/pedidos/[id].js`)**: Histórico de pedidos do usuário com detalhe por pedido.
-- **Perfil (`app/profile.js`)**: Dados do usuário, endereço padrão, método de pagamento preferido, cartões salvos e logout. Sub-telas em `app/profile-data.js` e `app/profile-security.js`.
-- **Endereços (`app/addresses.js`)**: Gestão de endereços com integração ViaCEP e validação geográfica (somente Iacanga-SP).
+- **Produto (`app/produto/[id].js`)**: Detalhe do produto com seleção de adicionais e observações. Integração com intenção pendente de login (`pendingCartIntent.js`).
+- **Sacola / Checkout Unificado (`app/cart.tsx`)**: Fluxo unificado de sacola e checkout em página única com 3 etapas (`itens` ➔ `entrega` ➔ `pagamento`), orquestrado por `components/cart/useCheckoutFlow.ts`. Valida pedido mínimo (`MinOrderSheet`), tipo de entrega (delivery ou retirada), cálculo de frete, aplicação de cupons, seleção/cadastro de endereços, escolha de formas de pagamento (PIX, Cartão de Crédito/Débito online via Mercado Pago Checkout Transparente e cartões salvos, ou dinheiro/máquina na entrega). Ao concluir com sucesso, chama `notifyAdminNewOrder(orderId)`.
+- **Pedidos (`app/pedidos.js` + `app/pedidos/[id].js`)**: Histórico de pedidos do usuário e detalhe por pedido com suporte a Realtime `UPDATE`, fallback polling, exibição de tempo estimado (`metadata.eta_minutes`) e ocultação dinâmica do QR Code Pix após aprovação.
+- **Perfil (`app/profile/`)**: Hub do usuário (`index.js`) com sub-rotas dedicadas:
+  - `data.js` (dados cadastrais)
+  - `informacoes-pessoais.js` (nome, telefone, CPF, aniversário)
+  - `informacoes-acesso.js` (e-mail, alteração de credenciais)
+  - `payments.js` (métodos de pagamento preferidos e cartões salvos)
+  - `security.js` (segurança e opções de conta)
+  - `gerenciar-notificacoes.js` (preferências de push notifications salvas em `user_push_tokens`)
+  - `dispositivos-conectados.js` (sessões ativas)
+- **Cupons (`app/cupons.js`)**: Visualização de cupons disponíveis, validação e aplicação manual de códigos promocionais via `useCoupons`.
+- **Notificações (`app/notifications.js`)**: Central de alertas e notificações para o usuário.
+- **Central de Ajuda (`app/ajuda/`)**: FAQ e suporte categorizado (`index.js`, `artigo/[id].js`, `categoria/[id].js`).
+- **Endereços (`app/addresses.js`)**: Gestão de endereços com integração ViaCEP, validação geográfica (Iacanga-SP) e verificação do endereço ativo (`addressVerification.js`).
 - **Admin (`app/admin/`)**: Painel administrativo com dashboard, gestão de pedidos, produtos, cupons, promoções, caixa, feedbacks e imagens.
 - **Push de novo pedido (admin)**: Notificação **real do sistema** (Expo Push) — funciona com app fechado. Mostra cliente, itens e adicionais; toque abre `/admin/pedidos`.
-- **Autenticação (`app/auth/`)**: Telas de login (`login.js`), cadastro (`register.js`), autenticação via telefone (`telefone.js`) e código (`codigo.js`) via Supabase Auth.
+- **Autenticação (`app/auth/`)**: Telas de login (`login.js`), cadastro (`register.js`), telefone (`telefone.js`) e código (`codigo.js`) via Supabase Auth. Suporte a soft-logout e disparo global do `AuthBottomSheet`.
 
 ---
 
@@ -60,55 +70,81 @@ O backend compartilhado (pagamentos + push de pedidos) está no site **Next.js**
 ```
 batata-top/                          # App mobile (este repositório)
 ├── app/
-│   ├── _layout.js                   # Layout raiz + AdminPushRegistration
+│   ├── _layout.js                   # Layout raiz + Providers + Header + TabBar + CartBar + AdminPushRegistration
 │   ├── index.js                     # Home
-│   ├── cardapio.js
-│   ├── cart.js
-│   ├── checkout.tsx                 # Finaliza pedido + notifyAdminNewOrder()
-│   ├── pedidos.js
-│   ├── addresses.js
-│   ├── profile.js
-│   ├── profile-data.js
-│   ├── profile-security.js
+│   ├── welcome.js                   # Onboarding: tela de boas-vindas e permissão de push
+│   ├── location.js                  # Onboarding: seleção/confirmação de localização
+│   ├── cardapio.js                  # Listagem de produtos e filtros
+│   ├── cart.tsx                     # Sacola/Checkout unificado (3 etapas: itens, entrega, pagamento)
+│   ├── cupons.js                    # Cupons disponíveis e validação de cupom
+│   ├── notifications.js             # Central de notificações do usuário
+│   ├── pedidos.js                   # Lista de pedidos (Realtime + polling)
+│   ├── addresses.js                 # Gestão de endereços
+│   ├── produto/[id].js              # Detalhe do produto e adicionais
+│   ├── pedidos/[id].js              # Detalhe do pedido (Pix QR, ETA, status)
+│   ├── ajuda/                       # Central de ajuda
+│   │   ├── index.js
+│   │   ├── categoria/[id].js
+│   │   └── artigo/[id].js
 │   ├── auth/                        # login.js, register.js, codigo.js, telefone.js
-│   ├── produto/[id].js
-│   ├── pedidos/[id].js
-│   ├── hooks/                       # useProdutos.js, useProductRanking.js, usePedidos.js, useGeolocationWithMaps.js, usePlacesAutocomplete.js
-│   └── admin/
+│   ├── hooks/                       # useProdutos, useProductRanking, usePedidos, useCoupons, useAddressVerification, useGeolocationWithMaps, usePlacesAutocomplete
+│   ├── profile/                     # Hub de perfil e sub-telas
+│   │   ├── index.js                 # Tela principal de perfil
+│   │   ├── data.js, security.js
+│   │   ├── informacoes-pessoais.js, informacoes-acesso.js
+│   │   ├── payments.js              # Gestão de cartões e métodos salvos
+│   │   ├── gerenciar-notificacoes.js # Notificações e push do cliente
+│   │   └── dispositivos-conectados.js
+│   └── admin/                       # Painel administrativo
 │       ├── _layout.js
 │       ├── index.js                 # Re-registra push token ao abrir painel
 │       ├── pedidos.js               # Polling 10s
 │       ├── produtos.js, cupons.js, promocoes.js
 │       ├── caixa.js                 # Polling 30s
-│       ├── feedbacks.js, imagens.js
+│       └── feedbacks.js, imagens.js
 ├── components/
-│   ├── AddressCard.js
-│   ├── AddressModal.js
+│   ├── AddressCard.js, AddressModal.js
+│   ├── AddressVerificationModal.tsx, NoAddressModal.tsx
 │   ├── AdminPushRegistration.js     # Registro Expo Push + deep link ao tocar
-│   ├── AnimatedSplash.js
-│   ├── AuthBottomSheet.tsx
-│   ├── BannerCarousel.js
-│   ├── EntrarBanner.tsx
-│   ├── HelpModal.js
-│   ├── LogoutRememberModal.js
-│   ├── MapSelector.tsx
-│   └── ThemedAlert.js
-├── constants/theme.js
+│   ├── AnimatedSplash.js            # Animação/vídeo de abertura
+│   ├── AuthBottomSheet.tsx          # Modal de login/cadastro rápido
+│   ├── BannerCarousel.js            # Carrossel de banners da home
+│   ├── CardWizard.js                # Fluxo guiado de adição de cartão de crédito/débito
+│   ├── CartBar.js                   # Barra flutuante inferior do carrinho
+│   ├── CategoriasFlutuantes.js      # Pílulas de categoria flutuantes no scroll
+│   ├── CouponCard.jsx, FreeCouponCard.jsx
+│   ├── EntrarBanner.tsx             # Banner de login para visitantes
+│   ├── HelpModal.js, LogoutRememberModal.js
+│   ├── MapSelector.tsx, ThemedAlert.js
+│   ├── ProfileAccordionItem.js, ProfileSuccessToast.js
+│   └── cart/                        # Subcomponentes do checkout unificado
+│       ├── CartHeader.tsx, CartFooter.tsx
+│       ├── StepItens.tsx, StepEntrega.tsx, StepPagamento.tsx
+│       ├── PaymentSelector.tsx, MinOrderSheet.tsx
+│       └── useCheckoutFlow.ts       # Hook orquestrador do checkout
+├── constants/
+│   ├── theme.js                     # Design System (cores, tipografia, espaçamentos)
+│   ├── store.js                     # MIN_ORDER_VALUE, DELIVERY_FEE, STORE_ADDRESS
+│   └── categorias.js                # Categorias do cardápio
 ├── data/produtos.js                 # LEGADO — mock; produção usa Supabase
 ├── utils/
 │   ├── addressHelpers.js
-│   ├── cartStore.js
+│   ├── addressVerification.js       # ID do endereço ativo persistido
 │   ├── authSession.js               # Soft-logout: ver seção 11
-│   ├── mercadoPago.js
-│   ├── usePaymentCards.ts
-│   ├── paymentPrefs.js
-│   ├── pendingAddress.js
+│   ├── authSheetRequest.js          # Disparo global do AuthBottomSheet
+│   ├── cartStore.js                 # Observer pattern + cartItemId
+│   ├── isAdmin.js                   # isAdminUser(user) e checkIsAdmin(userId)
+│   ├── mercadoPago.js               # Checkout Transparente MP
 │   ├── notificationSound.js         # Som new_order.mp3 (foreground)
-│   ├── pushNotifications.js         # Permissões, canal Android, token, listeners
 │   ├── notifyNewOrder.js            # Chama Edge Function ou Vercel API
 │   ├── orderNotificationContent.js  # Formato título/corpo da push
-│   ├── isAdmin.js                   # isAdminUser(user)
-│   └── supabase.js
+│   ├── paymentPrefs.js              # Preferências de pagamento persistidas
+│   ├── pendingAddress.js            # Endereço temporário antes do login
+│   ├── pendingCartIntent.js         # Intenção de adição ao carrinho pós-login
+│   ├── pushNotifications.js         # Push notifications para ADMIN
+│   ├── userPushNotifications.js     # Push notifications para CLIENTES
+│   ├── supabase.js
+│   └── usePaymentCards.ts           # Gerenciamento de cartões (tokenização MP)
 ├── supabase/
 │   ├── migrations/
 │   │   └── 20250629120000_admin_push_tokens.sql
@@ -122,7 +158,7 @@ batata-top/                          # App mobile (este repositório)
 ├── supabaseConfig.js
 ├── app.json                         # Plugin expo-notifications configurado
 ├── .env
-└── package.json                     # inclui expo-notifications, expo-device
+└── package.json                     # inclui expo-notifications, expo-device, react-native-keyboard-controller
 
 Site-da-mara/                        # Site Next.js + API Vercel (repositório separado)
 ├── app/api/
@@ -197,13 +233,17 @@ const headerHeight = useHeaderHeight();
 
 ### Gerenciamento de Estado
 
-**Carrinho (`utils/cartStore.js`):** Observer pattern + hook `useCart()`. `cartItemId` = `${product.id}-${adIds}-${observacoes}`.
+**Sacola e Checkout Unificado (`app/cart.tsx` + `components/cart/useCheckoutFlow.ts`):** Fluxo em 3 etapas (`itens`, `entrega`, `pagamento`). O hook `useCheckoutFlow` orquestra itens, endereço ativo, cálculo de frete, aplicação de cupons, valor mínimo (`MinOrderSheet`), escolha/cadastro de cartões (`CardWizard`) e submissão com Mercado Pago.
 
-**Backend:** Hooks em `app/hooks/` (`useProdutos.js`, `useProductRanking.js`, `usePedidos.js`, `useGeolocationWithMaps.js`, `usePlacesAutocomplete.js`).
+**Carrinho em memória (`utils/cartStore.js`):** Observer pattern + hook `useCart()`. `cartItemId` = `${product.id}-${adIds}-${observacoes}`.
+
+**Backend / Dados:** Hooks em `app/hooks/` (`useProdutos.js`, `useProductRanking.js`, `usePedidos.js`, `useCoupons.js`, `useAddressVerification.js`, `useGeolocationWithMaps.js`, `usePlacesAutocomplete.js`).
 
 **Cartões (`utils/usePaymentCards.ts`):** Tokenização client-side + tabela `payment_cards`.
 
 **Preferências (`utils/paymentPrefs.js`):** Método/cartão preferido via `expo-secure-store`.
+
+**Regras da Loja (`constants/store.js`):** `MIN_ORDER_VALUE` (pedido mínimo), `DELIVERY_FEE` (taxa de entrega fixa), `STORE_ADDRESS` (endereço de retirada).
 
 ### Atualização de Dados
 
@@ -237,6 +277,9 @@ const headerHeight = useHeaderHeight();
 | `uploaded_images` | Imagens admin |
 | `feedbacks` | Feedbacks |
 | `admin_push_tokens` | Tokens Expo Push dos admins |
+| `user_push_tokens` | Tokens Expo Push dos clientes (pedidos e promoções) |
+
+> **Observação sobre `orders`:** suporte a campo `metadata.eta_minutes` para estimativa dinâmica de entrega e persistência dos dados de pagamento (Mercado Pago ID, Pix QR, etc.).
 
 ### Migration push (obrigatória)
 
@@ -292,8 +335,8 @@ Notificação **real do sistema operacional** (como WhatsApp) — funciona com a
 
 ```
 1. Admin loga no app → aceita permissão → token salvo em admin_push_tokens
-2. Cliente finaliza checkout (app/checkout.tsx)
-3. notifyAdminNewOrder(orderId) é chamado
+2. Cliente finaliza checkout (app/cart.tsx — etapa pagamento)
+3. notifyAdminNewOrder(orderId) é chamado em useCheckoutFlow.ts
 4. POST https://batatatop.vercel.app/api/notify-new-order
 5. Vercel monta mensagem e envia via Expo Push API
 6. Admin recebe notificação na barra do celular + som new_order.mp3
@@ -318,7 +361,7 @@ Notificação **real do sistema operacional** (como WhatsApp) — funciona com a
 | `utils/notifyNewOrder.js` | Edge Function (tenta) → fallback Vercel API |
 | `utils/isAdmin.js` | Quem recebe/registra push |
 | `app/admin/index.js` | Re-sincroniza token ao abrir painel |
-| `app/checkout.tsx` | `notifyAdminNewOrder(created.id)` após insert |
+| `app/cart.tsx` + `useCheckoutFlow.ts` | `notifyAdminNewOrder(created.id)` após insert do pedido |
 | `assets/sounds/new_order.mp3` | Som customizado da push |
 | `app.json` | Plugin `expo-notifications` + permissão `POST_NOTIFICATIONS` (Android) |
 
@@ -368,12 +411,16 @@ Se preferir não usar Vercel para push:
 
 ## 9. Regras de Negócio Importantes
 
-- **Entrega:** Somente **Iacanga-SP** (`app/addresses.js` + ViaCEP).
-- **Tipo de entrega:** `"delivery"` ou `"retirada"`.
-- **Cupons:** Validados no checkout; salvos em `orders.discount_amount` + `coupon_code`.
+- **Entrega:** Somente **Iacanga-SP** (`app/addresses.js` + ViaCEP + validação geográfica).
+- **Tipo de entrega:** `"delivery"` ou `"retirada"`. Endereço obrigatório só para delivery.
+- **Pedido mínimo:** Definido em `constants/store.js` (`MIN_ORDER_VALUE`). Zero = desativado. `MinOrderSheet` bloqueia avanço se não atingido.
+- **Taxa de entrega:** `DELIVERY_FEE` em `constants/store.js` — cobrada somente quando `store_settings.store_status.isDeliveryFeeEnabled` estiver ativo.
+- **Cupons:** Validados no checkout via `useCoupons`; salvos em `orders.discount_amount` + `coupon_code`.
 - **Adicionais:** Na tela do produto; `cartItemId` distingue combinações.
-- **Pagamento:** Access Token MP só no servidor Vercel.
+- **Pagamento:** Access Token MP só no servidor Vercel. Métodos disponíveis: PIX, Cartão de Crédito/Débito (Mercado Pago Checkout Transparente) e Dinheiro/Maquininha (sem integração MP).
 - **Admin:** Sem guard de rota em `/admin` — reforçar com RLS/`user_metadata.role` em produção.
+- **Onboarding:** Fluxo `welcome.js` → `location.js` só no primeiro acesso (controlado por `ALREADY_SEEN_WELCOME_KEY` no AsyncStorage). Solicita permissão de push antes mesmo do login.
+- **Push do cliente:** `userPushNotifications.js` registra token em `user_push_tokens`. O envio real de push de status de pedido para o cliente **ainda não está implementado** (infra pronta, disparo ausente).
 
 ---
 
@@ -607,14 +654,39 @@ import { ThemedAlertHost, showThemedAlert } from '../components/ThemedAlert';
 
 ## 13. Informações para Manutenção
 
-- **Design System:** `constants/theme.js` — nunca hardcodar cores/espaçamentos.
+- **Design System:** `constants/theme.js` — nunca hardcodar cores/espaçamentos. `constants/store.js` para regras da loja.
 - **Imagens:** `useProdutos.js` completa URL do bucket se `image_url` não começa com `http`.
-- **TypeScript:** `checkout.tsx`, `usePaymentCards.ts` — resto JavaScript.
+- **TypeScript:** `cart.tsx`, `components/cart/*.tsx`, `useCheckoutFlow.ts`, `usePaymentCards.ts`, `AddressVerificationModal.tsx`, `NoAddressModal.tsx` — resto JavaScript.
 - **Sem NativeWind:** Estilização 100% `StyleSheet` (README legado menciona Tailwind).
 - **`utils/supabase.js`:** Re-export; prefira `supabaseConfig.js`.
-- **`data/produtos.js`:** Mock legado.
+- **`data/produtos.js`:** Mock legado — não usar em código novo.
 - **Dois repositórios:** App = `batata-top` | Site/API = `Site-da-mara`. Alterações em push ou MP no site exigem deploy Vercel separado.
-- **Testar push:** Celular físico + admin logado + permissão aceita + tabela `admin_push_tokens` criada + site deployado.
+- **Testar push (admin):** Celular físico + admin logado + permissão aceita + tabela `admin_push_tokens` criada + site deployado.
+- **CartBar:** componente flutuante que fica acima da BottomTabBar. Posicionado usando `TabBarHeightContext` — não duplicar o valor de altura da tab bar no componente.
+- **Contexts do `_layout.js`:** `NavContext`, `ScrollYContext`, `HeaderHeightContext`, `TabBarHeightContext`, `HeaderHiddenContext`, `HeaderAnimContext` — todos exportados. Usar os hooks exportados (`useScrollHandler`, `useHeaderHeight`, `useTabBarHeight`, `useHeaderHidden`, `useHeaderAnim`).
+- **AuthBottomSheet global:** qualquer tela pode disparar via `requestAuthSheet()` de `utils/authSheetRequest.js` — não precisa passar `setVisible` por prop.
+- **Branch atual:** `refactor/sacola-pagina-unica` — contém o novo fluxo de sacola unificada.
+
+---
+
+## 14. Padrão: Sacola de Página Única & Fluxo de Checkout Estilo iFood
+
+Refatoração canônica da Sacola (`app/cart.tsx`, `components/cart/*`) seguindo rigorosamente os padrões visuais e ergonômicos do iFood e mantendo 60fps locked:
+
+### Arquitetura e Componentes:
+- **Tab Bar e EntrarBanner ocultos:** `app/_layout.js` oculta de forma real a `BottomTabBar` e `EntrarBanner` na rota `/cart` e `/checkout`.
+- **Cabeçalho da loja:** Proporcional à referência do iFood com logo de 56x56 e nome "Batata Top" em fonte destacada (18px, weight 800) + link "Adicionar mais itens".
+- **Bloco de Pagamento na Sacola:** Container arredondado com header da logo (`assets/batatatopestendida.png`), método atual (com cartão salvo padrão ou Pix/Dinheiro) e linha com parcelamento "1x de R$ XX,XX", abrindo o modal curvo ao toque.
+- **Bloco de Cupom:** Ícone oficial `assets/cuponpretobranco.png`, status do cupom e ação "Adicionar"/"Remover" com cor primária.
+- **Edição de Itens (Lápis 44x44):** Área de toque de 44x44 com ícone lápis de 18px. Navega para `app/produto/[id].js` com `editCartItemId`, `initialQty`, `initialObs` e `initialAdicionais`. Ao salvar, chama `updateItem()` no `cartStore` atualizando o item existente no carrinho sem duplicar.
+- **Rodapé Fixo Branco:** Respeitando `useSafeAreaInsets()`, alinha preço e entrega na MESMA linha ("R$ XX,XX • Entrega grátis" ou "com entrega") e botão "Continuar" em `COLORS.primary`.
+- **Modal "Revise o seu pedido" (`components/cart/ReviseOrderModal.tsx`):** Bottom sheet curvo que resume entrega (estimativa de tempo), endereço, cupom e pagamento. Linhas interativas com atalhos de edição e botão "Fazer pedido" chamando o fluxo real do Supabase e Mercado Pago.
+- **Modal de Pagamento (`components/cart/PaymentModal.tsx`):** Reutiliza o padrão visual do modal de pagamentos do profile, com logo `batatatopestendida.png`, abas "Pagar pelo app" (cartões salvos com tag "Parcele seu pedido", Pix "Aprovação automática" e link "Adicionar novo cartão") e "Pagar na entrega" (Dinheiro, Cartão de Crédito e Débito).
+- **"Peça também" 60fps (`components/cart/PecaTambemList.tsx`):**
+  - Sugestão inteligente: se só tem batata, sugere bebidas + bloco menor de batatas mais pedidas; se só tem bebida, sugere batatas; se tem ambos, sugere extras/sobremesas.
+  - Ordenação por dados reais de venda através do hook `useProductRanking`.
+  - Performance: FlatList horizontal com `getItemLayout`, `initialNumToRender={4}`, `maxToRenderPerBatch={4}`, `windowSize={3}`, `removeClippedSubviews`, `snapToInterval`, `React.memo` nos cards e imagens com cache `memory-disk` via `expo-image`.
+- **Cores:** Zero amarelo escuro/hardcoded; todos os botões e destaques utilizam a cor primária canônica `COLORS.primary` de `constants/theme.js`.
 
 # CLAUDE.md
 

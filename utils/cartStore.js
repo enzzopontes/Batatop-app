@@ -59,6 +59,26 @@ export const cartStore = {
     }
     this.emit();
   },
+  updateCartItem(oldCartItemId, product) {
+    const qty = product.quantidade || product.quantity || 1;
+    const adIds = (product.adicionais || []).map(a => a.id).sort().join('-');
+    const newCartItemId = `${product.id}-${adIds}-${product.observacoes || ''}`;
+
+    const index = cart.findIndex((item) => (item.cartItemId || item.id) === oldCartItemId);
+    if (index !== -1) {
+      // Se já existe outro item igual na sacola (além do que estamos editando), funde as quantidades
+      const otherIndex = cart.findIndex((item, i) => i !== index && (item.cartItemId || item.id) === newCartItemId);
+      if (otherIndex !== -1) {
+        cart[otherIndex].quantity += qty;
+        cart.splice(index, 1);
+      } else {
+        cart[index] = { ...product, cartItemId: newCartItemId, quantity: qty };
+      }
+    } else {
+      this.addToCart(product);
+    }
+    this.emit();
+  },
   removeFromCart(cartItemId) {
     cart = cart.filter((item) => (item.cartItemId || item.id) !== cartItemId);
     this.emit();
@@ -109,6 +129,7 @@ export function useCart() {
     count: cartStore.getCartCount(),
     total: cartStore.getCartTotal(),
     add: (p) => cartStore.addToCart(p),
+    updateItem: (oldId, p) => cartStore.updateCartItem(oldId, p),
     remove: (id) => cartStore.removeFromCart(id),
     updateQty: (id, q) => cartStore.updateQuantity(id, q),
     clear: () => cartStore.clearCart(),

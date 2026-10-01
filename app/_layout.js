@@ -685,8 +685,18 @@ function BottomTabBar({ onHeightChange }) {
 
   // Mesma regra que o Header já usa (isAuthPage) — a tab bar não deve
   // aparecer em cima da tela de login/cadastro, endereços (tela cheia,
-  // estilo iFood) nem da tela de welcome/onboarding.
-  if (pathname.includes('produto') || pathname.includes('auth') || pathname.includes('addresses') || pathname.includes('welcome') || pathname.includes('location') || pathname.includes('cupons') || pathname.includes('payments')) return null;
+  // estilo iFood), sacola/cart, checkout nem da tela de welcome/onboarding.
+  if (
+    pathname.includes('cart') ||
+    pathname.includes('checkout') ||
+    pathname.includes('produto') ||
+    pathname.includes('auth') ||
+    pathname.includes('addresses') ||
+    pathname.includes('welcome') ||
+    pathname.includes('location') ||
+    pathname.includes('cupons') ||
+    pathname.includes('payments')
+  ) return null;
 
   const tabs = [
     { name: 'index',    label: 'Início',   icon: 'home',       iconOutline: 'home-outline' },
@@ -830,7 +840,7 @@ export default function RootLayout() {
             </View>
             <CartBar tabBarHeight={tabBarHeight} />
             <BottomTabBar onHeightChange={setTabBarHeight} />
-            {!pathname.includes('welcome') && !pathname.includes('location') && (
+            {!pathname.includes('welcome') && !pathname.includes('location') && !pathname.includes('cart') && !pathname.includes('checkout') && (
               <EntrarBanner onPress={() => setAuthSheetVisible(true)} tabBarHeight={tabBarHeight} />
             )}
             <AuthBottomSheet visible={authSheetVisible} onClose={() => setAuthSheetVisible(false)} />

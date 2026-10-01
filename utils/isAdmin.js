@@ -4,8 +4,8 @@ export function isAdminUser(user) {
   if (!user) return false;
   return (
     user.email === 'enzzobaraldo2008@gmail.com' ||
-    user.email?.includes('admin') ||
-    user.user_metadata?.role === 'admin'
+    user.email === 'maraysis9010@gmail.com' ||
+    user.app_metadata?.role === 'admin'
   );
 }
 

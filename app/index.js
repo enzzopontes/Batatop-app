@@ -11,9 +11,9 @@ import {
   ToastAndroid,
   Platform,
   Alert,
-  Clipboard,
   Dimensions,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { useRouter, useFocusEffect, Redirect } from 'expo-router';
 import { Image as ExpoImage } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -86,14 +86,7 @@ function CupomCard({ codigo, valor, unidade, descricaoDesconto, validade, usoLab
   const corAnim = useRef(new Animated.Value(0)).current; // 0 = creme normal, 1 = verde copiado
 
   const copiarCodigo = () => {
-    if (Clipboard && Clipboard.setString) {
-      Clipboard.setString(codigo);
-    } else {
-      try {
-        const { default: ExpoClipboard } = require('expo-clipboard');
-        ExpoClipboard.setStringAsync(codigo);
-      } catch (_) {}
-    }
+    Clipboard.setStringAsync(codigo);
     Animated.sequence([
       Animated.timing(scaleAnim, { toValue: 0.95, duration: 80, useNativeDriver: true }),
       Animated.spring(scaleAnim, { toValue: 1, friction: 4, useNativeDriver: true }),

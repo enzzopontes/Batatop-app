@@ -21,7 +21,7 @@ const SAVED_USER_KEY = '@batatatop:savedUser';
 
 // Mesma função de persistência do login.js — mantém "continuar como {nome}"
 // funcionando também pra quem entra por celular.
-const persistSavedUser = async ({ name, phone, refreshToken, email: emailParam }) => {
+const persistSavedUser = async ({ name, phone, email: emailParam }) => {
   try {
     // Usa o email passado (ex: linkedEmail) se houver; senão busca da sessão.
     let email = emailParam || '';
@@ -34,7 +34,6 @@ const persistSavedUser = async ({ name, phone, refreshToken, email: emailParam }
       name,
       email,
       phone,
-      refreshToken,
     };
 
     await AsyncStorage.setItem(SAVED_USER_KEY, JSON.stringify(userData));
@@ -181,10 +180,9 @@ export default function CodigoScreen() {
       const hasEmail = !!data?.user?.email;
 
       if (fullName) {
-        // Conta já completa (login, não cadastro) — refresh_token vem
-        // direto da resposta do verifyOtp. Tanto phone quanto email e nome
+        // Conta já completa (login, não cadastro) — tanto phone quanto email e nome
         // já estão preenchidos.
-        await persistSavedUser({ name: fullName, phone, refreshToken: data?.session?.refresh_token });
+        await persistSavedUser({ name: fullName, phone });
         router.replace('/');
         return;
       }
@@ -211,7 +209,7 @@ export default function CodigoScreen() {
 
     // verifying === 'email' — acabou de confirmar o e-mail vinculado.
     if (fullName) {
-      await persistSavedUser({ name: fullName, phone, refreshToken: data?.session?.refresh_token, email: linkedEmail });
+      await persistSavedUser({ name: fullName, phone, email: linkedEmail });
       router.replace('/');
       return;
     }
@@ -274,10 +272,8 @@ export default function CodigoScreen() {
       return;
     }
 
-    // updateUser não devolve sessão na resposta — busca o refresh_token
-    // atual pra já deixar o "continuar como" funcionando na próxima vez.
     const { data: sessionData } = await supabase.auth.getSession();
-    await persistSavedUser({ name: trimmedName, phone, refreshToken: sessionData?.session?.refresh_token, email: linkedEmail });
+    await persistSavedUser({ name: trimmedName, phone, email: linkedEmail });
     router.replace('/');
   }
 

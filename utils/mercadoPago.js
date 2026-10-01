@@ -1,14 +1,26 @@
 const MERCADO_PAGO_PUBLIC_KEY = process.env.EXPO_PUBLIC_MERCADO_PAGO_PUBLIC_KEY;
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
-async function callBackend(path, body, method = 'POST') {
+async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function callBackend(path, body, method = 'POST', timeoutMs = null) {
   try {
     if (!API_BASE_URL) {
       console.error('[mercadoPago] EXPO_PUBLIC_API_BASE_URL não está configurada');
       return { success: false, error: 'config: EXPO_PUBLIC_API_BASE_URL ausente' };
     }
 
-    const response = await fetch(`${API_BASE_URL}/api/mercadopago/${path}`, {
+    const fetchFn = timeoutMs ? (url, opts) => fetchWithTimeout(url, opts, timeoutMs) : fetch;
+
+    const response = await fetchFn(`${API_BASE_URL}/api/mercadopago/${path}`, {
       method,
       headers: { 'Content-Type': 'application/json' },
       body: method !== 'GET' && method !== 'HEAD' ? JSON.stringify(body) : undefined,
@@ -37,20 +49,23 @@ async function callBackend(path, body, method = 'POST') {
 
 // ── Funções que passam pelo backend (Vercel) com Access Token ────────────────
 
+// Cobrança: sem timeout artificial para não gerar falso negativo com débito real
 export async function createPaymentPreference(amount, orderNumber, itemsList = []) {
   return callBackend('preference', { amount, orderNumber, itemsList });
 }
 
+// Cobrança: sem timeout artificial para não gerar falso negativo com débito real
 export async function createPixPayment(amount, email, name, orderNumber) {
   return callBackend('pix', { amount, email, name, orderNumber });
 }
 
+// Consulta de status: seguro com timeout de 15s
 export async function checkPixStatus(id) {
   try {
     if (!API_BASE_URL) {
       return { success: false, error: 'config: EXPO_PUBLIC_API_BASE_URL ausente' };
     }
-    const response = await fetch(`${API_BASE_URL}/api/mercadopago/pix-status?id=${encodeURIComponent(id)}`);
+    const response = await fetchWithTimeout(`${API_BASE_URL}/api/mercadopago/pix-status?id=${encodeURIComponent(id)}`, {}, 15000);
     const data = await response.json().catch(() => ({}));
     if (!response.ok || !data.success) {
       return {
@@ -66,6 +81,7 @@ export async function checkPixStatus(id) {
   }
 }
 
+// Cobrança: sem timeout artificial para não gerar falso negativo com débito real
 export async function createCardPayment({
   amount,
   token,
@@ -88,16 +104,17 @@ export async function createCardPayment({
   });
 }
 
+// Cadastros e gerenciamento de cartões: seguro com timeout de 15s
 export async function createCustomer({ email, firstName, lastName }) {
-  return callBackend('customer', { email, firstName, lastName });
+  return callBackend('customer', { email, firstName, lastName }, 'POST', 15000);
 }
 
 export async function saveCardToCustomer({ customerId, cardToken }) {
-  return callBackend('save-card', { customerId, cardToken });
+  return callBackend('save-card', { customerId, cardToken }, 'POST', 15000);
 }
 
 export async function deleteCustomerCard({ customerId, cardId }) {
-  return callBackend('delete-card', { customerId, cardId }, 'DELETE');
+  return callBackend('delete-card', { customerId, cardId }, 'DELETE', 15000);
 }
 
 // ── Funções no cliente com Public Key (Checkout Transparente) ────────────────
@@ -122,7 +139,7 @@ export async function tokenizeCard({
     const cleanCardNumber = (cardNumber || '').replace(/\D/g, '');
     const cleanDocNumber = (docNumber || '').replace(/\D/g, '');
 
-    const response = await fetch(`https://api.mercadopago.com/v1/card_tokens?public_key=${MERCADO_PAGO_PUBLIC_KEY}`, {
+    const response = await fetchWithTimeout(`https://api.mercadopago.com/v1/card_tokens?public_key=${MERCADO_PAGO_PUBLIC_KEY}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -140,7 +157,7 @@ export async function tokenizeCard({
           },
         },
       }),
-    });
+    }, 15000);
 
     const data = await response.json().catch(() => ({}));
     if (response.ok) {
@@ -165,7 +182,7 @@ export async function tokenizeSavedCardCvv({ cardId, securityCode }) {
       return { success: false, error: 'config: EXPO_PUBLIC_MERCADO_PAGO_PUBLIC_KEY ausente' };
     }
 
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `https://api.mercadopago.com/v1/card_tokens?public_key=${MERCADO_PAGO_PUBLIC_KEY}`,
       {
         method: 'POST',
@@ -174,7 +191,8 @@ export async function tokenizeSavedCardCvv({ cardId, securityCode }) {
           card_id: cardId,
           security_code: securityCode,
         }),
-      }
+      },
+      15000
     );
 
     const data = await response.json().catch(() => ({}));

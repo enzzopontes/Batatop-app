@@ -112,9 +112,6 @@ export default function Profile() {
         };
 
         await AsyncStorage.setItem(SAVED_USER_KEY, JSON.stringify(userData));
-        console.log('💾 Dados de exibição salvos:', userData);
-      } else {
-        console.log('❌ Sem user.id — nada foi salvo');
       }
     } catch (e) {
       console.error('Erro ao guardar sessão pra lembrar conta:', e);

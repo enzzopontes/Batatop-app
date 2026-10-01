@@ -1,6 +1,6 @@
 import {
   View, Text, ScrollView, StyleSheet, Pressable,
-  ActivityIndicator, Alert, RefreshControl, Modal, Linked, Linking,
+  ActivityIndicator, Alert, RefreshControl, Modal, Linking,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useState, useEffect, useRef, useCallback } from 'react';

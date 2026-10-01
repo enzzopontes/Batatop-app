@@ -1009,7 +1009,9 @@ export default function Addresses() {
       if (editingAddress) {
         addressData.label = form.label ?? null;
         addressData.reference_point = form.reference_point.trim();
-        const { error } = await supabase.from('addresses').update(addressData).eq('id', editingAddress.id);
+        let query = supabase.from('addresses').update(addressData).eq('id', editingAddress.id);
+        if (user?.id) query = query.eq('user_id', user.id);
+        const { error } = await query;
         if (error) throw error;
         setEditingAddress(null);
         setFormInitialValues(null);
@@ -1062,16 +1064,18 @@ export default function Addresses() {
   };
 
   const handleSetDefault = async (id) => {
+    if (!user) return;
     await supabase.from('addresses').update({ is_default: false }).eq('user_id', user.id);
-    await supabase.from('addresses').update({ is_default: true  }).eq('id', id);
+    await supabase.from('addresses').update({ is_default: true  }).eq('id', id).eq('user_id', user.id);
     await fetchAddresses();
   };
 
   const handleDelete = (id) => {
+    if (!user) return;
     showThemedAlert('Remover endereço', 'Tem certeza?', [
       { text: 'Cancelar', style: 'cancel' },
       { text: 'Remover', style: 'destructive', onPress: async () => {
-        await supabase.from('addresses').delete().eq('id', id);
+        await supabase.from('addresses').delete().eq('id', id).eq('user_id', user.id);
         await fetchAddresses();
       }},
     ]);

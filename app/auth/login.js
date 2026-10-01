@@ -54,7 +54,7 @@ const isValidCpf = (digits) => {
 // Salva o essencial pra tela "continuar como [nome]" reconhecer o
 // usuário na próxima vez que o app abrir (mesmo depois de sair/reinstalar
 // e logar de novo).
-const persistSavedUser = async ({ name, email, refreshToken, userId }) => {
+const persistSavedUser = async ({ name, email, userId }) => {
   try {
     // Query profiles pra pegar telefone
     let phone = '';
@@ -71,7 +71,6 @@ const persistSavedUser = async ({ name, email, refreshToken, userId }) => {
       name,
       email,
       phone,
-      refreshToken,
     };
 
     await AsyncStorage.setItem(SAVED_USER_KEY, JSON.stringify(userData));
@@ -232,7 +231,7 @@ export default function LoginScreen() {
       // Usuário já tinha nome salvo (não é o primeiro login) — grava o
       // "continuar como" e segue direto pro sucesso. refresh_token vem
       // direto da resposta do verifyOtp, sem precisar de outra chamada.
-      await persistSavedUser({ name: fullName, email, refreshToken: data?.session?.refresh_token, userId: data?.user?.id });
+      await persistSavedUser({ name: fullName, email, userId: data?.user?.id });
       goToHome();
       return;
     }
@@ -258,10 +257,8 @@ export default function LoginScreen() {
       return;
     }
 
-    // updateUser não devolve sessão na resposta — busca o refresh_token
-    // atual pra já deixar o "continuar como" funcionando na próxima vez.
     const { data: sessionData } = await supabase.auth.getSession();
-    await persistSavedUser({ name: trimmedName, email, refreshToken: sessionData?.session?.refresh_token, userId: sessionData?.session?.user?.id });
+    await persistSavedUser({ name: trimmedName, email, userId: sessionData?.session?.user?.id });
     goToHome();
   };
 

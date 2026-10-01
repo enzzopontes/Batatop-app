@@ -13,6 +13,7 @@ import {
   setPreferredCardId,
 } from '../../utils/paymentPrefs';
 import { usePaymentCards, SavedCard } from '../../utils/usePaymentCards';
+import { useProductRanking } from '../../app/hooks/useProductRanking';
 import {
   createPixPayment,
   chargeWithSavedCard,
@@ -49,10 +50,12 @@ export function useCheckoutFlow() {
   const router = useRouter();
   const { items, total: totalCents, add: addToCart, remove: removeFromCart, updateQty, clear: clearCart, coupon, setCoupon } = useCart();
   const { cards: savedCards, loadCards: loadSavedCards, addCard, savingCard } = usePaymentCards();
+  const { produtos: rankedProducts } = useProductRanking();
 
   // Navigation & Step state
   const [step, setStep] = useState<CheckoutStep>('itens');
   const [showPaymentSelector, setShowPaymentSelector] = useState(false);
+  const [showReviseModal, setShowReviseModal] = useState(false);
   const [showCardWizard, setShowCardWizard] = useState(false);
   const [minOrderSheetVisible, setMinOrderSheetVisible] = useState(false);
 
@@ -79,13 +82,14 @@ export function useCheckoutFlow() {
   const [cardCvv, setCardCvv] = useState('');
   const [cardCpf, setCardCpf] = useState('');
 
-  // Extra options
+  // Extra options (talher obrigatório)
   const [wantsCutlery, setWantsCutlery] = useState<boolean | null>(null);
   const [cashChange, setCashChange] = useState('');
   const [orderNotes, setOrderNotes] = useState('');
 
   // Process / Submission
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Calculations
@@ -177,26 +181,31 @@ export function useCheckoutFlow() {
     }, [loadAddress])
   );
 
-  // Load preferred payment method and saved card on mount
+  // Load preferred payment method and saved card on mount (Item 9: se tiver cartão salvo, já vem selecionado)
   useEffect(() => {
     (async () => {
       try {
+        const cards = await loadSavedCards();
         const savedMethod = await getPreferredPaymentMethod();
-        if (savedMethod) {
-          setPaymentMethod(savedMethod as PaymentMethod);
-        }
-        if (savedMethod === 'cartão de crédito' || savedMethod === 'cartão de débito') {
-          const cards = await loadSavedCards();
-          const preferredCardId = await getPreferredCardId();
+        const preferredCardId = await getPreferredCardId();
+
+        if (cards && cards.length > 0) {
           const match = preferredCardId
             ? cards.find((c) => c.id === preferredCardId)
             : cards.find((c) => c.is_default) || cards[0];
+
           if (match) {
             setSelectedSavedCard(match);
+            setPaymentMethod(match.card_type as PaymentMethod);
             setUseManualCardForm(false);
-          } else {
-            setUseManualCardForm(true);
+            return;
           }
+        }
+
+        if (savedMethod) {
+          setPaymentMethod(savedMethod as PaymentMethod);
+        } else {
+          setPaymentMethod('pix');
         }
       } catch (e) {
         console.error('Erro ao ler preferências de pagamento:', e);
@@ -236,11 +245,15 @@ export function useCheckoutFlow() {
     [savedCards, loadSavedCards]
   );
 
+  const toggleDeliveryType = useCallback(() => {
+    setDeliveryType((prev) => (prev === 'delivery' ? 'retirada' : 'delivery'));
+  }, []);
+
   // Validation
   const validateOrder = (): string | null => {
     if (!name.trim()) return 'Informe seu nome para o pedido';
     if (!phone.trim()) return 'Informe seu telefone (WhatsApp)';
-    if (wantsCutlery === null) return 'Informe se deseja talheres';
+    if (wantsCutlery === null) return 'Por favor, informe se precisa de talheres descartáveis';
     if (deliveryType === 'delivery') {
       if (!selectedAddress) return 'Selecione um endereço para entrega';
       if (!selectedAddress.street || !selectedAddress.number) return 'Endereço de entrega incompleto';
@@ -249,7 +262,7 @@ export function useCheckoutFlow() {
 
     if (paymentMethod === 'cartão de crédito' || paymentMethod === 'cartão de débito') {
       if (selectedSavedCard && !useManualCardForm) {
-        if (!savedCardCvv || savedCardCvv.length < 3) return 'Digite o CVV do cartão salvo para confirmar';
+        if (!savedCardCvv || savedCardCvv.length < 3) return 'Digite o CVV do cartão salvo para confirmar o pedido';
       } else {
         if (!cardName.trim()) return 'Informe o nome impresso no cartão';
         if (cardNumber.replace(/\D/g, '').length < 15) return 'Número de cartão inválido';
@@ -263,17 +276,20 @@ export function useCheckoutFlow() {
 
   // Submit Order
   const submitOrder = async () => {
-    if (submitting) return;
+    if (submittingRef.current || submitting) return;
+    submittingRef.current = true;
 
     // Check effective session
     const session = await getEffectiveSession();
     if (!session?.user) {
+      submittingRef.current = false;
       requestAuthSheet();
       return;
     }
 
     const validationError = validateOrder();
     if (validationError) {
+      submittingRef.current = false;
       setErrorMessage(validationError);
       showThemedAlert('Atenção', validationError);
       return;
@@ -310,30 +326,34 @@ export function useCheckoutFlow() {
           ? selectedAddress.neighborhood
           : STORE_ADDRESS.neighborhood;
 
-function getCardRejectionMessage(statusDetail?: string): string {
-  switch (statusDetail) {
-    case 'cc_rejected_insufficient_amount':
-      return 'Saldo insuficiente';
-    case 'cc_rejected_bad_filled_card_number':
-    case 'cc_rejected_bad_filled_date':
-    case 'cc_rejected_bad_filled_security_code':
-    case 'cc_rejected_bad_filled_other':
-      return 'Confira os dados do cartão';
-    case 'cc_rejected_call_for_authorize':
-      return 'Ligue para o banco para autorizar';
-    case 'cc_rejected_card_disabled':
-      return 'Cartão desabilitado, fale com o banco';
-    case 'cc_rejected_high_risk':
-      return 'Recusado por segurança, tente outra forma';
-    default:
-      return 'Pagamento recusado, tente outro cartão ou forma de pagamento';
-  }
-}
+      function getCardRejectionMessage(statusDetail?: string): string {
+        switch (statusDetail) {
+          case 'cc_rejected_insufficient_amount':
+            return 'Saldo insuficiente';
+          case 'cc_rejected_bad_filled_card_number':
+          case 'cc_rejected_bad_filled_date':
+          case 'cc_rejected_bad_filled_security_code':
+          case 'cc_rejected_bad_filled_other':
+            return 'Dados do cartão incorretos';
+          case 'cc_rejected_call_for_authorize':
+            return 'Autorize a transação junto ao seu banco';
+          case 'cc_rejected_card_disabled':
+            return 'Cartão desabilitado';
+          case 'cc_rejected_duplicated_payment':
+            return 'Pagamento duplicado recentemente';
+          case 'cc_rejected_max_attempts':
+            return 'Limite de tentativas excedido';
+          default:
+            return 'Pagamento recusado pela operadora do cartão';
+        }
+      }
 
+      const email = session.user.email || 'cliente@batatatop.com.br';
       const totalFinal = Math.round(total * 100) / 100;
-      const email = session.user.email || 'cliente@batatatop.com';
+      const subtotalFinal = Math.round(subtotal * 100) / 100;
+      const discountFinal = Math.round(discount * 100) / 100;
 
-      // 2. Cobrança PIX / Cartão ANTES do insert (Regra 7 mantida)
+      // 2. Processa pagamento
       let pixDetails: any = null;
       if (paymentMethod === 'pix') {
         const pixResult = await createPixPayment(totalFinal, email, name.trim(), orderNumber);
@@ -460,48 +480,57 @@ function getCardRejectionMessage(statusDetail?: string): string {
             simulation: cardResult.simulation,
             brand: pmId,
             last4: cardNumber.replace(/\D/g, '').slice(-4),
+            saved_card: false,
           };
         }
       }
 
-      // Notas e troco
-      let finalNotes = orderNotes.trim();
-      if (paymentMethod === 'dinheiro' && cashChange.trim()) {
-        const changeVal = cashChange.trim().replace(/\D/g, '');
-        if (changeVal) {
-          finalNotes = `${finalNotes ? finalNotes + '\n' : ''}* Precisa de troco para R$ ${changeVal},00 *`;
-        }
-      }
-
-      // 3. Determina status do pedido
+      // Determina status inicial do pedido
       let orderInitialStatus = 'pending';
+      let paymentInitialStatus = 'pending';
+
       if (paymentMethod === 'pix') {
-        orderInitialStatus = 'awaiting_payment';
-      } else if (
-        (paymentMethod === 'cartão de crédito' || paymentMethod === 'cartão de débito') &&
-        (cardDetails?.status === 'in_process' || cardDetails?.status === 'pending')
-      ) {
-        orderInitialStatus = 'awaiting_payment';
+        orderInitialStatus = 'pending';
+        paymentInitialStatus = 'pending';
+      } else if (paymentMethod === 'cartão de crédito' || paymentMethod === 'cartão de débito') {
+        if (cardDetails?.status === 'approved') {
+          orderInitialStatus = 'preparing';
+          paymentInitialStatus = 'approved';
+        } else {
+          orderInitialStatus = 'awaiting_payment';
+          paymentInitialStatus = 'in_process';
+        }
+      } else {
+        orderInitialStatus = 'pending';
+        paymentInitialStatus = 'pending';
       }
 
-      // 4. Insert em orders
+      const notesParts: string[] = [];
+      if (orderNotes.trim()) notesParts.push(orderNotes.trim());
+      if (paymentMethod === 'dinheiro' && cashChange.trim()) {
+        notesParts.push(`Troco para R$ ${cashChange.trim()}`);
+      }
+      const finalNotes = notesParts.join(' | ');
+
+      // 3. Insert em orders
       const orderPayload = {
         user_id: session.user.id,
         customer_name: name.trim(),
         customer_phone: phone.trim(),
         customer_address: customerAddress,
         customer_neighborhood: customerNeighborhood,
-        customer_complement:
-          deliveryType === 'delivery' && selectedAddress ? selectedAddress.complement || null : null,
-        payment_method: paymentMethod,
-        total_amount: total,
-        discount_amount: discount,
+        subtotal: subtotalFinal,
+        delivery_fee: deliveryFee,
+        discount_amount: discountFinal,
         coupon_code: coupon?.code || null,
+        total: totalFinal,
+        payment_method: paymentMethod,
+        payment_status: paymentInitialStatus,
         status: orderInitialStatus,
         notes: finalNotes || null,
         delivery_type: deliveryType,
         order_number: orderNumber,
-        wants_cutlery: wantsCutlery,
+        wants_cutlery: wantsCutlery ?? false,
         metadata: {
           cep: deliveryType === 'delivery' && selectedAddress ? selectedAddress.cep : null,
           source: 'mobile_app',
@@ -550,6 +579,7 @@ function getCardRejectionMessage(statusDetail?: string): string {
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       clearCart();
+      setShowReviseModal(false);
       setSubmitting(false);
 
       if (
@@ -566,53 +596,47 @@ function getCardRejectionMessage(statusDetail?: string): string {
       router.replace(`/pedidos/${created.id}`);
     } catch (e: any) {
       console.error('Erro ao finalizar pedido:', e);
-      setSubmitting(false);
       const msg = e?.message || 'Erro inesperado ao criar o pedido. Tente novamente.';
       setErrorMessage(msg);
       showThemedAlert('Erro', msg);
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
     }
   };
 
-  // Step advancement logic
+  // Step advancement / "Continuar" no rodapé abre o modal "Revise o seu pedido"
   const handleContinue = async () => {
-    if (step === 'itens') {
-      if (items.length === 0) return;
-      if (MIN_ORDER_VALUE > 0 && subtotal < MIN_ORDER_VALUE) {
-        setMinOrderSheetVisible(true);
-        return;
-      }
-      const session = await getEffectiveSession();
-      if (!session) {
-        requestAuthSheet();
-        return;
-      }
-      setStep('entrega');
+    if (items.length === 0) return;
+    if (MIN_ORDER_VALUE > 0 && subtotal < MIN_ORDER_VALUE) {
+      setMinOrderSheetVisible(true);
       return;
     }
-
-    if (step === 'entrega') {
-      if (deliveryType === 'delivery' && !selectedAddress) {
-        showThemedAlert(
-          'Endereço necessário',
-          'Por favor, selecione ou cadastre um endereço para entrega em Iacanga-SP.',
-          [
-            { text: 'Cancelar', style: 'cancel' },
-            { text: 'Cadastrar endereço', onPress: () => router.push('/addresses') },
-          ]
-        );
-        return;
-      }
-      setStep('pagamento');
+    const session = await getEffectiveSession();
+    if (!session) {
+      requestAuthSheet();
       return;
     }
-
-    if (step === 'pagamento') {
-      await submitOrder();
+    if (wantsCutlery === null) {
+      showThemedAlert(
+        'Precisa de talheres?',
+        'Por favor, informe se você precisa de talheres descartáveis para a sua refeição.',
+        [
+          { text: 'Não preciso', style: 'cancel', onPress: () => { setWantsCutlery(false); setShowReviseModal(true); } },
+          { text: 'Sim, preciso', onPress: () => { setWantsCutlery(true); setShowReviseModal(true); } },
+        ]
+      );
+      return;
     }
+    setShowReviseModal(true);
   };
 
   // Back handling
   const handleBack = () => {
+    if (showReviseModal) {
+      setShowReviseModal(false);
+      return;
+    }
     if (showPaymentSelector) {
       setShowPaymentSelector(false);
       return;
@@ -621,17 +645,7 @@ function getCardRejectionMessage(statusDetail?: string): string {
       setShowCardWizard(false);
       return;
     }
-    if (step === 'pagamento') {
-      setStep('entrega');
-      return;
-    }
-    if (step === 'entrega') {
-      setStep('itens');
-      return;
-    }
-    if (step === 'itens') {
-      router.back();
-    }
+    router.back();
   };
 
   // Clear cart prompt
@@ -664,10 +678,17 @@ function getCardRejectionMessage(statusDetail?: string): string {
     });
   };
 
-  // Stub onEditItem (Regra 20)
+  // Navega para produto em modo de edição (Item 7)
   const onEditItem = (item: any) => {
-    // TODO: Edição de item na sacola não suportada pelo modelo atual (item é imutável)
-    console.log('onEditItem stub called for item:', item.cartItemId || item.id);
+    router.push({
+      pathname: `/produto/${item.id}`,
+      params: {
+        editCartItemId: item.cartItemId || item.id,
+        initialQty: String(item.quantity || 1),
+        initialObs: item.observacoes || '',
+        initialAdicionais: JSON.stringify(item.adicionais || []),
+      },
+    });
   };
 
   return {
@@ -682,6 +703,7 @@ function getCardRejectionMessage(statusDetail?: string): string {
     couponInvalidReason,
     deliveryType,
     setDeliveryType,
+    toggleDeliveryType,
     selectedAddress,
     loadingAddress,
     paymentMethod,
@@ -718,6 +740,8 @@ function getCardRejectionMessage(statusDetail?: string): string {
     errorMessage,
     showPaymentSelector,
     setShowPaymentSelector,
+    showReviseModal,
+    setShowReviseModal,
     showCardWizard,
     setShowCardWizard,
     minOrderSheetVisible,
@@ -733,5 +757,6 @@ function getCardRejectionMessage(statusDetail?: string): string {
     updateQty,
     clearCart,
     setCoupon,
+    rankedProducts,
   };
 }

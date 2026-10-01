@@ -122,7 +122,10 @@ export default function NotificationsScreen() {
       );
     }
 
-    if (item.link_url) {
+    if (
+      item.link_url &&
+      (item.link_url.startsWith('https://') || item.link_url.startsWith('batatatop://'))
+    ) {
       Linking.openURL(item.link_url).catch(() => {});
     }
   }

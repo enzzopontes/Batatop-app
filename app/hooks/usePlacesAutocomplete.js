@@ -14,6 +14,12 @@ const UF_PERMITIDA = 'SP';
 const SEARCH_DEBOUNCE_MS = 400;
 const MIN_CHARS = 3;
 
+const NOMINATIM_CONTACT = 'contato@batatatop.com.br';
+const NOMINATIM_HEADERS = {
+  'Accept-Language': 'pt-BR',
+  'User-Agent': `BatataTopApp/1.0 (${NOMINATIM_CONTACT})`,
+};
+
 export default function usePlacesAutocomplete() {
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState([]);
@@ -46,9 +52,9 @@ export default function usePlacesAutocomplete() {
       setLoading(true);
       try {
         const q = encodeURIComponent(`${trimmed}, ${CIDADE_PERMITIDA}, ${UF_PERMITIDA}, Brasil`);
-        const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${q}&addressdetails=1&limit=6&countrycodes=br`;
+        const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${q}&addressdetails=1&limit=6&countrycodes=br&email=${encodeURIComponent(NOMINATIM_CONTACT)}`;
         const res = await fetch(url, {
-          headers: { 'Accept-Language': 'pt-BR' },
+          headers: NOMINATIM_HEADERS,
           signal: controller.signal,
         });
         const data = await res.json();

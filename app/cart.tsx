@@ -1,21 +1,21 @@
 import React, { useEffect } from 'react';
 import { View, StyleSheet, BackHandler, StatusBar } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import { useRouter } from 'expo-router';
 import { COLORS } from '../constants/theme';
 import { ThemedAlertHost } from '../components/ThemedAlert';
 import { useCheckoutFlow } from '../components/cart/useCheckoutFlow';
 import CartHeader from '../components/cart/CartHeader';
 import CartFooter from '../components/cart/CartFooter';
 import StepItens from '../components/cart/StepItens';
-import StepEntrega from '../components/cart/StepEntrega';
-import StepPagamento from '../components/cart/StepPagamento';
-import PaymentSelector from '../components/cart/PaymentSelector';
+import PaymentModal from '../components/cart/PaymentModal';
+import ReviseOrderModal from '../components/cart/ReviseOrderModal';
 import MinOrderSheet from '../components/cart/MinOrderSheet';
 import CardWizard from '../components/CardWizard';
 
 export default function CartScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const flow = useCheckoutFlow();
 
   // Android hardware back handler
@@ -27,100 +27,6 @@ export default function CartScreen() {
     const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
     return () => sub.remove();
   }, [flow]);
-
-  // Render current step component
-  const renderStep = () => {
-    switch (flow.step) {
-      case 'itens':
-        return (
-          <Animated.View
-            key="step-itens"
-            entering={FadeIn.duration(200)}
-            exiting={FadeOut.duration(200)}
-            style={styles.stepContainer}
-          >
-            <StepItens
-              items={flow.items}
-              subtotal={flow.subtotal}
-              deliveryFee={flow.deliveryFee}
-              discount={flow.discount}
-              total={flow.total}
-              coupon={flow.coupon}
-              deliveryType={flow.deliveryType}
-              onUpdateQty={flow.updateQty}
-              onRemoveItem={flow.removeFromCart}
-              onRemoveCoupon={() => flow.setCoupon(null)}
-              onAddQuickItem={flow.handleAddQuickItem}
-              onEditItem={flow.onEditItem}
-            />
-          </Animated.View>
-        );
-      case 'entrega':
-        return (
-          <Animated.View
-            key="step-entrega"
-            entering={FadeIn.duration(200)}
-            exiting={FadeOut.duration(200)}
-            style={styles.stepContainer}
-          >
-            <StepEntrega
-              deliveryType={flow.deliveryType}
-              setDeliveryType={flow.setDeliveryType}
-              selectedAddress={flow.selectedAddress}
-              loadingAddress={flow.loadingAddress}
-            />
-          </Animated.View>
-        );
-      case 'pagamento':
-        return (
-          <Animated.View
-            key="step-pagamento"
-            entering={FadeIn.duration(200)}
-            exiting={FadeOut.duration(200)}
-            style={styles.stepContainer}
-          >
-            <StepPagamento
-              paymentMethod={flow.paymentMethod}
-              selectedSavedCard={flow.selectedSavedCard}
-              savedCardCvv={flow.savedCardCvv}
-              setSavedCardCvv={flow.setSavedCardCvv}
-              useManualCardForm={flow.useManualCardForm}
-              setUseManualCardForm={flow.setUseManualCardForm}
-              cardName={flow.cardName}
-              setCardName={flow.setCardName}
-              cardNumber={flow.cardNumber}
-              setCardNumber={flow.setCardNumber}
-              cardExpiry={flow.cardExpiry}
-              setCardExpiry={flow.setCardExpiry}
-              cardCvv={flow.cardCvv}
-              setCardCvv={flow.setCardCvv}
-              cardCpf={flow.cardCpf}
-              setCardCpf={flow.setCardCpf}
-              wantsCutlery={flow.wantsCutlery}
-              setWantsCutlery={flow.setWantsCutlery}
-              cashChange={flow.cashChange}
-              setCashChange={flow.setCashChange}
-              orderNotes={flow.orderNotes}
-              setOrderNotes={flow.setOrderNotes}
-              name={flow.name}
-              setName={flow.setName}
-              phone={flow.phone}
-              setPhone={flow.setPhone}
-              subtotal={flow.subtotal}
-              deliveryFee={flow.deliveryFee}
-              discount={flow.discount}
-              total={flow.total}
-              coupon={flow.coupon}
-              deliveryType={flow.deliveryType}
-              onRemoveCoupon={() => flow.setCoupon(null)}
-              onOpenPaymentSelector={() => flow.setShowPaymentSelector(true)}
-            />
-          </Animated.View>
-        );
-      default:
-        return null;
-    }
-  };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -143,18 +49,6 @@ export default function CartScreen() {
             flow.setShowCardWizard(false);
           }}
         />
-      ) : flow.showPaymentSelector ? (
-        <PaymentSelector
-          currentMethod={flow.paymentMethod}
-          selectedCard={flow.selectedSavedCard}
-          savedCards={flow.savedCards}
-          onSelectPayment={flow.selectPaymentMethod}
-          onAddNewCard={() => {
-            flow.setShowPaymentSelector(false);
-            flow.setShowCardWizard(true);
-          }}
-          onBack={() => flow.setShowPaymentSelector(false)}
-        />
       ) : (
         <>
           <CartHeader
@@ -164,18 +58,85 @@ export default function CartScreen() {
             showClear={flow.items.length > 0}
           />
 
-          <View style={styles.content}>{renderStep()}</View>
+          <View style={styles.content}>
+            <StepItens
+              items={flow.items}
+              subtotal={flow.subtotal}
+              deliveryFee={flow.deliveryFee}
+              discount={flow.discount}
+              total={flow.total}
+              coupon={flow.coupon}
+              deliveryType={flow.deliveryType}
+              paymentMethod={flow.paymentMethod}
+              selectedSavedCard={flow.selectedSavedCard}
+              wantsCutlery={flow.wantsCutlery}
+              setWantsCutlery={flow.setWantsCutlery}
+              rankedProducts={flow.rankedProducts}
+              onUpdateQty={flow.updateQty}
+              onRemoveItem={flow.removeFromCart}
+              onRemoveCoupon={() => flow.setCoupon(null)}
+              onAddQuickItem={flow.handleAddQuickItem}
+              onEditItem={flow.onEditItem}
+              onOpenPaymentSelector={() => flow.setShowPaymentSelector(true)}
+            />
+          </View>
 
           {flow.items.length > 0 && (
             <CartFooter
               step={flow.step}
               total={flow.total}
               deliveryType={flow.deliveryType}
+              deliveryFee={flow.deliveryFee}
               itemCount={flow.items.reduce((s, i) => s + (i.quantity || 1), 0)}
               submitting={flow.submitting}
               onContinue={flow.handleContinue}
             />
           )}
+
+          {/* Modal "Revise o seu pedido" (Imagem 1) */}
+          <ReviseOrderModal
+            visible={flow.showReviseModal}
+            total={flow.total}
+            deliveryType={flow.deliveryType}
+            selectedAddress={flow.selectedAddress}
+            coupon={flow.coupon}
+            paymentMethod={flow.paymentMethod}
+            selectedSavedCard={flow.selectedSavedCard}
+            savedCardCvv={flow.savedCardCvv}
+            setSavedCardCvv={flow.setSavedCardCvv}
+            wantsCutlery={flow.wantsCutlery}
+            setWantsCutlery={flow.setWantsCutlery}
+            submitting={flow.submitting}
+            onClose={() => flow.setShowReviseModal(false)}
+            onSubmitOrder={flow.submitOrder}
+            onEditAddress={() => {
+              flow.setShowReviseModal(false);
+              router.push('/addresses');
+            }}
+            onEditCoupon={() => {
+              flow.setShowReviseModal(false);
+              router.push('/cupons');
+            }}
+            onEditPayment={() => {
+              flow.setShowReviseModal(false);
+              flow.setShowPaymentSelector(true);
+            }}
+            onToggleDeliveryType={flow.toggleDeliveryType}
+          />
+
+          {/* Modal de Pagamento estilo profile (Imagens 3 e 4) */}
+          <PaymentModal
+            visible={flow.showPaymentSelector}
+            currentMethod={flow.paymentMethod}
+            selectedCard={flow.selectedSavedCard}
+            savedCards={flow.savedCards}
+            onClose={() => flow.setShowPaymentSelector(false)}
+            onSelectPayment={flow.selectPaymentMethod}
+            onAddNewCard={() => {
+              flow.setShowPaymentSelector(false);
+              flow.setShowCardWizard(true);
+            }}
+          />
         </>
       )}
 
@@ -194,9 +155,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
   },
   content: {
-    flex: 1,
-  },
-  stepContainer: {
     flex: 1,
   },
 });
