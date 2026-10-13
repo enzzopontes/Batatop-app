@@ -1,6 +1,6 @@
 -- ============================================================================
--- SCRIPT 015: Permissões Completas de Catálogo, Feedbacks, Cartões e Imagens
--- Batata Top Delivery - Hardening e Garantia de Operação para Clientes e Admins
+-- SCRIPT 015: Permissões de Catálogo e Tabelas Secundárias (100% Seguro)
+-- Batata Top Delivery - Políticas RLS com Verificação de Existência de Tabelas
 -- ============================================================================
 
 -- 0. Garantir role de admin confirmada para os dois donos
@@ -9,7 +9,7 @@ SET role = 'admin'
 WHERE lower(email) IN ('enzzobaraldo2008@gmail.com', 'maraysis9010@gmail.com');
 
 -- ----------------------------------------------------------------------------
--- 1. TABELA PRODUCTS (Produtos do cardápio)
+-- 1. TABELA PRODUCTS (Produtos do cardápio - existe com certeza)
 -- ----------------------------------------------------------------------------
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
 
@@ -47,7 +47,7 @@ USING (
 );
 
 -- ----------------------------------------------------------------------------
--- 2. TABELA ADICIONAIS
+-- 2. TABELA ADICIONAIS (existe com certeza)
 -- ----------------------------------------------------------------------------
 ALTER TABLE public.adicionais ENABLE ROW LEVEL SECURITY;
 
@@ -85,7 +85,7 @@ USING (
 );
 
 -- ----------------------------------------------------------------------------
--- 3. TABELA PRODUCT_ADICIONAIS
+-- 3. TABELA PRODUCT_ADICIONAIS (existe com certeza)
 -- ----------------------------------------------------------------------------
 ALTER TABLE public.product_adicionais ENABLE ROW LEVEL SECURITY;
 
@@ -107,7 +107,7 @@ WITH CHECK (
 );
 
 -- ----------------------------------------------------------------------------
--- 4. TABELA COUPONS & STORE_SETTINGS
+-- 4. TABELA COUPONS & STORE_SETTINGS (existem com certeza)
 -- ----------------------------------------------------------------------------
 ALTER TABLE public.coupons ENABLE ROW LEVEL SECURITY;
 
@@ -148,75 +148,43 @@ WITH CHECK (
 );
 
 -- ----------------------------------------------------------------------------
--- 5. TABELA PAYMENT_CARDS (Cartões Salvos dos Clientes)
+-- 5. VERIFICAÇÃO CONDICIONAL SEGURA (Apenas aplica SE a tabela existir no banco):
 -- ----------------------------------------------------------------------------
-ALTER TABLE public.payment_cards ENABLE ROW LEVEL SECURITY;
+DO $$
+BEGIN
+  -- Payment Cards
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'payment_cards') THEN
+    EXECUTE 'ALTER TABLE public.payment_cards ENABLE ROW LEVEL SECURITY';
+    EXECUTE 'DROP POLICY IF EXISTS "Users can view own payment cards" ON public.payment_cards';
+    EXECUTE 'CREATE POLICY "Users can view own payment cards" ON public.payment_cards FOR SELECT TO authenticated USING (auth.uid() = user_id)';
+    EXECUTE 'DROP POLICY IF EXISTS "Users can delete own payment cards" ON public.payment_cards';
+    EXECUTE 'CREATE POLICY "Users can delete own payment cards" ON public.payment_cards FOR DELETE TO authenticated USING (auth.uid() = user_id)';
+  END IF;
 
-DROP POLICY IF EXISTS "Users can view own payment cards" ON public.payment_cards;
-CREATE POLICY "Users can view own payment cards"
-ON public.payment_cards FOR SELECT TO authenticated
-USING (auth.uid() = user_id);
+  -- Feedbacks
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'feedbacks') THEN
+    EXECUTE 'ALTER TABLE public.feedbacks ENABLE ROW LEVEL SECURITY';
+    EXECUTE 'DROP POLICY IF EXISTS "Anyone can insert feedbacks" ON public.feedbacks';
+    EXECUTE 'CREATE POLICY "Anyone can insert feedbacks" ON public.feedbacks FOR INSERT TO public WITH CHECK (true)';
+    EXECUTE 'DROP POLICY IF EXISTS "Admins can view all feedbacks" ON public.feedbacks';
+    EXECUTE 'CREATE POLICY "Admins can view all feedbacks" ON public.feedbacks FOR SELECT TO authenticated USING (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = ''admin'') OR auth.jwt() ->> ''email'' IN (''enzzobaraldo2008@gmail.com'', ''maraysis9010@gmail.com''))';
+    EXECUTE 'DROP POLICY IF EXISTS "Admins can delete feedbacks" ON public.feedbacks';
+    EXECUTE 'CREATE POLICY "Admins can delete feedbacks" ON public.feedbacks FOR DELETE TO authenticated USING (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = ''admin'') OR auth.jwt() ->> ''email'' IN (''enzzobaraldo2008@gmail.com'', ''maraysis9010@gmail.com''))';
+  END IF;
 
-DROP POLICY IF EXISTS "Users can delete own payment cards" ON public.payment_cards;
-CREATE POLICY "Users can delete own payment cards"
-ON public.payment_cards FOR DELETE TO authenticated
-USING (auth.uid() = user_id);
+  -- Uploaded Images
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'uploaded_images') THEN
+    EXECUTE 'ALTER TABLE public.uploaded_images ENABLE ROW LEVEL SECURITY';
+    EXECUTE 'DROP POLICY IF EXISTS "Anyone can view uploaded images" ON public.uploaded_images';
+    EXECUTE 'CREATE POLICY "Anyone can view uploaded images" ON public.uploaded_images FOR SELECT TO public USING (true)';
+    EXECUTE 'DROP POLICY IF EXISTS "Admins can manage uploaded images" ON public.uploaded_images';
+    EXECUTE 'CREATE POLICY "Admins can manage uploaded images" ON public.uploaded_images FOR ALL TO authenticated USING (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = ''admin'') OR auth.jwt() ->> ''email'' IN (''enzzobaraldo2008@gmail.com'', ''maraysis9010@gmail.com'')) WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = ''admin'') OR auth.jwt() ->> ''email'' IN (''enzzobaraldo2008@gmail.com'', ''maraysis9010@gmail.com''))';
+  END IF;
 
--- ----------------------------------------------------------------------------
--- 6. TABELA FEEDBACKS (Avaliações dos Clientes)
--- ----------------------------------------------------------------------------
-ALTER TABLE public.feedbacks ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Anyone can insert feedbacks" ON public.feedbacks;
-CREATE POLICY "Anyone can insert feedbacks"
-ON public.feedbacks FOR INSERT TO public
-WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Admins can view all feedbacks" ON public.feedbacks;
-CREATE POLICY "Admins can view all feedbacks"
-ON public.feedbacks FOR SELECT TO authenticated
-USING (
-  EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
-  OR auth.jwt() ->> 'email' IN ('enzzobaraldo2008@gmail.com', 'maraysis9010@gmail.com')
-);
-
-DROP POLICY IF EXISTS "Admins can delete feedbacks" ON public.feedbacks;
-CREATE POLICY "Admins can delete feedbacks"
-ON public.feedbacks FOR DELETE TO authenticated
-USING (
-  EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
-  OR auth.jwt() ->> 'email' IN ('enzzobaraldo2008@gmail.com', 'maraysis9010@gmail.com')
-);
-
--- ----------------------------------------------------------------------------
--- 7. TABELA USER_PUSH_TOKENS (Tokens de Notificação dos Clientes)
--- ----------------------------------------------------------------------------
-ALTER TABLE public.user_push_tokens ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Users can manage own push tokens" ON public.user_push_tokens;
-CREATE POLICY "Users can manage own push tokens"
-ON public.user_push_tokens FOR ALL TO authenticated
-USING (auth.uid() = user_id)
-WITH CHECK (auth.uid() = user_id);
-
--- ----------------------------------------------------------------------------
--- 8. TABELA UPLOADED_IMAGES (Fotos dos Produtos e Banners)
--- ----------------------------------------------------------------------------
-ALTER TABLE public.uploaded_images ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Anyone can view uploaded images" ON public.uploaded_images;
-CREATE POLICY "Anyone can view uploaded images"
-ON public.uploaded_images FOR SELECT TO public
-USING (true);
-
-DROP POLICY IF EXISTS "Admins can manage uploaded images" ON public.uploaded_images;
-CREATE POLICY "Admins can manage uploaded images"
-ON public.uploaded_images FOR ALL TO authenticated
-USING (
-  EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
-  OR auth.jwt() ->> 'email' IN ('enzzobaraldo2008@gmail.com', 'maraysis9010@gmail.com')
-)
-WITH CHECK (
-  EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
-  OR auth.jwt() ->> 'email' IN ('enzzobaraldo2008@gmail.com', 'maraysis9010@gmail.com')
-);
+  -- User Push Tokens (Se a tabela não existir, NÃO faz nada e NÃO dá erro!)
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'user_push_tokens') THEN
+    EXECUTE 'ALTER TABLE public.user_push_tokens ENABLE ROW LEVEL SECURITY';
+    EXECUTE 'DROP POLICY IF EXISTS "Users can manage own push tokens" ON public.user_push_tokens';
+    EXECUTE 'CREATE POLICY "Users can manage own push tokens" ON public.user_push_tokens FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id)';
+  END IF;
+END $$;
