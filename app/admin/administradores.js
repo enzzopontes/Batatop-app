@@ -186,6 +186,8 @@ export default function AdminAdministradores() {
     );
   }
 
+  const isCurrentUserOwner = ['enzzobaraldo2008@gmail.com', 'maraysis9010@gmail.com'].includes(currentEmail?.toLowerCase());
+
   return (
     <View style={s.container}>
       {/* Header — padrão app/admin/cupons.js:348-360 */}
@@ -209,41 +211,52 @@ export default function AdminAdministradores() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#4F46E5']} />}
       >
-        {/* Card: Adicionar Administrador — padrão app/admin/index.js:491-509 */}
-        <View style={s.sectionCard}>
-          <Text style={s.sectionTitle}>Adicionar Novo Administrador</Text>
-          <Text style={s.sectionDesc}>Digite o e-mail da pessoa para conceder permissões administrativas.</Text>
+        {/* Card: Adicionar Administrador (Apenas Donos) */}
+        {isCurrentUserOwner ? (
+          <View style={s.sectionCard}>
+            <Text style={s.sectionTitle}>Adicionar Novo Administrador</Text>
+            <Text style={s.sectionDesc}>Digite o e-mail da pessoa para conceder permissões administrativas.</Text>
 
-          <View style={s.inputContainer}>
-            <Ionicons name="mail-outline" size={18} color="#9CA3AF" style={s.inputIcon} />
-            <TextInput
-              style={s.input}
-              value={newEmail}
-              onChangeText={setNewEmail}
-              placeholder="novo.administrador@email.com"
-              placeholderTextColor="#9CA3AF"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              editable={!submitting}
-            />
+            <View style={s.inputContainer}>
+              <Ionicons name="mail-outline" size={18} color="#9CA3AF" style={s.inputIcon} />
+              <TextInput
+                style={s.input}
+                value={newEmail}
+                onChangeText={setNewEmail}
+                placeholder="novo.administrador@email.com"
+                placeholderTextColor="#9CA3AF"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!submitting}
+              />
+            </View>
+
+            <Pressable
+              style={[s.addBtn, (submitting || !newEmail.trim()) && s.btnDisabled]}
+              onPress={handleAddAdmin}
+              disabled={submitting || !newEmail.trim()}
+            >
+              {submitting ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <>
+                  <Ionicons name="person-add" size={16} color="#FFFFFF" />
+                  <Text style={s.addBtnText}>Adicionar Administrador</Text>
+                </>
+              )}
+            </Pressable>
           </View>
-
-          <Pressable
-            style={[s.addBtn, (submitting || !newEmail.trim()) && s.btnDisabled]}
-            onPress={handleAddAdmin}
-            disabled={submitting || !newEmail.trim()}
-          >
-            {submitting ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
-            ) : (
-              <>
-                <Ionicons name="person-add" size={16} color="#FFFFFF" />
-                <Text style={s.addBtnText}>Adicionar Administrador</Text>
-              </>
-            )}
-          </Pressable>
-        </View>
+        ) : (
+          <View style={[s.sectionCard, { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Ionicons name="ribbon" size={20} color="#D97706" />
+              <Text style={{ fontSize: 13, fontWeight: '700', color: '#92400E', flex: 1 }}>
+                Apenas os proprietários principais podem adicionar ou remover administradores.
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* Lista de Administradores */}
         <View style={s.listHeaderRow}>
@@ -305,8 +318,8 @@ export default function AdminAdministradores() {
                       </View>
                     </View>
 
-                    {/* Botão Remover (oculto para dono e para si mesmo) */}
-                    {!isOwner && !isSelf && (
+                    {/* Botão Remover (oculto para não-donos, para o próprio dono e para si mesmo) */}
+                    {isCurrentUserOwner && !isOwner && !isSelf && (
                       <Pressable
                         style={[s.removeBtn, isRemoving && s.btnDisabled]}
                         onPress={() => handleConfirmRemove(adm)}

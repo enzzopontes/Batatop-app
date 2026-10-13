@@ -23,6 +23,7 @@
         "backgroundColor": "#F97316"
       },
       "package": "com.batatatop.app",
+      "allowBackup": false,
       "edgeToEdgeEnabled": true,
       "permissions": [
         "POST_NOTIFICATIONS"

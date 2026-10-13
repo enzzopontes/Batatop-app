@@ -89,11 +89,21 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const authHeader = req.headers.get('Authorization') || req.headers.get('authorization') || '';
+    const userJwt = authHeader.replace(/^Bearer\s+/i, '');
+
+    if (!userJwt) {
+      return new Response(JSON.stringify({ success: false, error: 'Token de autenticação obrigatório' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+
     const { orderId } = await req.json();
     if (!orderId) {
       return new Response(JSON.stringify({ success: false, error: 'orderId obrigatorio' }), {
         status: 400,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       });
     }
 
@@ -101,6 +111,14 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser(userJwt);
+    if (authError || !user) {
+      return new Response(JSON.stringify({ success: false, error: 'Usuário não autenticado' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
 
     const { data: order, error: orderError } = await supabase
       .from('orders')
@@ -111,7 +129,33 @@ Deno.serve(async (req) => {
     if (orderError || !order) {
       return new Response(JSON.stringify({ success: false, error: 'Pedido nao encontrado' }), {
         status: 404,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+
+    // Verificar se chamador é dono ou admin
+    const ADMIN_EMAILS = ['enzzobaraldo2008@gmail.com', 'maraysis9010@gmail.com'];
+    let isAdmin = ADMIN_EMAILS.includes(user.email || '');
+    if (!isAdmin) {
+      const { data: prof } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+      if (prof?.role === 'admin') {
+        isAdmin = true;
+      }
+    }
+    const isOwner = order.user_id === user.id;
+
+    if (!isAdmin && !isOwner) {
+      return new Response(JSON.stringify({ success: false, error: 'Acesso negado: você não é dono nem admin deste pedido' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+
+    // Anti-duplicação: se já foi notificado, ignora
+    if (order.metadata?.admin_push_sent) {
+      return new Response(JSON.stringify({ success: true, message: 'Notificação já enviada anteriormente', skipped: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       });
     }
 
