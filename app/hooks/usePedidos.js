@@ -111,94 +111,10 @@ export const usePedidos = () => {
     }
   };
 
-  /**
-   * Cria um novo pedido. Estrutura esperada:
-   * {
-   *   user_id, customerName, customerPhone, customerAddress,
-   *   customerNeighborhood, customerComplement, paymentMethod,
-   *   totalAmount, discountAmount, couponCode, notes, items,
-   *   deliveryType: 'delivery' | 'pickup'
-   * }
-   */
-  const criarPedido = async (pedidoData) => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const { data, error: insertError } = await supabase
-        .from('orders')
-        .insert([
-          {
-            user_id: pedidoData.user_id || null,
-            customer_name: pedidoData.customerName,
-            customer_phone: pedidoData.customerPhone,
-            customer_address: pedidoData.customerAddress || '',
-            customer_neighborhood: pedidoData.customerNeighborhood || '',
-            customer_complement: pedidoData.customerComplement || '',
-            payment_method: pedidoData.paymentMethod,
-            total_amount: pedidoData.totalAmount,
-            discount_amount: pedidoData.discountAmount || 0,
-            coupon_code: pedidoData.couponCode || null,
-            notes: pedidoData.notes || '',
-            status: 'pending',
-            delivery_type: pedidoData.deliveryType || 'delivery',
-            metadata: {
-              items: pedidoData.items,
-              statusUpdatedAt: new Date().toISOString(),
-            },
-          },
-        ])
-        .select()
-        .single();
-
-      if (insertError) throw insertError;
-
-      return { success: true, data: mapOrderData(data) };
-    } catch (err) {
-      console.error('Erro ao criar pedido:', err);
-      setError(err.message);
-      return { success: false, error: err.message };
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  /**
-   * Atualiza o status de um pedido.
-   */
-  const atualizarStatusPedido = async (pedidoId, novoStatus) => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const { data, error: updateError } = await supabase
-        .from('orders')
-        .update({
-          status: novoStatus,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', pedidoId)
-        .select()
-        .single();
-
-      if (updateError) throw updateError;
-
-      return { success: true, data: mapOrderData(data) };
-    } catch (err) {
-      console.error('Erro ao atualizar pedido:', err);
-      setError(err.message);
-      return { success: false, error: err.message };
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return {
     loading,
     error,
-    criarPedido,
     buscarPedidosPorUsuario,
     buscarPedidoPorId,
-    atualizarStatusPedido,
   };
 };

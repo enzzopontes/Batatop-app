@@ -22,6 +22,7 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     let mounted = true;
+    let channel = null;
 
     async function verifyAdmin() {
       const { data: { session } } = await supabase.auth.getSession();
@@ -44,6 +45,18 @@ export default function AdminDashboard() {
       if (mounted) {
         syncAdminPushRegistration(user);
         loadDashboard();
+
+        channel = supabase
+          .channel(`admin-dashboard-${Date.now()}`)
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'orders' },
+            (payload) => {
+              if (payload.eventType === 'INSERT' && payload.new?.status === 'awaiting_payment') return;
+              loadDashboard();
+            }
+          )
+          .subscribe();
       }
     }
 
@@ -51,6 +64,9 @@ export default function AdminDashboard() {
 
     return () => {
       mounted = false;
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
     };
   }, []);
 
@@ -76,6 +92,7 @@ export default function AdminDashboard() {
       const { data: orders } = await supabase
         .from('orders')
         .select('status, total_amount')
+        .neq('status', 'awaiting_payment')
         .gte('created_at', today.toISOString());
 
       if (orders) {
@@ -410,6 +427,22 @@ export default function AdminDashboard() {
             </View>
             <Pressable style={[s.menuBtn, { backgroundColor: '#EA580C' }]} onPress={() => router.push('/admin/promocoes')}>
               <Text style={s.menuBtnText}>Acessar Promoção</Text>
+            </Pressable>
+          </View>
+
+          {/* Gerenciar Administradores */}
+          <View style={s.menuCard}>
+            <View style={s.menuCardHeader}>
+              <View style={[s.opIconBg, { backgroundColor: '#EEF2FF' }]}>
+                <Ionicons name="shield-checkmark" size={20} color="#4F46E5" />
+              </View>
+              <View style={s.menuTextCol}>
+                <Text style={s.menuTitle}>Administradores</Text>
+                <Text style={s.menuSub}>Cadastre e remova e-mails de administradores</Text>
+              </View>
+            </View>
+            <Pressable style={[s.menuBtn, { backgroundColor: '#4F46E5' }]} onPress={() => router.push('/admin/administradores')}>
+              <Text style={s.menuBtnText}>Acessar Administradores</Text>
             </Pressable>
           </View>
         </View>

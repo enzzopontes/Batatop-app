@@ -26,6 +26,39 @@ import { MIN_ORDER_VALUE, DELIVERY_FEE, STORE_ADDRESS } from '../../constants/st
 import { showThemedAlert } from '../ThemedAlert';
 
 export type CheckoutStep = 'itens' | 'entrega' | 'pagamento';
+
+import { mapCartItemsToOrderItems } from '../../utils/orderMapper';
+
+const ERROR_MESSAGES: Record<string, string> = {
+  unauthorized: 'Você precisa estar logado para fazer um pedido.',
+  invalid_customer_name: 'Por favor, informe seu nome.',
+  invalid_customer_phone: 'Telefone inválido para contato.',
+  invalid_delivery_type: 'Tipo de entrega inválido.',
+  invalid_payment_method: 'Forma de pagamento inválida.',
+  online_requires_pix_or_card: 'Pagamento online requer PIX ou Cartão.',
+  store_is_closed: 'A loja está fechada no momento.',
+  delivery_disabled: 'O serviço de entrega está temporariamente indisponível.',
+  too_many_awaiting_orders: 'Você já possui 3 pedidos aguardando pagamento. Conclua ou aguarde o cancelamento.',
+  rate_limit_exceeded: 'Muitos pedidos em pouco tempo. Aguarde alguns minutos antes de tentar novamente.',
+  invalid_items: 'Os itens do pedido são inválidos.',
+  invalid_product_id: 'Produto selecionado inválido.',
+  invalid_item_quantity: 'Quantidade de item inválida (deve ser entre 1 e 99).',
+  product_not_found: 'Um dos produtos não foi encontrado em nosso cardápio.',
+  product_unavailable: 'Um dos produtos escolhidos está indisponível no momento.',
+  addon_not_found: 'Adicional não encontrado.',
+  addon_unavailable: 'Um dos adicionais escolhidos está indisponível.',
+  invalid_addon_quantity: 'Quantidade de adicional inválida.',
+  invalid_addon_id: 'Identificador de adicional inválido.',
+  too_many_addons: 'Limite de adicionais excedido.',
+  coupon_not_found: 'Cupom de desconto não encontrado.',
+  coupon_inactive: 'Este cupom não está ativo.',
+  coupon_expired: 'Este cupom já expirou.',
+  coupon_max_uses_reached: 'Este cupom atingiu o limite máximo de utilizações.',
+  coupon_min_order_value_not_met: 'O valor mínimo do pedido para este cupom não foi atingido.',
+  coupon_user_limit_reached: 'Você já atingiu o limite de usos para este cupom.',
+  coupon_not_applicable: 'Este cupom não é aplicável a este pedido.',
+  online_total_must_be_positive: 'O valor total para pagamento online deve ser maior que zero.',
+};
 export type DeliveryType = 'delivery' | 'retirada';
 export type PaymentMethod =
   | 'pix'
@@ -46,6 +79,22 @@ export interface Address {
   is_default: boolean;
 }
 
+function isValidCpf(cpf: string): boolean {
+  const digits = (cpf || '').replace(/\D/g, '');
+  if (digits.length !== 11) return false;
+  if (/^(\d)\1{10}$/.test(digits)) return false;
+  let sum = 0;
+  for (let i = 0; i < 9; i++) sum += Number(digits[i]) * (10 - i);
+  let rest = (sum * 10) % 11;
+  if (rest === 10) rest = 0;
+  if (rest !== Number(digits[9])) return false;
+  sum = 0;
+  for (let i = 0; i < 10; i++) sum += Number(digits[i]) * (11 - i);
+  rest = (sum * 10) % 11;
+  if (rest === 10) rest = 0;
+  return rest === Number(digits[10]);
+}
+
 export function useCheckoutFlow() {
   const router = useRouter();
   const { items, total: totalCents, add: addToCart, remove: removeFromCart, updateQty, clear: clearCart, coupon, setCoupon } = useCart();
@@ -55,7 +104,7 @@ export function useCheckoutFlow() {
   // Navigation & Step state
   const [step, setStep] = useState<CheckoutStep>('itens');
   const [showPaymentSelector, setShowPaymentSelector] = useState(false);
-  const [showReviseModal, setShowReviseModal] = useState(false);
+  const [_showReviseModal, _setShowReviseModal] = useState(false);
   const [showCardWizard, setShowCardWizard] = useState(false);
   const [minOrderSheetVisible, setMinOrderSheetVisible] = useState(false);
 
@@ -82,6 +131,18 @@ export function useCheckoutFlow() {
   const [cardCvv, setCardCvv] = useState('');
   const [cardCpf, setCardCpf] = useState('');
 
+  const showReviseModal = _showReviseModal;
+  const setShowReviseModal = (val: boolean | ((prev: boolean) => boolean)) => {
+    _setShowReviseModal((prev) => {
+      const next = typeof val === 'function' ? val(prev) : val;
+      if (!next) {
+        setSavedCardCvv('');
+        setCardCvv('');
+      }
+      return next;
+    });
+  };
+
   // Extra options (talher obrigatório)
   const [wantsCutlery, setWantsCutlery] = useState<boolean | null>(null);
   const [cashChange, setCashChange] = useState('');
@@ -90,7 +151,13 @@ export function useCheckoutFlow() {
   // Process / Submission
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
+  const pendingOrderIdRef = useRef<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Zerando o ref quando carrinho, método de pagamento ou cupom mudarem
+  useEffect(() => {
+    pendingOrderIdRef.current = null;
+  }, [items, paymentMethod, coupon]);
 
   // Calculations
   const subtotal = totalCents / 100;
@@ -268,7 +335,7 @@ export function useCheckoutFlow() {
         if (cardNumber.replace(/\D/g, '').length < 15) return 'Número de cartão inválido';
         if (cardExpiry.replace(/\D/g, '').length !== 4) return 'Validade do cartão inválida';
         if (cardCvv.length < 3) return 'CVV do cartão inválido';
-        if (cardCpf.replace(/\D/g, '').length !== 11) return 'CPF do titular inválido';
+        if (!isValidCpf(cardCpf)) return 'CPF do titular inválido';
       }
     }
     return null;
@@ -299,33 +366,6 @@ export function useCheckoutFlow() {
     setErrorMessage(null);
 
     try {
-      // 1. Sequencial order_number
-      let orderNumber = 1;
-      try {
-        const { data: maxOrderData } = await supabase
-          .from('orders')
-          .select('order_number')
-          .order('order_number', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (maxOrderData && maxOrderData.order_number) {
-          orderNumber = Number(maxOrderData.order_number) + 1;
-        }
-      } catch {
-        orderNumber = Math.floor(1000 + Math.random() * 9000);
-      }
-
-      const customerAddress =
-        deliveryType === 'delivery' && selectedAddress
-          ? `${selectedAddress.street}, ${selectedAddress.number}`
-          : STORE_ADDRESS.full;
-
-      const customerNeighborhood =
-        deliveryType === 'delivery' && selectedAddress
-          ? selectedAddress.neighborhood
-          : STORE_ADDRESS.neighborhood;
-
       function getCardRejectionMessage(statusDetail?: string): string {
         switch (statusDetail) {
           case 'cc_rejected_insufficient_amount':
@@ -348,161 +388,44 @@ export function useCheckoutFlow() {
         }
       }
 
-      const email = session.user.email || 'cliente@batatatop.com.br';
-      const totalFinal = Math.round(total * 100) / 100;
-      const subtotalFinal = Math.round(subtotal * 100) / 100;
-      const discountFinal = Math.round(discount * 100) / 100;
+      // Verificado em components/cart/StepPagamento.tsx:113-116
+      const isOnline =
+        paymentMethod === 'pix' ||
+        paymentMethod === 'cartão de crédito' ||
+        paymentMethod === 'cartão de débito';
 
-      // 2. Processa pagamento
-      let pixDetails: any = null;
-      if (paymentMethod === 'pix') {
-        const pixResult = await createPixPayment(totalFinal, email, name.trim(), orderNumber);
-        if (pixResult.success) {
-          pixDetails = {
-            qr_code: pixResult.qrCode,
-            qr_code_base64: pixResult.qrCodeBase64,
-            payment_id: pixResult.paymentId,
-            order_id: pixResult.orderId,
-            simulation: pixResult.simulation,
-          };
-        } else {
-          setSubmitting(false);
-          const isConfigErr = pixResult.error?.startsWith('config:');
-          const err = isConfigErr
-            ? 'O serviço de pagamento está temporariamente indisponível. Por favor, tente outra forma de pagamento.'
-            : (pixResult.error || 'Erro ao gerar chave PIX');
-          setErrorMessage(err);
-          showThemedAlert(isConfigErr ? 'Serviço indisponível' : 'Erro no PIX', err);
-          return;
-        }
-      }
+      const customerAddress =
+        deliveryType === 'delivery' && selectedAddress
+          ? `${selectedAddress.street}, ${selectedAddress.number}`
+          : STORE_ADDRESS.full;
 
-      let cardDetails: any = null;
-      if (paymentMethod === 'cartão de crédito' || paymentMethod === 'cartão de débito') {
-        if (selectedSavedCard && !useManualCardForm) {
-          const cardResult = await chargeWithSavedCard({
-            amount: totalFinal,
-            cardId: selectedSavedCard.mp_card_id,
-            securityCode: savedCardCvv,
-            paymentMethodId: selectedSavedCard.payment_method_id,
-            email,
-            name: selectedSavedCard.cardholder_name || name.trim(),
-            docNumber: cardCpf || '00000000000',
-            orderNumber,
-          });
+      const customerNeighborhood =
+        deliveryType === 'delivery' && selectedAddress
+          ? selectedAddress.neighborhood
+          : STORE_ADDRESS.neighborhood;
 
-          if (cardResult.status === 'rejected') {
-            setSubmitting(false);
-            const err = getCardRejectionMessage(cardResult.statusDetail);
-            setErrorMessage(err);
-            showThemedAlert('Pagamento recusado', err);
-            return;
-          }
+      const mappedPaymentMethod =
+        paymentMethod === 'pix'
+          ? 'pix'
+          : paymentMethod === 'dinheiro'
+          ? 'dinheiro'
+          : 'cartao';
 
-          if (!cardResult.success && !cardResult.status) {
-            setSubmitting(false);
-            const isConfigErr = cardResult.error?.startsWith('config:');
-            const err = isConfigErr
-              ? 'O serviço de pagamento está temporariamente indisponível. Escolha outra forma de pagamento.'
-              : (cardResult.error || 'Erro ao processar pagamento do cartão salvo');
-            setErrorMessage(err);
-            showThemedAlert(isConfigErr ? 'Serviço indisponível' : 'Erro no cartão', err);
-            return;
-          }
+      const isCredit =
+        paymentMethod === 'cartão de crédito' ||
+        paymentMethod === 'cartão de crédito (entrega)';
+      const isDebit =
+        paymentMethod === 'cartão de débito' ||
+        paymentMethod === 'cartão de débito (entrega)';
 
-          cardDetails = {
-            payment_id: cardResult.paymentId,
-            status: cardResult.status,
-            status_detail: cardResult.statusDetail,
-            simulation: cardResult.simulation,
-            brand: selectedSavedCard.payment_method_id,
-            last4: selectedSavedCard.last_four,
-            saved_card: true,
-          };
-        } else {
-          const [expMonth, expYear] = cardExpiry.split('/');
-          const fullYear = `20${expYear}`;
-
-          const tokenResult = await tokenizeCard({
-            cardNumber,
-            expirationMonth: expMonth,
-            expirationYear: fullYear,
-            securityCode: cardCvv,
-            cardholderName: cardName.trim(),
-            docNumber: cardCpf,
-          });
-
-          if (!tokenResult.success || !tokenResult.token) {
-            setSubmitting(false);
-            const isConfigErr = tokenResult.error?.startsWith('config:');
-            const err = isConfigErr
-              ? 'O serviço de pagamento está temporariamente indisponível. Escolha outra forma de pagamento.'
-              : (tokenResult.error || 'Erro ao processar dados do cartão');
-            setErrorMessage(err);
-            showThemedAlert(isConfigErr ? 'Serviço indisponível' : 'Erro no cartão', err);
-            return;
-          }
-
-          const pmId = guessPaymentMethodId(cardNumber);
-          const cardResult = await createCardPayment({
-            amount: totalFinal,
-            token: tokenResult.token,
-            paymentMethodId: pmId,
-            email,
-            name: cardName.trim(),
-            docNumber: cardCpf,
-            orderNumber,
-          });
-
-          if (cardResult.status === 'rejected') {
-            setSubmitting(false);
-            const err = getCardRejectionMessage(cardResult.statusDetail);
-            setErrorMessage(err);
-            showThemedAlert('Pagamento recusado', err);
-            return;
-          }
-
-          if (!cardResult.success && !cardResult.status) {
-            setSubmitting(false);
-            const isConfigErr = cardResult.error?.startsWith('config:');
-            const err = isConfigErr
-              ? 'O serviço de pagamento está temporariamente indisponível. Escolha outra forma de pagamento.'
-              : (cardResult.error || 'Erro ao processar pagamento do cartão');
-            setErrorMessage(err);
-            showThemedAlert(isConfigErr ? 'Serviço indisponível' : 'Erro no cartão', err);
-            return;
-          }
-
-          cardDetails = {
-            payment_id: cardResult.paymentId,
-            status: cardResult.status,
-            status_detail: cardResult.statusDetail,
-            simulation: cardResult.simulation,
-            brand: pmId,
-            last4: cardNumber.replace(/\D/g, '').slice(-4),
-            saved_card: false,
-          };
-        }
-      }
-
-      // Determina status inicial do pedido
-      let orderInitialStatus = 'pending';
-      let paymentInitialStatus = 'pending';
-
-      if (paymentMethod === 'pix') {
-        orderInitialStatus = 'pending';
-        paymentInitialStatus = 'pending';
-      } else if (paymentMethod === 'cartão de crédito' || paymentMethod === 'cartão de débito') {
-        if (cardDetails?.status === 'approved') {
-          orderInitialStatus = 'preparing';
-          paymentInitialStatus = 'approved';
-        } else {
-          orderInitialStatus = 'awaiting_payment';
-          paymentInitialStatus = 'in_process';
-        }
-      } else {
-        orderInitialStatus = 'pending';
-        paymentInitialStatus = 'pending';
+      const orderMetadata: any = {
+        source: 'app',
+        cep: deliveryType === 'delivery' && selectedAddress ? selectedAddress.cep : null,
+      };
+      if (isCredit) {
+        orderMetadata.card_type = 'credit';
+      } else if (isDebit) {
+        orderMetadata.card_type = 'debit';
       }
 
       const notesParts: string[] = [];
@@ -512,93 +435,158 @@ export function useCheckoutFlow() {
       }
       const finalNotes = notesParts.join(' | ');
 
-      // 3. Insert em orders (apenas colunas existentes no schema)
-      const orderPayload = {
-        user_id: session.user.id,
-        customer_name: name.trim(),
-        customer_phone: phone.trim(),
-        customer_address: customerAddress,
-        customer_neighborhood: customerNeighborhood,
-        customer_complement:
-          deliveryType === 'delivery' && selectedAddress ? selectedAddress.complement || null : null,
-        total_amount: totalFinal,
-        discount_amount: discountFinal,
-        coupon_code: coupon?.code || null,
-        payment_method: paymentMethod,
-        status: orderInitialStatus,
-        notes: finalNotes || null,
-        delivery_type: deliveryType,
-        order_number: orderNumber,
-        wants_cutlery: wantsCutlery ?? false,
-        metadata: {
-          subtotal: subtotalFinal,
-          delivery_fee: deliveryFee,
-          cep: deliveryType === 'delivery' && selectedAddress ? selectedAddress.cep : null,
-          source: 'mobile_app',
-          pix: pixDetails,
-          card: cardDetails,
-        },
-      };
+      // 1. Reuso de orderId em retentativa (ref), ou criação via RPC create_order
+      let currentOrderId = pendingOrderIdRef.current;
 
-      const { data: created, error: orderError } = await supabase
-        .from('orders')
-        .insert(orderPayload)
-        .select('id')
-        .single();
-
-      if (orderError || !created) {
-        setSubmitting(false);
-        const err = orderError?.message || 'Erro ao criar pedido';
-        setErrorMessage(err);
-        showThemedAlert('Erro no pedido', err);
-        return;
-      }
-
-      // 4. Insert em order_items
-      const itemRows = items.map((i: any) => ({
-        order_id: created.id,
-        product_id: i.id,
-        product_name: i.nome,
-        product_price: i.precoNum / 100,
-        quantity: i.quantity,
-        notes: i.observacoes || null,
-        adicionais: (i.adicionais || []).map((a: any) => a.name),
-      }));
-      await supabase.from('order_items').insert(itemRows);
-
-      // 5. Cupom: solução provisória via RPC segura até o webhook assumir na aprovação do pagamento
-      if (coupon?.id) {
+      if (!currentOrderId) {
+        let mappedItems: any[];
         try {
-          const { error: rpcErr } = await supabase.rpc('apply_coupon_usage_rpc', {
-            p_coupon_id: coupon.id,
-            p_order_id: created.id,
-          });
-          if (rpcErr) console.warn('Erro ao registrar cupom via RPC:', rpcErr);
-        } catch (err) {
-          console.warn('Falha RPC cupom:', err);
+          mappedItems = mapCartItemsToOrderItems(items);
+        } catch (itemErr: any) {
+          setSubmitting(false);
+          const err = 'Itens inválidos: ' + (itemErr?.message || 'erro de mapeamento');
+          setErrorMessage(err);
+          showThemedAlert('Itens inválidos', err);
+          return;
         }
+
+        const { data: rpcData, error: rpcError } = await supabase.rpc('create_order', {
+          p_customer_name: name.trim(),
+          p_customer_phone: phone.trim(),
+          p_customer_address: customerAddress,
+          p_customer_neighborhood: customerNeighborhood,
+          p_customer_complement:
+            deliveryType === 'delivery' && selectedAddress ? selectedAddress.complement || null : null,
+          p_delivery_type: deliveryType === 'retirada' ? 'retirada' : 'delivery',
+          p_payment_method: mappedPaymentMethod,
+          p_payment_online: isOnline,
+          p_coupon_code: coupon?.code || null,
+          p_notes: finalNotes || null,
+          p_wants_cutlery: wantsCutlery ?? false,
+          p_metadata: orderMetadata,
+          p_items: mappedItems,
+        });
+
+        if (rpcError || !rpcData?.order_id) {
+          setSubmitting(false);
+          const rawMsg = rpcError?.message || 'Erro ao criar pedido';
+          const mappedMsg = ERROR_MESSAGES[rawMsg] || rawMsg;
+          setErrorMessage(mappedMsg);
+          showThemedAlert('Erro no pedido', mappedMsg);
+          return;
+        }
+
+        currentOrderId = rpcData.order_id;
+        pendingOrderIdRef.current = currentOrderId;
       }
 
-      // 6. Push notification admin
-      notifyAdminNewOrder(created.id);
+      // 2. Processa pagamento nas rotas do servidor se for online
+      let cardResult: any = null;
 
+      if (paymentMethod === 'pix') {
+        const pixResult = await createPixPayment(currentOrderId);
+        if (!pixResult.success) {
+          setSubmitting(false);
+          if (pixResult.error === 'order_status_not_payable' || pixResult.error === 'order_not_found') {
+            pendingOrderIdRef.current = null;
+          }
+          const isConfigErr = pixResult.error?.startsWith('config:');
+          const err = isConfigErr
+            ? 'O serviço de pagamento está temporariamente indisponível. Por favor, tente outra forma de pagamento.'
+            : (pixResult.error || 'Erro ao gerar chave PIX');
+          setErrorMessage(err);
+          showThemedAlert(isConfigErr ? 'Serviço indisponível' : 'Erro no PIX', err);
+          return;
+        }
+      } else if (paymentMethod === 'cartão de crédito' || paymentMethod === 'cartão de débito') {
+        try {
+          if (selectedSavedCard && !useManualCardForm) {
+            cardResult = await chargeWithSavedCard({
+              orderId: currentOrderId,
+              savedCardId: selectedSavedCard.id,
+              cardId: selectedSavedCard.mp_card_id,
+              securityCode: savedCardCvv,
+              paymentMethodId: selectedSavedCard.payment_method_id,
+              docNumber: cardCpf && isValidCpf(cardCpf) ? cardCpf.replace(/\D/g, '') : undefined,
+            });
+          } else {
+            const [expMonth, expYear] = cardExpiry.split('/');
+            const fullYear = `20${expYear}`;
+
+            const tokenResult = await tokenizeCard({
+              cardNumber,
+              expirationMonth: expMonth,
+              expirationYear: fullYear,
+              securityCode: cardCvv,
+              cardholderName: cardName.trim(),
+              docNumber: cardCpf.replace(/\D/g, ''),
+            });
+
+            if (!tokenResult.success || !tokenResult.token) {
+              setSubmitting(false);
+              const isConfigErr = tokenResult.error?.startsWith('config:');
+              const err = isConfigErr
+                ? 'O serviço de pagamento está temporariamente indisponível. Escolha outra forma de pagamento.'
+                : (tokenResult.error || 'Erro ao processar dados do cartão');
+              setErrorMessage(err);
+              showThemedAlert(isConfigErr ? 'Serviço indisponível' : 'Erro no cartão', err);
+              return;
+            }
+
+            const pmId = guessPaymentMethodId(cardNumber);
+            cardResult = await createCardPayment({
+              orderId: currentOrderId,
+              token: tokenResult.token,
+              paymentMethodId: pmId,
+              docNumber: cardCpf.replace(/\D/g, ''),
+            });
+          }
+        } finally {
+          setSavedCardCvv('');
+          setCardCvv('');
+        }
+
+        if (cardResult.status === 'rejected') {
+          setSubmitting(false);
+          const err = getCardRejectionMessage(cardResult.statusDetail);
+          setErrorMessage(err);
+          showThemedAlert('Pagamento recusado', err);
+          return; // Mantém pendingOrderIdRef para retentativa com mesmo pedido
+        }
+
+        if (!cardResult.success && !cardResult.status) {
+          setSubmitting(false);
+          if (cardResult.error?.includes('Limite de tentativas') || cardResult.error === 'order_status_not_payable') {
+            pendingOrderIdRef.current = null;
+          }
+          const isConfigErr = cardResult.error?.startsWith('config:');
+          const err = isConfigErr
+            ? 'O serviço de pagamento está temporariamente indisponível. Escolha outra forma de pagamento.'
+            : (cardResult.error || 'Erro ao processar pagamento do cartão');
+          setErrorMessage(err);
+          showThemedAlert(isConfigErr ? 'Serviço indisponível' : 'Erro no cartão', err);
+          return;
+        }
+
+        if (cardResult.status === 'in_process') {
+          showThemedAlert(
+            'Pagamento em análise',
+            'Seu pagamento está sendo analisado pelo Mercado Pago. Você pode acompanhar o status pelo pedido.'
+          );
+        }
+      } else {
+        // Pedido offline (dinheiro / cartão na entrega)
+        notifyAdminNewOrder(currentOrderId);
+      }
+
+      // Sucesso na submissão
+      const finalOrderId = currentOrderId;
+      pendingOrderIdRef.current = null;
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       clearCart();
       setShowReviseModal(false);
       setSubmitting(false);
-
-      if (
-        orderInitialStatus === 'awaiting_payment' &&
-        (paymentMethod === 'cartão de crédito' || paymentMethod === 'cartão de débito')
-      ) {
-        showThemedAlert(
-          'Pagamento em análise',
-          'Seu pagamento está sendo analisado pelo Mercado Pago. Você pode acompanhar o status pelo pedido.'
-        );
-      }
-
-      // 7. Navega para tela de acompanhamento
-      router.replace(`/pedidos/${created.id}`);
+      router.replace(`/pedidos/${finalOrderId}`);
     } catch (e: any) {
       console.error('Erro ao finalizar pedido:', e);
       const msg = e?.message || 'Erro inesperado ao criar o pedido. Tente novamente.';

@@ -1,12 +1,12 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '../supabaseConfig';
+import { getEffectiveSession } from './authSession';
 import {
-  createCustomer,
   tokenizeCard,
-  saveCardToCustomer,
-  deleteCustomerCard,
   guessPaymentMethodId,
 } from './mercadoPago';
+
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatop.vercel.app';
 
 export type SavedCard = {
   id: string;
@@ -22,38 +22,10 @@ export type SavedCard = {
 };
 
 /**
- * Garante que o usuário tem um mp_customer_id.
- * Se ele já cadastrou algum cartão antes, reaproveita o customer_id
- * existente (evita criar customer duplicado no Mercado Pago a cada cartão).
- */
-type CustomerResult = { success: boolean; customerId?: any; error?: string };
-
-async function ensureCustomerId(user: any): Promise<CustomerResult> {
-  const { data: existing } = await supabase
-    .from('payment_cards')
-    .select('mp_customer_id')
-    .eq('user_id', user.id)
-    .limit(1)
-    .maybeSingle();
-
-  if (existing?.mp_customer_id) {
-    return { success: true, customerId: existing.mp_customer_id };
-  }
-
-  const fullName = user.user_metadata?.full_name || '';
-  const [firstName, ...rest] = fullName.split(' ');
-
-  return createCustomer({
-    email: user.email,
-    firstName: firstName || 'Cliente',
-    lastName: rest.join(' ') || 'Batatatop',
-  });
-}
-
-/**
  * Hook que centraliza toda a lógica de cartões salvos do usuário:
- * listar, salvar (tokeniza + associa ao customer + grava no Supabase)
- * e remover. Usado pelo perfil (cadastro) e pelo checkout (cobrança).
+ * listar (via SELECT), salvar (tokeniza no cliente e chama POST /api/mercadopago/cards),
+ * atualizar padrão (PATCH /api/mercadopago/cards) e remover (DELETE /api/mercadopago/cards).
+ * Sem INSERT/UPDATE/DELETE direto no banco pelo cliente.
  */
 export function usePaymentCards() {
   const [cards, setCards] = useState<SavedCard[]>([]);
@@ -63,7 +35,7 @@ export function usePaymentCards() {
   const loadCards = useCallback(async (): Promise<SavedCard[]> => {
     setLoadingCards(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const session = await getEffectiveSession();
       const user = session?.user;
       if (!user) {
         setCards([]);
@@ -92,10 +64,9 @@ export function usePaymentCards() {
 
   /**
    * Cadastra um novo cartão:
-   * 1. Tokeniza os dados digitados
-   * 2. Garante que existe um Customer no Mercado Pago
-   * 3. Associa o cartão tokenizado ao Customer (gera card_id permanente)
-   * 4. Salva no Supabase só os dados de exibição (últimos 4 dígitos, bandeira)
+   * 1. Tokeniza os dados digitados via Public Key no cliente
+   * 2. Envia para o backend seguro (POST /api/mercadopago/cards) com Bearer token
+   * 3. O servidor gerencia o customer, associa o cartão no MP e insere no banco com compensação
    */
   const addCard = useCallback(async ({
     cardNumber,
@@ -118,13 +89,13 @@ export function usePaymentCards() {
   }) => {
     setSavingCard(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const session = await getEffectiveSession();
       const user = session?.user;
-      if (!user) {
+      if (!user || !session?.access_token) {
         return { success: false, error: 'Você precisa estar logado para salvar um cartão.' };
       }
 
-      // 1. Tokeniza o cartão
+      // 1. Tokeniza o cartão com a Public Key
       const tokenResult = await tokenizeCard({
         cardNumber,
         expirationMonth,
@@ -137,64 +108,37 @@ export function usePaymentCards() {
         return { success: false, error: tokenResult.error };
       }
 
-      // 2. Garante o customer
-      const customerResult = await ensureCustomerId(user);
-      if (!customerResult.success) {
-        return { success: false, error: customerResult.error };
-      }
+      const paymentMethodId = guessPaymentMethodId(cardNumber);
 
-      // 3. Associa o cartão ao customer
-      const saveResult = await saveCardToCustomer({
-        customerId: customerResult.customerId,
-        cardToken: tokenResult.token,
-      });
-      if (!saveResult.success) {
-        return { success: false, error: saveResult.error };
-      }
-
-      const lastFour = saveResult.simulation
-        ? cardNumber.replace(/\D/g, '').slice(-4)
-        : (saveResult.lastFour || cardNumber.replace(/\D/g, '').slice(-4));
-
-      const paymentMethodId = saveResult.simulation
-        ? guessPaymentMethodId(cardNumber)
-        : (saveResult.paymentMethodId || guessPaymentMethodId(cardNumber));
-
-      // Se for o primeiro cartão ou o usuário marcou como padrão,
-      // remove o "padrão" dos outros antes de inserir
-      if (setAsDefault) {
-        await supabase
-          .from('payment_cards')
-          .update({ is_default: false })
-          .eq('user_id', user.id);
-      }
-
-      // 4. Grava no Supabase (nunca o número completo nem o CVV)
-      const { data: inserted, error: insertError } = await supabase
-        .from('payment_cards')
-        .insert({
-          user_id: user.id,
-          mp_customer_id: customerResult.customerId,
-          mp_card_id: saveResult.cardId,
-          last_four: lastFour,
+      // 2. Chama a rota segura do servidor com Bearer
+      const response = await fetch(`${API_BASE_URL}/api/mercadopago/cards`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          token: tokenResult.token,
           payment_method_id: paymentMethodId,
-          card_type: cardType,
           cardholder_name: cardholderName,
           is_default: !!setAsDefault,
-        })
-        .select()
-        .single();
+        }),
+      });
 
-      if (insertError) {
-        console.error('Erro ao salvar cartão no Supabase:', insertError);
-        return { success: false, error: 'Cartão validado, mas não foi possível salvá-lo. Tente novamente.' };
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok || !data.success) {
+        return {
+          success: false,
+          error: data.error || 'Erro ao salvar cartão no servidor.',
+        };
       }
 
       await loadCards();
-      return { success: true, card: inserted as SavedCard };
-    } catch (err) {
+      return { success: true, card: data.card as SavedCard };
+    } catch (err: any) {
       console.error('Erro ao adicionar cartão:', err);
-      return { success: false, error: 'Erro inesperado ao salvar o cartão.' };
+      return { success: false, error: err?.message || 'Erro inesperado ao salvar o cartão.' };
     } finally {
       setSavingCard(false);
     }
@@ -202,27 +146,57 @@ export function usePaymentCards() {
 
   const removeCard = useCallback(async (card: SavedCard) => {
     try {
-      await deleteCustomerCard({ customerId: card.mp_customer_id, cardId: card.mp_card_id });
-      await supabase.from('payment_cards').delete().eq('id', card.id);
+      const session = await getEffectiveSession();
+      if (!session?.access_token) {
+        return { success: false, error: 'Usuário não autenticado.' };
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/mercadopago/cards?cardId=${encodeURIComponent(card.id)}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok || !data.success) {
+        return { success: false, error: data.error || 'Não foi possível remover o cartão.' };
+      }
+
       await loadCards();
       return { success: true };
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao remover cartão:', err);
-      return { success: false, error: 'Não foi possível remover o cartão.' };
+      return { success: false, error: err?.message || 'Não foi possível remover o cartão.' };
     }
   }, [loadCards]);
 
   const setDefaultCard = useCallback(async (card: SavedCard) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const user = session?.user;
-      if (!user) return { success: false };
+      const session = await getEffectiveSession();
+      if (!session?.access_token) {
+        return { success: false };
+      }
 
-      await supabase.from('payment_cards').update({ is_default: false }).eq('user_id', user.id);
-      await supabase.from('payment_cards').update({ is_default: true }).eq('id', card.id);
+      const response = await fetch(`${API_BASE_URL}/api/mercadopago/cards`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ cardId: card.id }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok || !data.success) {
+        return { success: false };
+      }
+
       await loadCards();
       return { success: true };
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao definir cartão padrão:', err);
       return { success: false };
     }

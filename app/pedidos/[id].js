@@ -126,6 +126,15 @@ export default function DetalhesPedido() {
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [helpModalVisible, setHelpModalVisible] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState(null);
+  const hasTriggeredExpiryFetchRef = useRef(false);
+  const lastExpiryPollRef = useRef(0);
+
+  const CANCEL_ERROR_MESSAGES = {
+    order_status_not_cancellable: 'Esse pedido já está a caminho e não pode mais ser cancelado.',
+    forbidden_not_owner: 'Pedido não encontrado.',
+    order_not_found: 'Pedido não encontrado.',
+    unauthorized: 'Faça login novamente.',
+  };
 
   const carregarPedido = useCallback(async ({ silent = false } = {}) => {
     if (!id) return null;
@@ -179,33 +188,41 @@ export default function DetalhesPedido() {
   useEffect(() => {
     if (!pedido || pedido.status !== 'awaiting_payment' || pedido.paymentMethod !== 'pix') {
       setRemainingSeconds(null);
+      hasTriggeredExpiryFetchRef.current = false;
       return;
     }
 
-    const expTime = pedido.metadata?.pix?.expirationDate
-      ? new Date(pedido.metadata.pix.expirationDate).getTime()
+    const pixExpRaw = pedido.metadata?.pix?.expirationDate || pedido.metadata?.pix?.expiration_date;
+    const expTime = pixExpRaw
+      ? new Date(pixExpRaw).getTime()
       : pedido.createdAt
       ? new Date(pedido.createdAt).getTime() + 30 * 60 * 1000
       : Date.now() + 30 * 60 * 1000;
 
     const tick = () => {
-      const diff = Math.max(0, Math.floor((expTime - Date.now()) / 1000));
+      const now = Date.now();
+      const diff = Math.max(0, Math.floor((expTime - now) / 1000));
       setRemainingSeconds(diff);
+
       if (diff <= 0) {
-        supabase
-          .from('orders')
-          .update({ status: 'cancelled', updated_at: new Date().toISOString() })
-          .eq('id', pedido.id)
-          .then(() => carregarPedido({ silent: true }));
+        // Dispara no máximo 1 vez na expiração e depois a cada 15s enquanto awaiting_payment
+        if (!hasTriggeredExpiryFetchRef.current) {
+          hasTriggeredExpiryFetchRef.current = true;
+          lastExpiryPollRef.current = now;
+          carregarPedido({ silent: true });
+        } else if (now - lastExpiryPollRef.current >= 15000) {
+          lastExpiryPollRef.current = now;
+          carregarPedido({ silent: true });
+        }
       }
     };
 
     tick();
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, [pedido?.id, pedido?.status, pedido?.paymentMethod, pedido?.createdAt, pedido?.metadata?.pix?.expirationDate, carregarPedido]);
+  }, [pedido?.id, pedido?.status, pedido?.paymentMethod, pedido?.createdAt, pedido?.metadata?.pix?.expirationDate, pedido?.metadata?.pix?.expiration_date, carregarPedido]);
 
-  // b) Polling: quando pix-status retornar approved: refazer fetch, parar polling e esconder QR
+  // b) Polling: quando pix-status retornar approved: reler até 5 vezes com intervalo de 2s
   useEffect(() => {
     if (!pedido || pedido.status !== 'awaiting_payment') return;
     const mpPaymentId =
@@ -230,14 +247,15 @@ export default function DetalhesPedido() {
       if (isPaid) {
         isPollingActive = false;
         clearInterval(interval);
-        // Otimista: esconde o bloco do QR e atualiza status na tela imediatamente
-        setPedido((prev) => (prev ? { ...prev, status: 'pending' } : prev));
-        await supabase
-          .from('orders')
-          .update({ status: 'pending', updated_at: new Date().toISOString() })
-          .eq('id', pedido.id);
 
-        await carregarPedido({ silent: true });
+        // Relê até 5 vezes com intervalo de 2 s até o status deixar de ser awaiting_payment
+        for (let i = 0; i < 5; i++) {
+          await new Promise((r) => setTimeout(r, 2000));
+          const updated = await carregarPedido({ silent: true });
+          if (updated && updated.status !== 'awaiting_payment') {
+            break;
+          }
+        }
       } else if (
         result.status === 'cancelled' ||
         result.status === 'rejected' ||
@@ -245,12 +263,6 @@ export default function DetalhesPedido() {
       ) {
         isPollingActive = false;
         clearInterval(interval);
-        setPedido((prev) => (prev ? { ...prev, status: 'cancelled' } : prev));
-        await supabase
-          .from('orders')
-          .update({ status: 'cancelled', updated_at: new Date().toISOString() })
-          .eq('id', pedido.id);
-
         await carregarPedido({ silent: true });
       }
     }, 5000);
@@ -285,12 +297,15 @@ export default function DetalhesPedido() {
     setShowCancelModal(false);
     setCancelling(true);
     try {
-      const { error } = await supabase
-        .from('orders')
-        .update({ status: 'cancelled', updated_at: new Date().toISOString() })
-        .eq('id', pedido.id);
+      const { error } = await supabase.rpc('cancel_order_user', {
+        p_order_id: pedido.id,
+      });
 
-      if (error) throw error;
+      if (error) {
+        const msg = CANCEL_ERROR_MESSAGES[error.message] || error.message || 'Não foi possível cancelar o pedido.';
+        showThemedAlert('Atenção', msg);
+        return;
+      }
 
       await carregarPedido({ silent: true });
 
@@ -299,7 +314,8 @@ export default function DetalhesPedido() {
       );
       Linking.openURL(`https://wa.me/5514997361015?text=${msg}`);
     } catch (err) {
-      showThemedAlert('Erro', 'Não foi possível cancelar o pedido. Entre em contato pelo WhatsApp.');
+      const msg = CANCEL_ERROR_MESSAGES[err?.message] || err?.message || 'Não foi possível cancelar o pedido. Entre em contato pelo WhatsApp.';
+      showThemedAlert('Erro', msg);
     } finally {
       setCancelling(false);
     }

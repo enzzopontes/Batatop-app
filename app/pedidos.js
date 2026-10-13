@@ -348,6 +348,13 @@ export default function Pedidos() {
     setOrderToCancel(order);
   };
 
+  const CANCEL_ERROR_MESSAGES = {
+    order_status_not_cancellable: 'Esse pedido já está a caminho e não pode mais ser cancelado.',
+    forbidden_not_owner: 'Pedido não encontrado.',
+    order_not_found: 'Pedido não encontrado.',
+    unauthorized: 'Faça login novamente.',
+  };
+
   const confirmCancelOrder = async () => {
     const order = orderToCancel;
     if (!order) return;
@@ -355,12 +362,15 @@ export default function Pedidos() {
     setOrderToCancel(null);
     setCancellingId(order.id);
     try {
-      const { error } = await supabase
-        .from('orders')
-        .update({ status: 'cancelled', updated_at: new Date().toISOString() })
-        .eq('id', order.id);
+      const { error } = await supabase.rpc('cancel_order_user', {
+        p_order_id: order.id,
+      });
 
-      if (error) throw error;
+      if (error) {
+        const msg = CANCEL_ERROR_MESSAGES[error.message] || error.message || 'Não foi possível cancelar o pedido.';
+        Alert.alert('Atenção', msg);
+        return;
+      }
 
       // Abre WhatsApp igual ao site
       const msg = encodeURIComponent(
@@ -371,7 +381,8 @@ export default function Pedidos() {
       // Reload silencioso após cancelar — não some a lista
       await fetchOrders(userIdRef.current, { silent: true });
     } catch (err) {
-      Alert.alert('Erro', 'Não foi possível cancelar o pedido. Entre em contato pelo WhatsApp.');
+      const msg = CANCEL_ERROR_MESSAGES[err?.message] || err?.message || 'Não foi possível cancelar o pedido. Entre em contato pelo WhatsApp.';
+      Alert.alert('Erro', msg);
     } finally {
       setCancellingId(null);
     }

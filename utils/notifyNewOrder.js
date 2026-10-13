@@ -1,4 +1,5 @@
 import { supabase } from '../supabaseConfig';
+import { getEffectiveSession } from './authSession';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
@@ -23,9 +24,14 @@ export async function notifyAdminNewOrder(orderId) {
   if (!API_BASE_URL) return;
 
   try {
+    const session = await getEffectiveSession();
+    const token = session?.access_token;
     const response = await fetch(`${API_BASE_URL}/api/notify-new-order`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify({ orderId }),
     });
 

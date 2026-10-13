@@ -1,5 +1,7 @@
+import { getEffectiveSession } from './authSession';
+
 const MERCADO_PAGO_PUBLIC_KEY = process.env.EXPO_PUBLIC_MERCADO_PAGO_PUBLIC_KEY;
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatop.vercel.app';
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
   const controller = new AbortController();
@@ -13,22 +15,25 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
 
 async function callBackend(path, body, method = 'POST', timeoutMs = null) {
   try {
-    if (!API_BASE_URL) {
-      console.error('[mercadoPago] EXPO_PUBLIC_API_BASE_URL não está configurada');
-      return { success: false, error: 'config: EXPO_PUBLIC_API_BASE_URL ausente' };
+    const session = await getEffectiveSession();
+    const token = session?.access_token || '';
+
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
     }
 
     const fetchFn = timeoutMs ? (url, opts) => fetchWithTimeout(url, opts, timeoutMs) : fetch;
 
     const response = await fetchFn(`${API_BASE_URL}/api/mercadopago/${path}`, {
       method,
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: method !== 'GET' && method !== 'HEAD' ? JSON.stringify(body) : undefined,
     });
 
     const data = await response.json().catch(() => ({}));
 
-    // Se o backend respondeu com erro (ex: 500 config ausente) ou success false
+    // Se o backend respondeu com erro ou success false
     if (!response.ok || !data.success) {
       console.log(`[mercadoPago] Erro em "${path}":`, data.error || response.status);
       return {
@@ -49,72 +54,55 @@ async function callBackend(path, body, method = 'POST', timeoutMs = null) {
 
 // ── Funções que passam pelo backend (Vercel) com Access Token ────────────────
 
-// Cobrança: sem timeout artificial para não gerar falso negativo com débito real
-export async function createPaymentPreference(amount, orderNumber, itemsList = []) {
-  return callBackend('preference', { amount, orderNumber, itemsList });
+/**
+ * Cria preferência de pagamento no Mercado Pago.
+ * Valor, itens e e-mail vêm do banco/sessão no backend através do orderId.
+ */
+export async function createPaymentPreference(param) {
+  const orderId = typeof param === 'string' ? param : (param?.orderId || param);
+  return callBackend('preference', { orderId });
 }
 
-// Cobrança: sem timeout artificial para não gerar falso negativo com débito real
-export async function createPixPayment(amount, email, name, orderNumber) {
-  return callBackend('pix', { amount, email, name, orderNumber });
+/**
+ * Gera cobrança via Pix no Mercado Pago.
+ * Valor e e-mail do pagador são consultados no backend usando o orderId.
+ */
+export async function createPixPayment(param) {
+  const orderId = typeof param === 'string' ? param : (param?.orderId || param);
+  return callBackend('pix', { orderId });
 }
 
-// Consulta de status: seguro com timeout de 15s
+/**
+ * Consulta de status do Pix.
+ */
 export async function checkPixStatus(id) {
   try {
-    if (!API_BASE_URL) {
-      return { success: false, error: 'config: EXPO_PUBLIC_API_BASE_URL ausente' };
-    }
-    const response = await fetchWithTimeout(`${API_BASE_URL}/api/mercadopago/pix-status?id=${encodeURIComponent(id)}`, {}, 15000);
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.success) {
-      return {
-        success: false,
-        status: data.status,
-        statusDetail: data.statusDetail || data.status_detail,
-        error: data.error || 'Erro ao consultar status do Pix',
-      };
-    }
-    return data;
+    return await callBackend(`pix-status?id=${encodeURIComponent(id)}`, null, 'GET', 15000);
   } catch (err) {
     return { success: false, error: err.message || 'Erro de conexão com o servidor' };
   }
 }
 
-// Cobrança: sem timeout artificial para não gerar falso negativo com débito real
+/**
+ * Processa pagamento com cartão no Mercado Pago.
+ * Não recebe valor nem e-mail do cliente: ambos vêm do pedido e da sessão no backend.
+ */
 export async function createCardPayment({
-  amount,
+  orderId,
   token,
   paymentMethodId,
   issuerId = null,
-  email,
-  name,
   docNumber,
-  orderNumber,
+  savedCardId = null,
 }) {
   return callBackend('card-payment', {
-    amount,
+    orderId,
     token,
     paymentMethodId,
     issuerId,
-    email,
-    name,
     docNumber,
-    orderNumber,
+    savedCardId,
   });
-}
-
-// Cadastros e gerenciamento de cartões: seguro com timeout de 15s
-export async function createCustomer({ email, firstName, lastName }) {
-  return callBackend('customer', { email, firstName, lastName }, 'POST', 15000);
-}
-
-export async function saveCardToCustomer({ customerId, cardToken }) {
-  return callBackend('save-card', { customerId, cardToken }, 'POST', 15000);
-}
-
-export async function deleteCustomerCard({ customerId, cardId }) {
-  return callBackend('delete-card', { customerId, cardId }, 'DELETE', 15000);
 }
 
 // ── Funções no cliente com Public Key (Checkout Transparente) ────────────────
@@ -210,18 +198,16 @@ export async function tokenizeSavedCardCvv({ cardId, securityCode }) {
 
 /**
  * Cobra com um cartão salvo: tokeniza card_id + CVV no client (Public Key),
- * depois manda pro backend cobrar (Access Token fica só no servidor).
+ * depois manda pro backend cobrar usando orderId (Access Token fica só no servidor).
  */
 export async function chargeWithSavedCard({
-  amount,
+  orderId,
+  savedCardId,
   cardId,
   securityCode,
   paymentMethodId,
   issuerId = null,
-  email,
-  name,
   docNumber,
-  orderNumber,
 }) {
   const tokenResult = await tokenizeSavedCardCvv({ cardId, securityCode });
   if (!tokenResult.success) {
@@ -229,14 +215,12 @@ export async function chargeWithSavedCard({
   }
 
   return createCardPayment({
-    amount,
+    orderId,
     token: tokenResult.token,
     paymentMethodId,
     issuerId,
-    email,
-    name,
     docNumber,
-    orderNumber,
+    savedCardId,
   });
 }
 

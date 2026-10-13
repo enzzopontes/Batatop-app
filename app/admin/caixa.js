@@ -87,6 +87,7 @@ export default function AdminCaixa() {
       const { data: todayOrders } = await supabase
         .from('orders')
         .select('status, total_amount')
+        .neq('status', 'awaiting_payment')
         .gte('created_at', today.toISOString());
 
       const orders = todayOrders || [];
@@ -105,6 +106,7 @@ export default function AdminCaixa() {
       const { data: history } = await supabase
         .from('orders')
         .select('created_at, total_amount, status')
+        .neq('status', 'awaiting_payment')
         .in('status', ['delivered', 'entregue'])
         .order('created_at', { ascending: false });
 
@@ -130,7 +132,23 @@ export default function AdminCaixa() {
   useEffect(() => {
     loadData();
     const interval = setInterval(loadData, 30000);
-    return () => clearInterval(interval);
+
+    const channel = supabase
+      .channel(`admin-caixa-${Date.now()}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'orders' },
+        (payload) => {
+          if (payload.eventType === 'INSERT' && payload.new?.status === 'awaiting_payment') return;
+          loadData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      clearInterval(interval);
+      supabase.removeChannel(channel);
+    };
   }, [loadData]);
 
   // ─── Toggle de data ──────────────────────────────────────────────
@@ -145,6 +163,7 @@ export default function AdminCaixa() {
         const { data, error } = await supabase
           .from('orders')
           .select('*, order_items (*)') // Join nos itens
+          .neq('status', 'awaiting_payment')
           .gte('created_at', start.toISOString())
           .lte('created_at', end.toISOString())
           .in('status', ['delivered', 'entregue'])

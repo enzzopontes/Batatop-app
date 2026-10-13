@@ -102,6 +102,7 @@ export default function AdminPedidos() {
       const { data, error } = await supabase
         .from('orders')
         .select('*, order_items (*)') // Join nos itens do pedido
+        .neq('status', 'awaiting_payment')
         .gte('created_at', today.toISOString())
         .order('created_at', { ascending: false });
 
@@ -121,7 +122,36 @@ export default function AdminPedidos() {
   useEffect(() => {
     loadOrders(true);
     intervalRef.current = setInterval(() => loadOrders(), 10000);
-    return () => clearInterval(intervalRef.current);
+
+    const channelName = `admin-pedidos-${Date.now()}`;
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'orders' },
+        (payload) => {
+          const { eventType, new: newRow, old: oldRow } = payload;
+          if (eventType === 'INSERT') {
+            if (newRow?.status === 'awaiting_payment') return;
+            loadOrders();
+          } else if (eventType === 'UPDATE') {
+            if (newRow?.status === 'awaiting_payment') {
+              setOrders((prev) => prev.filter((o) => o.id !== newRow.id));
+              return;
+            }
+            // Quando um pedido sai de awaiting_payment para pending (ou outro), ele é recarregado e aparece
+            loadOrders();
+          } else if (eventType === 'DELETE') {
+            setOrders((prev) => prev.filter((o) => o.id !== oldRow.id));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      clearInterval(intervalRef.current);
+      supabase.removeChannel(channel);
+    };
   }, [loadOrders]);
 
   // ─── Atualizar status ───────────────────────────────────────────
