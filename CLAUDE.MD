@@ -9,27 +9,48 @@
 ## 0. Economia de Token / Formato de Resposta
 
 **Ao ler este arquivo:**
-- Não resuma nem repita o conteúdo deste CLAUDE.md na resposta. Confirme com uma linha curta (ex: "Li o contexto, pode mandar") e aplique as regras em silêncio.
+- Não resuma nem repita o conteúdo deste CLAUDE.md na resposta. Confirme com apenas uma linha curta (ex: "Li o contexto, pode mandar") e aplique as regras em silêncio.
 
-**Código:**
-- Não regere ou re-printe arquivos que não foram tocados só pra "dar contexto".
-- Não recrie do zero um componente/hook que já existe — edite o que já tem.
+**Investigação Autônoma Antes de Gastar Tokens / Perguntar:**
+Antes de formular dúvidas ao usuário ou deduzir regras, investigue o repositório na seguinte ordem:
+1. `constants/theme.js` (cores/espaçamentos) e `constants/store.js` (regras e taxas da loja).
+2. `supabaseConfig.js` e `supabase/migrations/` (modelos e políticas RLS). Nunca crie conexões ad-hoc ao Supabase.
+3. `utils/` e `app/hooks/` (lógicas centrais: `cartStore.js`, `authSession.js`, `useCheckoutFlow.ts`, etc.).
+4. Componente ou tela alvo.
 
-**Explicações:**
-- Sem preâmbulo tipo "Claro! Vou te ajudar com isso" — vai direto na solução.
-- Não reexplique padrões/arquitetura já documentados aqui (soft-logout, `cartItemId`, fluxo de push, `ThemedAlert`, etc.) — só referencie a seção (ex: "segue o padrão da seção 11").
-- Headers markdown (`##`) só se a resposta tiver 3+ blocos distintos de conteúdo; senão, texto corrido ou lista simples.
-- Nada de "resumo final" repetindo o que já foi dito na própria resposta.
+**Edição Cirúrgica de Código:**
+- Ao editar arquivos existentes, mande **apenas o trecho alterado** (função/bloco com 2-3 linhas de contexto antes e depois). NUNCA envie o arquivo inteiro, exceto sob pedido explícito ("mande o arquivo completo").
+- Não regere, reformate ou re-printe arquivos ou trechos não tocados só para "dar contexto".
+- Não faça refatorações cosméticas em código adjacente que não esteja quebrado.
+- Não recrie do zero componentes, hooks ou utilitários que já existem — edite e reaproveite.
+- Mantenha a simplicidade máxima: resolva com o menor número possível de linhas sem abstrações especulativas.
+
+**Explicações & Comunicação:**
+- Sem preâmbulos nem cumprimentos ("Claro! Vou te ajudar com isso", "Com certeza!") — vá direto à solução.
+- Não reexplique padrões ou arquiteturas já documentados aqui — apenas referencie a seção (ex: "segue o padrão da seção 11").
+- Sem cabeçalhos desnecessários se a resposta for curta ou contiver apenas um bloco de código.
+- Sem "resumo final" repetindo o que acabou de ser entregue.
 
 **Ambiguidade:**
-- Se a tarefa for pequena ou já tiver um padrão documentado aqui, não pergunte — assume o padrão e segue.
-- Só pergunta se a ambiguidade puder causar retrabalho real (ex: mexer em pagamento, auth, ou schema do banco).
+- Se a tarefa for pontual ou já tiver um padrão documentado aqui ou no código, não pergunte — assuma o padrão e execute.
+- Só pergunte se a ambiguidade puder causar retrabalho crítico ou quebra em produção (ex: pagamentos Mercado Pago, auth real ou schema do banco).
 
-**Modo Homem das Cavernas:**
-De agora em diante, remova palavras de preenchimento. Nada de enrolação. Resposta direta apenas. Use frases curtas de 3 a 6 palavras quando possível. Vá direto ao resultado. Não narre demais. Não explique mais do que o necessário.
+**Check-list Anti-Desperdício (Mental antes de responder):**
+- [ ] O código introduz dependências novas desnecessárias? Se não for indispensável, não adicione.
+- [ ] Criou conexões ou utilitários paralelos em vez de reaproveitar o existente?
+- [ ] Hardcodou valores de estilo/loja fora de `constants/`?
+- [ ] A resposta é estritamente cirúrgica, sem enrolação?
 
-**Skill compactar:**
-Quando eu disser "COMPACTAR", resuma toda nossa conversa em 5 a 7 bullets com todo o contexto crítico, decisões e trechos essenciais. Formate de um jeito fácil de copiar e colar em um novo chat.
+**Modo Homem das Cavernas (Caveman Mode — Economia Extrema de Tokens):**
+- **Corte gordura:** Remova 100% de palavras de preenchimento, saudações, cortesias e despedidas ("Olá", "Claro", "Aqui está", "Espero ter ajudado").
+- **Estilo telegráfico:** Use frases ultra-curtas de 3 a 6 palavras quando falar for necessário. Direto ao osso.
+- **Zero narração:** Não narre o que vai fazer antes de fazer. Faça a alteração e mostre apenas o diff.
+- **Sem explicar o óbvio:** Se o código ou diff já é claro, entregue apenas o código. Zero parágrafos redundantes.
+- **Sem resumos ou conclusões:** Nunca adicione fechamentos, resumos finais ou recapitulativos no fim da resposta.
+- **Explicação só sob demanda:** Se o usuário pedir explicação explicitamente, entregue em bullets rápidos de 1 linha.
+
+**Skill COMPACTAR:**
+Quando dito "COMPACTAR", resuma toda nossa conversa em 5 a 7 bullets com todo o contexto crítico, decisões e trechos essenciais, formatado para copiar e colar em um novo chat.
 
 ---
 
@@ -120,7 +141,7 @@ batata-top/                          # App mobile (este repositório)
 │   └── cart/                        # Subcomponentes do checkout unificado
 │       ├── CartHeader.tsx, CartFooter.tsx
 │       ├── StepItens.tsx, StepEntrega.tsx, StepPagamento.tsx
-│       ├── PaymentSelector.tsx, MinOrderSheet.tsx
+│       ├── PaymentSelector.tsx, PaymentCard.tsx, MinOrderSheet.tsx
 │       └── useCheckoutFlow.ts       # Hook orquestrador do checkout
 ├── constants/
 │   ├── theme.js                     # Design System (cores, tipografia, espaçamentos)
@@ -147,17 +168,20 @@ batata-top/                          # App mobile (este repositório)
 │   └── usePaymentCards.ts           # Gerenciamento de cartões (tokenização MP)
 ├── supabase/
 │   ├── migrations/
-│   │   └── 20250629120000_admin_push_tokens.sql
+│   │   ├── 20250629120000_admin_push_tokens.sql
+│   │   ├── 20261013140000_security_hardening_admin_and_tokens.sql # Hardening de roles, triggers e push tokens
+│   │   ├── 20261013141000_secure_orders_and_order_items.sql       # RLS estrito de pedidos e itens
+│   │   └── 20261013142000_admin_write_policies_catalog.sql        # RLS de escrita para produtos, adicionais e cupons
 │   └── functions/
-│       └── notify-admin-order/      # Edge Function (alternativa à Vercel)
+│       └── notify-admin-order/      # Edge Function (com validação Bearer JWT)
 ├── server/api/
 │   └── notify-new-order.js          # Cópia legada CommonJS (referência)
 ├── assets/
 │   ├── banner.png
 │   └── sounds/new_order.mp3
 ├── supabaseConfig.js
-├── app.json                         # Plugin expo-notifications configurado
-├── .env
+├── app.json                         # Plugin expo-notifications + allowBackup: false configurado
+├── .env                             # Ignorado pelo Git (.gitignore) contra vazamento de credenciais
 └── package.json                     # inclui expo-notifications, expo-device, react-native-keyboard-controller
 
 Site-da-mara/                        # Site Next.js + API Vercel (repositório separado)
@@ -687,69 +711,3 @@ Refatoração canônica da Sacola (`app/cart.tsx`, `components/cart/*`) seguindo
   - Ordenação por dados reais de venda através do hook `useProductRanking`.
   - Performance: FlatList horizontal com `getItemLayout`, `initialNumToRender={4}`, `maxToRenderPerBatch={4}`, `windowSize={3}`, `removeClippedSubviews`, `snapToInterval`, `React.memo` nos cards e imagens com cache `memory-disk` via `expo-image`.
 - **Cores:** Zero amarelo escuro/hardcoded; todos os botões e destaques utilizam a cor primária canônica `COLORS.primary` de `constants/theme.js`.
-
-# CLAUDE.md
-
-Behavior guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
-
-**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
-
-## 1. Think Before Coding
-
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
-
-Before implementing:
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them - don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
-
-## 2. Simplicity First
-
-**Minimum code that solves the problem. Nothing speculative.**
-
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
-
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
-
-## 3. Surgical Changes
-
-**Touch only what you must. Clean up only your own mess.**
-
-When editing existing code:
-- Don't "improve" adjacent code, comments, or formatting.
-- Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it - don't delete it.
-
-When your changes create orphans:
-- Remove imports/variables/functions that YOUR changes made unused.
-- Don't remove pre-existing dead code unless asked.
-
-The test: Every changed line should trace directly to the user's request.
-
-## 4. Goal-Driven Execution
-
-**Define success criteria. Loop until verified.**
-
-Transform tasks into verifiable goals:
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
-
-For multi-step tasks, state a brief plan:
-```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
-```
-
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
-
----
-
-**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.

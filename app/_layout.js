@@ -20,6 +20,7 @@ import EntrarBanner from '../components/EntrarBanner';
 import AuthBottomSheet from '../components/AuthBottomSheet';
 import AnimatedSplash from '../components/AnimatedSplash';
 import CartBar from '../components/CartBar';
+import { ThemedAlertHost } from '../components/ThemedAlert';
 
 /* ============================================================
    CONTEXTO DE DIREÇÃO DE NAVEGAÇÃO
@@ -847,6 +848,7 @@ export default function RootLayout() {
           </View>
         </>
       )}
+      <ThemedAlertHost />
     </SafeAreaProvider>
     </HeaderAnimContext.Provider>
     </HeaderHiddenContext.Provider>

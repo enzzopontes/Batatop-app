@@ -15,6 +15,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../supabaseConfig';
 import { SOFT_LOGOUT_KEY, emitAuthUiChange } from '../utils/authSession';
+import { signInWithGoogle, signInWithFacebook } from '../utils/googleAuth';
+import { ThemedAlertHost, showThemedAlert } from './ThemedAlert';
 import HelpModal from './HelpModal';
 import Animated, {
   useSharedValue,
@@ -310,12 +312,24 @@ export default function AuthBottomSheet({ visible, onClose }: AuthBottomSheetPro
     router.push('/auth/login');
   }
 
-  function handleGoogle() {
-    // TODO: integrar login social real (mesmo placeholder do login.js)
+  async function handleGoogle() {
+    const result = await signInWithGoogle();
+    if (result.success) {
+      onClose();
+      router.replace('/');
+    } else if (!result.cancelled) {
+      showThemedAlert('Erro no login', result.error || 'Não foi possível conectar com o Google.');
+    }
   }
 
-  function handleFacebook() {
-    // TODO: integrar login social real
+  async function handleFacebook() {
+    const result = await signInWithFacebook();
+    if (result.success) {
+      onClose();
+      router.replace('/');
+    } else if (!result.cancelled) {
+      showThemedAlert('Erro no login', result.error || 'Não foi possível conectar com o Facebook.');
+    }
   }
 
   function handleContactSupport() {
@@ -498,6 +512,8 @@ export default function AuthBottomSheet({ visible, onClose }: AuthBottomSheetPro
         onClose={() => setHelpVisible(false)}
         onContactSupport={handleContactSupport}
       />
+
+      <ThemedAlertHost />
     </View>
   );
 }

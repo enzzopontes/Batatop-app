@@ -17,6 +17,8 @@ import Animated, { useAnimatedStyle, interpolate, Extrapolation } from 'react-na
 import { supabase } from '../../supabaseConfig';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SHADOWS } from '../../constants/theme';
+import { ThemedAlertHost, showThemedAlert } from '../../components/ThemedAlert';
+import { signInWithGoogle } from '../../utils/googleAuth';
 
 const RESEND_SECONDS = 59;
 const SAVED_USER_KEY = '@batatatop:savedUser';
@@ -91,6 +93,7 @@ export default function LoginScreen() {
   const [emailFocused, setEmailFocused] = useState(false);
   const emailRef = useRef(null);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [banner, setBanner] = useState(null); // { type: 'error' | 'success', text }
 
   const [code, setCode] = useState(['', '', '', '', '', '']);
@@ -212,6 +215,17 @@ export default function LoginScreen() {
   };
 
   const goToHome = () => router.replace('/');
+
+  const handleGoogleLogin = async () => {
+    setGoogleLoading(true);
+    const result = await signInWithGoogle();
+    setGoogleLoading(false);
+    if (result.success) {
+      goToHome();
+    } else if (!result.cancelled) {
+      showThemedAlert('Erro no login', result.error || 'Não foi possível conectar com o Google.');
+    }
+  };
 
   const verifyCode = async (token) => {
     setLoading(true);
@@ -384,6 +398,28 @@ export default function LoginScreen() {
                   </TouchableOpacity>
                 )}
               </View>
+
+              <View style={styles.oauthDivider}>
+                <View style={styles.oauthLine} />
+                <Text style={styles.oauthDividerText}>ou</Text>
+                <View style={styles.oauthLine} />
+              </View>
+
+              <TouchableOpacity
+                style={styles.googleButton}
+                onPress={handleGoogleLogin}
+                activeOpacity={0.8}
+                disabled={googleLoading || loading}
+              >
+                {googleLoading ? (
+                  <ActivityIndicator color={COLORS.text} size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="logo-google" size={20} color={COLORS.text} style={styles.googleIcon} />
+                    <Text style={styles.googleButtonText}>Continuar com Google</Text>
+                  </>
+                )}
+              </TouchableOpacity>
             </>
           )}
 
@@ -579,6 +615,8 @@ export default function LoginScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      <ThemedAlertHost />
     </View>
   );
 }
@@ -668,6 +706,41 @@ const styles = StyleSheet.create({
     color: COLORS.error,
     marginTop: 6,
     marginBottom: 4,
+  },
+  oauthDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 20,
+  },
+  oauthLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: COLORS.border,
+  },
+  oauthDividerText: {
+    marginHorizontal: 12,
+    color: COLORS.textMuted,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  googleButton: {
+    flexDirection: 'row',
+    height: 52,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.white,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...SHADOWS.sm,
+  },
+  googleIcon: {
+    marginRight: 10,
+  },
+  googleButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.text,
   },
 
   // ── Section label + inputs sem label flutuante (Nome/Sobrenome/CPF) ─

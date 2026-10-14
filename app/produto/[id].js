@@ -27,8 +27,10 @@ import { setPendingCartIntent } from '../../utils/pendingCartIntent';
 import { requestAuthSheet } from '../../utils/authSheetRequest';
 import { COLORS, SHADOWS, RADIUS } from '../../constants/theme';
 import useAddressVerification from '../hooks/useAddressVerification';
+import { useFooterInsets } from '../../hooks/useFooterInsets';
 import AddressVerificationModal from '../../components/AddressVerificationModal';
 import NoAddressModal from '../../components/NoAddressModal';
+import PrimaryButton from '../../components/PrimaryButton';
 
 const { width } = Dimensions.get('window');
 
@@ -56,6 +58,7 @@ export default function ProdutoDetail() {
   const router = useRouter();
   const { add: addToCart, updateItem, setHideFloating } = useCart();
   const insets = useSafeAreaInsets();
+  const { paddingBottom: footerPaddingBottom } = useFooterInsets({ extraPadding: 20 });
 
   const [produto, setProduto] = useState(null);
   const [adicionais, setAdicionais] = useState([]);
@@ -530,7 +533,7 @@ export default function ProdutoDetail() {
     <View style={s.container}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 + insets.bottom }}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 110 + footerPaddingBottom }}>
 
         {/* Imagem hero */}
         <View style={s.imageContainer}>
@@ -691,14 +694,14 @@ export default function ProdutoDetail() {
       </ScrollView>
 
       {/* Footer fixo */}
-      <Animated.View style={[s.footer, footerAnimatedStyle, { paddingBottom: insets.bottom }]}>
+      <Animated.View style={[s.footer, footerAnimatedStyle, { paddingBottom: footerPaddingBottom }]}>
         <View style={s.quantidadeContainer}>
           <TouchableOpacity
             style={s.qtyBtn}
             onPress={() => setQuantidade(Math.max(1, quantidade - 1))}
             activeOpacity={0.7}
           >
-            <Ionicons name="remove" size={20} color="#333" />
+            <Ionicons name="remove" size={24} color={COLORS.text} />
           </TouchableOpacity>
           <Text style={s.quantidadeText}>{quantidade}</Text>
           <TouchableOpacity
@@ -706,24 +709,21 @@ export default function ProdutoDetail() {
             onPress={() => setQuantidade(quantidade + 1)}
             activeOpacity={0.7}
           >
-            <Ionicons name="add" size={20} color="#333" />
+            <Ionicons name="add" size={24} color={COLORS.text} />
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity
-          style={[s.botaoAdicionar, isAdding && s.botaoAdicionarDisabled]}
-          onPress={handleAdicionarAoCarrinho}
-          activeOpacity={0.85}
+        <PrimaryButton
+          title={editCartItemId ? 'Salvar alterações' : 'Adicionar'}
+          rightText={formatPreco(calcularPrecoTotal())}
+          leftIcon={<Ionicons name="cart-outline" size={22} color={COLORS.white} />}
+          loading={isAdding}
           disabled={isAdding}
-        >
-          {isAdding ? (
-            <ActivityIndicator color="#333" style={{ marginRight: 8 }} />
-          ) : (
-            <Ionicons name="cart-outline" size={20} color="#333" style={{ marginRight: 8 }} />
-          )}
-          <Text style={s.botaoAdicionarText}>{editCartItemId ? 'Salvar alterações' : 'Adicionar'}</Text>
-          <Text style={s.botaoAdicionarPreco}>{formatPreco(calcularPrecoTotal())}</Text>
-        </TouchableOpacity>
+          onPress={handleAdicionarAoCarrinho}
+          spaceBetween
+          style={s.primaryBtnCustom}
+          textStyle={s.primaryBtnTextCustom}
+        />
       </Animated.View>
 
       <NoAddressModal
@@ -896,36 +896,38 @@ const s = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#fff',
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingTop: 14,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     borderTopWidth: 1,
-    borderTopColor: '#eee',
+    borderTopColor: COLORS.border,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
   },
   quantidadeContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
-    borderRadius: RADIUS.lg,
-    paddingHorizontal: 6,
-    paddingVertical: 6,
-    gap: 10,
+    backgroundColor: '#F4F4F5',
+    borderRadius: RADIUS.md,
+    height: 48,
+    paddingHorizontal: 8,
+    gap: 8,
   },
-  qtyBtn: { width: 32, height: 32, justifyContent: 'center', alignItems: 'center' },
-  quantidadeText: { fontSize: 16, fontWeight: '700', color: COLORS.text, minWidth: 22, textAlign: 'center' },
-  botaoAdicionar: {
+  qtyBtn: { width: 38, height: 38, justifyContent: 'center', alignItems: 'center' },
+  quantidadeText: { fontSize: 18, fontWeight: '800', color: COLORS.text, minWidth: 26, textAlign: 'center' },
+  primaryBtnCustom: {
     flex: 1,
-    backgroundColor: '#FFB800',
-    borderRadius: RADIUS.lg,
-    height: 50,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 18,
+    height: 48,
+    paddingHorizontal: 16,
   },
-  botaoAdicionarDisabled: { opacity: 0.7 },
-  botaoAdicionarText: { color: '#333', fontWeight: '700', fontSize: 15, flex: 1 },
-  botaoAdicionarPreco: { color: '#333', fontWeight: '700', fontSize: 15 },
+  primaryBtnTextCustom: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
 });

@@ -13,6 +13,8 @@
 import { View, Text, StyleSheet, Pressable, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../constants/theme';
+import { useFooterInsets } from '../hooks/useFooterInsets';
+import PrimaryButton from './PrimaryButton';
 
 type Address = {
   label?: 'casa' | 'trabalho' | null;
@@ -37,13 +39,14 @@ function labelInfo(label?: string | null) {
 }
 
 export default function AddressVerificationModal({ visible, address, onTrocar, onContinuar }: Props) {
+  const { paddingBottom } = useFooterInsets({ extraPadding: 20 });
   if (!address) return null;
   const { icon, text } = labelInfo(address.label);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onContinuar}>
       <View style={s.overlay}>
-        <View style={s.sheet}>
+        <View style={[s.sheet, { paddingBottom }]}>
           <View style={s.handle} />
 
           <Text style={s.title}>Seu endereço está certo?</Text>
@@ -73,9 +76,12 @@ export default function AddressVerificationModal({ visible, address, onTrocar, o
             )}
           </View>
 
-          <Pressable style={s.trocarBtn} onPress={onTrocar}>
-            <Text style={s.trocarBtnText}>Trocar o endereço</Text>
-          </Pressable>
+          <PrimaryButton
+            fullWidth
+            title="Trocar o endereço"
+            onPress={onTrocar}
+            style={{ marginBottom: SPACING[4] }}
+          />
 
           <Pressable style={s.continuarBtn} onPress={onContinuar} hitSlop={8}>
             <Text style={s.continuarBtnText}>Continuar assim</Text>
@@ -132,17 +138,6 @@ const s = StyleSheet.create({
   sub: { color: COLORS.textSecondary, fontSize: TYPOGRAPHY.sizes.sm },
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: COLORS.border, marginVertical: SPACING[3] },
   reference: { color: COLORS.textMuted, fontSize: TYPOGRAPHY.sizes.sm },
-  trocarBtn: {
-    width: '100%',
-    height: 52,
-    backgroundColor: COLORS.primary,
-    borderRadius: RADIUS.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: SPACING[4],
-    ...SHADOWS.md,
-  },
-  trocarBtnText: { color: '#333', fontWeight: '800', fontSize: TYPOGRAPHY.sizes.sm },
   continuarBtn: { paddingVertical: SPACING[2] },
   continuarBtnText: { color: COLORS.textSecondary, fontWeight: '700', fontSize: TYPOGRAPHY.sizes.sm },
 });

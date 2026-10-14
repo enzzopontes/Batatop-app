@@ -33,6 +33,20 @@ export async function getEffectiveSession() {
   const soft = await AsyncStorage.getItem(SOFT_LOGOUT_KEY);
   if (soft === 'true') return null;
   const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return null;
+
+  // Auto-refresh: se o token já expirou ou vence em menos de 60s, renova silenciosamente
+  if (session.expires_at && session.expires_at * 1000 <= Date.now() + 60000) {
+    try {
+      const { data: refreshed, error } = await supabase.auth.refreshSession();
+      if (!error && refreshed?.session) {
+        return refreshed.session;
+      }
+    } catch (e) {
+      console.warn('Falha ao auto-renovar sessão:', e);
+    }
+  }
+
   return session;
 }
 

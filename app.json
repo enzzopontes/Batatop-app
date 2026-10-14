@@ -25,6 +25,10 @@
       "package": "com.batatatop.app",
       "allowBackup": false,
       "edgeToEdgeEnabled": true,
+      "androidNavigationBar": {
+        "barStyle": "dark-content",
+        "backgroundColor": "#FFFFFF"
+      },
       "permissions": [
         "POST_NOTIFICATIONS"
       ]
@@ -56,7 +60,8 @@
         }
       ],
       "expo-video",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": false

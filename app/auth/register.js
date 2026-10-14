@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -16,6 +15,8 @@ import { useRouter } from 'expo-router';
 import { supabase } from '../../supabaseConfig';
 import { Ionicons } from '@expo/vector-icons';
 import { SHADOWS } from '../../constants/theme';
+import { ThemedAlertHost, showThemedAlert } from '../../components/ThemedAlert';
+import { signInWithGoogle } from '../../utils/googleAuth';
 
 export default function RegisterScreen() {
   const [name, setName] = useState('');
@@ -28,17 +29,17 @@ export default function RegisterScreen() {
 
   const handleRegister = async () => {
     if (!name || !email || !password || !confirmPassword) {
-      Alert.alert('Erro', 'Por favor, preencha todos os campos.');
+      showThemedAlert('Erro', 'Por favor, preencha todos os campos.');
       return;
     }
 
     if (password !== confirmPassword) {
-      Alert.alert('Erro', 'As senhas não coincidem.');
+      showThemedAlert('Erro', 'As senhas não coincidem.');
       return;
     }
 
     if (password.length < 6) {
-      Alert.alert('Erro', 'A senha deve ter pelo menos 6 caracteres.');
+      showThemedAlert('Erro', 'A senha deve ter pelo menos 6 caracteres.');
       return;
     }
 
@@ -54,17 +55,24 @@ export default function RegisterScreen() {
     });
 
     if (error) {
-      Alert.alert('Erro no Cadastro', error.message);
+      showThemedAlert('Erro no Cadastro', error.message);
       setLoading(false);
     } else {
-      Alert.alert('Sucesso', 'Conta criada com sucesso! Verifique seu e-mail para confirmar o cadastro.', [
+      showThemedAlert('Sucesso', 'Conta criada com sucesso! Verifique seu e-mail para confirmar o cadastro.', [
         { text: 'OK', onPress: () => router.replace('/auth/login') }
       ]);
     }
   };
 
   const handleGoogleLogin = async () => {
-    Alert.alert('Login com Google', 'Funcionalidade sendo configurada no Supabase.');
+    setLoading(true);
+    const result = await signInWithGoogle();
+    setLoading(false);
+    if (result.success) {
+      router.replace('/');
+    } else if (!result.cancelled) {
+      showThemedAlert('Erro no login', result.error || 'Não foi possível conectar com o Google.');
+    }
   };
 
   return (
@@ -169,6 +177,7 @@ export default function RegisterScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+      <ThemedAlertHost />
     </View>
   );
 }

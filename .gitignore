@@ -8,3 +8,7 @@ build/
 .env*
 .env.local
 *.pem
+
+# Local tooling & IDE
+.agents/
+.idea/
