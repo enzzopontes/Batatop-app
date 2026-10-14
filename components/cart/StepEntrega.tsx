@@ -115,23 +115,23 @@ export default function StepEntrega({
               </View>
             </View>
 
-            {/* Faixa para retirada na loja */}
+            {/* Faixa para retirada no local */}
             <Pressable
               style={styles.retiradaBanner}
               onPress={handleToggleRetirada}
-              accessibilityLabel="Mudar para retirada na loja com taxa grátis"
+              accessibilityLabel="Mudar para retirada no local com taxa grátis"
             >
               <Text style={styles.retiradaBannerText}>
-                <Text style={styles.boldText}>Taxa grátis</Text> retirando o seu pedido na loja ›
+                <Text style={styles.boldText}>Taxa grátis</Text> retirando o seu pedido no local ›
               </Text>
             </Pressable>
           </View>
         </>
       ) : (
         <>
-          {/* Modo Retirada na Loja */}
+          {/* Modo Retirada no Local */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Retirar na loja</Text>
+            <Text style={styles.sectionTitle}>Retirar no local</Text>
 
             <View style={styles.addressRow}>
               <View style={styles.addressIconWrap}>
@@ -153,7 +153,7 @@ export default function StepEntrega({
             {/* Card Retirada selecionado */}
             <View style={styles.optionCardSelected}>
               <View style={styles.optionLeft}>
-                <Text style={styles.optionTitle}>Retirada na loja</Text>
+                <Text style={styles.optionTitle}>Retirada no local</Text>
                 <Text style={styles.optionEta}>Pronto em {DELIVERY_ETA_TEXT}</Text>
               </View>
 
@@ -234,7 +234,7 @@ const styles = StyleSheet.create({
   changeActionText: {
     fontSize: 14,
     fontWeight: '600',
-    color: COLORS.primaryText,
+    color: COLORS.primary,
   },
   optionsHeader: {
     flexDirection: 'row',

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter, useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { supabase } from '../../supabaseConfig';
@@ -20,7 +20,9 @@ import {
   tokenizeCard,
   guessPaymentMethodId,
   createCardPayment,
+  getInstallments,
 } from '../../utils/mercadoPago';
+import { InstallmentOption } from './InstallmentsModal';
 import { notifyAdminNewOrder } from '../../utils/notifyNewOrder';
 import { MIN_ORDER_VALUE, DELIVERY_FEE, STORE_ADDRESS } from '../../constants/store';
 import { showThemedAlert } from '../ThemedAlert';
@@ -107,6 +109,11 @@ export function useCheckoutFlow() {
   const [_showReviseModal, _setShowReviseModal] = useState(false);
   const [showCardWizard, setShowCardWizard] = useState(false);
   const [minOrderSheetVisible, setMinOrderSheetVisible] = useState(false);
+  const [showInstallmentsModal, setShowInstallmentsModal] = useState(false);
+  const [installmentOptions, setInstallmentOptions] = useState<InstallmentOption[]>([]);
+  const [selectedInstallment, setSelectedInstallment] = useState<InstallmentOption | null>(null);
+  const [loadingInstallments, setLoadingInstallments] = useState(false);
+  const [installmentsError, setInstallmentsError] = useState<string | null>(null);
 
   // User & Session
   const [user, setUser] = useState<any>(null);
@@ -157,6 +164,8 @@ export function useCheckoutFlow() {
   // Zerando o ref quando carrinho, método de pagamento ou cupom mudarem
   useEffect(() => {
     pendingOrderIdRef.current = null;
+    setSelectedInstallment(null);
+    setInstallmentOptions([]);
   }, [items, paymentMethod, coupon]);
 
   // Calculations
@@ -177,7 +186,19 @@ export function useCheckoutFlow() {
           : Number(coupon.discount_value);
     }
   }
-  const total = Math.max(0, subtotal + deliveryFee - discount);
+  const baseTotal = Math.max(0, subtotal + deliveryFee - discount);
+  const total =
+    selectedInstallment && selectedInstallment.installments > 1 && paymentMethod === 'cartão de crédito'
+      ? selectedInstallment.totalAmount
+      : baseTotal;
+
+  const installmentLabel = useMemo(() => {
+    if (!selectedInstallment || selectedInstallment.installments === 1) {
+      return `1x de R$ ${baseTotal.toFixed(2).replace('.', ',')}`;
+    }
+    const hasInterest = Math.abs(selectedInstallment.totalAmount - baseTotal) > 0.05;
+    return `${selectedInstallment.installments}x de R$ ${selectedInstallment.installmentAmount.toFixed(2).replace('.', ',')}${hasInterest ? ' com acréscimos' : ''}`;
+  }, [selectedInstallment, baseTotal]);
 
   // Load Session and Profile
   const refreshUser = useCallback(async () => {
@@ -284,7 +305,11 @@ export function useCheckoutFlow() {
   const selectPaymentMethod = useCallback(
     async (method: PaymentMethod, card?: SavedCard) => {
       setPaymentMethod(method);
-      await setPreferredPaymentMethod(method);
+      if (method !== 'cartão de crédito') {
+        setSelectedInstallment(null);
+        setInstallmentOptions([]);
+        setShowInstallmentsModal(false);
+      }
 
       if (card) {
         setSelectedSavedCard(card);
@@ -311,6 +336,78 @@ export function useCheckoutFlow() {
     },
     [savedCards, loadSavedCards]
   );
+
+  // Carrega opções reais de parcelamento no Mercado Pago
+  const loadInstallments = useCallback(async () => {
+    if (paymentMethod !== 'cartão de crédito' || baseTotal <= 0) {
+      return;
+    }
+
+    setLoadingInstallments(true);
+    setInstallmentsError(null);
+
+    try {
+      let savedCardId: string | null = null;
+      let bin: string | null = null;
+
+      if (selectedSavedCard && !useManualCardForm) {
+        savedCardId = selectedSavedCard.id;
+      } else if (cardNumber.replace(/\D/g, '').length >= 6) {
+        bin = cardNumber.replace(/\D/g, '').slice(0, 6);
+      }
+
+      if (!savedCardId && !bin) {
+        const fallback: InstallmentOption = {
+          installments: 1,
+          installmentAmount: baseTotal,
+          totalAmount: baseTotal,
+        };
+        setInstallmentOptions([fallback]);
+        return;
+      }
+
+      const res = await getInstallments({
+        amount: baseTotal,
+        savedCardId,
+        bin,
+      });
+
+      if (res.success && Array.isArray(res.payerCosts) && res.payerCosts.length > 0) {
+        setInstallmentOptions(res.payerCosts);
+        setSelectedInstallment((prev) => {
+          if (!prev || prev.installments === 1) return res.payerCosts[0];
+          const match = res.payerCosts.find((c: InstallmentOption) => c.installments === prev.installments);
+          return match || res.payerCosts[0];
+        });
+      } else {
+        const fallback: InstallmentOption = {
+          installments: 1,
+          installmentAmount: baseTotal,
+          totalAmount: baseTotal,
+        };
+        setInstallmentOptions([fallback]);
+        if (res.error) {
+          setInstallmentsError(res.error);
+        }
+      }
+    } catch (err: any) {
+      console.error('Erro ao buscar parcelamento:', err);
+      setInstallmentsError(err?.message || 'Erro ao consultar parcelas');
+    } finally {
+      setLoadingInstallments(false);
+    }
+  }, [baseTotal, paymentMethod, selectedSavedCard, useManualCardForm, cardNumber]);
+
+  const openInstallments = useCallback(() => {
+    if (paymentMethod !== 'cartão de crédito') return;
+    setShowInstallmentsModal(true);
+    loadInstallments();
+  }, [paymentMethod, loadInstallments]);
+
+  const handleSelectInstallment = useCallback((option: InstallmentOption) => {
+    setSelectedInstallment(option);
+    setShowInstallmentsModal(false);
+  }, []);
 
   const toggleDeliveryType = useCallback(() => {
     setDeliveryType((prev) => (prev === 'delivery' ? 'retirada' : 'delivery'));
@@ -424,6 +521,11 @@ export function useCheckoutFlow() {
       };
       if (isCredit) {
         orderMetadata.card_type = 'credit';
+        if (selectedInstallment && selectedInstallment.installments > 1) {
+          orderMetadata.installments = selectedInstallment.installments;
+          orderMetadata.installment_amount = selectedInstallment.installmentAmount;
+          orderMetadata.financed_total = selectedInstallment.totalAmount;
+        }
       } else if (isDebit) {
         orderMetadata.card_type = 'debit';
       }
@@ -500,6 +602,8 @@ export function useCheckoutFlow() {
         }
       } else if (paymentMethod === 'cartão de crédito' || paymentMethod === 'cartão de débito') {
         try {
+          const chosenInstallments = paymentMethod === 'cartão de crédito' ? (selectedInstallment?.installments || 1) : 1;
+
           if (selectedSavedCard && !useManualCardForm) {
             cardResult = await chargeWithSavedCard({
               orderId: currentOrderId,
@@ -508,6 +612,8 @@ export function useCheckoutFlow() {
               securityCode: savedCardCvv,
               paymentMethodId: selectedSavedCard.payment_method_id,
               docNumber: cardCpf && isValidCpf(cardCpf) ? cardCpf.replace(/\D/g, '') : undefined,
+              installments: chosenInstallments,
+              installmentsBaseAmount: baseTotal,
             });
           } else {
             const [expMonth, expYear] = cardExpiry.split('/');
@@ -539,6 +645,8 @@ export function useCheckoutFlow() {
               token: tokenResult.token,
               paymentMethodId: pmId,
               docNumber: cardCpf.replace(/\D/g, ''),
+              installments: chosenInstallments,
+              installmentsBaseAmount: baseTotal,
             });
           }
         } finally {
@@ -598,27 +706,39 @@ export function useCheckoutFlow() {
     }
   };
 
-  // Step advancement / "Continuar" no rodapé abre o modal "Revise o seu pedido"
+  // Step advancement / "Continuar" no rodapé avança os steps 1 -> 2 -> 3
   const handleContinue = async () => {
     if (items.length === 0) return;
-    if (MIN_ORDER_VALUE > 0 && subtotal < MIN_ORDER_VALUE) {
-      setMinOrderSheetVisible(true);
+
+    if (step === 'itens') {
+      if (MIN_ORDER_VALUE > 0 && subtotal < MIN_ORDER_VALUE) {
+        setMinOrderSheetVisible(true);
+        return;
+      }
+      setStep('entrega');
       return;
     }
+
+    if (step === 'entrega') {
+      if (deliveryType === 'delivery' && !selectedAddress) {
+        showThemedAlert(
+          'Endereço necessário',
+          'Por favor, selecione ou cadastre um endereço para entrega.',
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            { text: 'Cadastrar endereço', onPress: () => router.push('/addresses') },
+          ]
+        );
+        return;
+      }
+      setStep('pagamento');
+      return;
+    }
+
+    // step === 'pagamento' -> Botão "Revisar pedido" abre o ReviseOrderModal
     const session = await getEffectiveSession();
     if (!session) {
       requestAuthSheet();
-      return;
-    }
-    if (wantsCutlery === null) {
-      showThemedAlert(
-        'Precisa de talheres?',
-        'Por favor, informe se você precisa de talheres descartáveis para a sua refeição.',
-        [
-          { text: 'Não preciso', style: 'cancel', onPress: () => { setWantsCutlery(false); setShowReviseModal(true); } },
-          { text: 'Sim, preciso', onPress: () => { setWantsCutlery(true); setShowReviseModal(true); } },
-        ]
-      );
       return;
     }
     setShowReviseModal(true);
@@ -626,6 +746,10 @@ export function useCheckoutFlow() {
 
   // Back handling
   const handleBack = () => {
+    if (showInstallmentsModal) {
+      setShowInstallmentsModal(false);
+      return;
+    }
     if (showReviseModal) {
       setShowReviseModal(false);
       return;
@@ -636,6 +760,14 @@ export function useCheckoutFlow() {
     }
     if (showCardWizard) {
       setShowCardWizard(false);
+      return;
+    }
+    if (step === 'pagamento') {
+      setStep('entrega');
+      return;
+    }
+    if (step === 'entrega') {
+      setStep('itens');
       return;
     }
     router.back();
@@ -739,6 +871,17 @@ export function useCheckoutFlow() {
     setShowCardWizard,
     minOrderSheetVisible,
     setMinOrderSheetVisible,
+    baseTotal,
+    showInstallmentsModal,
+    setShowInstallmentsModal,
+    installmentOptions,
+    selectedInstallment,
+    loadingInstallments,
+    installmentsError,
+    loadInstallments,
+    openInstallments,
+    handleSelectInstallment,
+    installmentLabel,
     selectPaymentMethod,
     submitOrder,
     handleContinue,

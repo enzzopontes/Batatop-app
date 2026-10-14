@@ -14,7 +14,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS } from '../../constants/theme';
 import { DeliveryType, PaymentMethod, Address } from './useCheckoutFlow';
 import { SavedCard } from '../../utils/usePaymentCards';
+import { useFooterInsets } from '../../hooks/useFooterInsets';
 import RipplePressable from './RipplePressable';
+import PrimaryButton from '../PrimaryButton';
 
 const CUPOM_ICON = require('../../assets/cuponpretobranco.png');
 
@@ -60,6 +62,7 @@ export default function ReviseOrderModal({
   onToggleDeliveryType,
 }: ReviseOrderModalProps) {
   const insets = useSafeAreaInsets();
+  const { paddingBottom } = useFooterInsets({ extraPadding: 16 });
   const formattedTotal = `R$ ${total.toFixed(2).replace('.', ',')}`;
 
   const isDelivery = deliveryType === 'delivery';
@@ -106,7 +109,7 @@ export default function ReviseOrderModal({
       <View style={styles.modalOverlay}>
         <Pressable style={styles.modalBackdrop} onPress={onClose} />
 
-        <View style={[styles.sheetContent, { paddingBottom: Math.max(insets.bottom, 20) + 12 }]}>
+        <View style={[styles.sheetContent, { paddingBottom }]}>
           {/* Handle curvo superior */}
           <View style={styles.sheetHandle} />
 
@@ -125,7 +128,7 @@ export default function ReviseOrderModal({
               </View>
               <View style={styles.rowTexts}>
                 <Text style={styles.rowTitle}>
-                  {isDelivery ? 'Entrega hoje' : 'Retirada na loja'}
+                  {isDelivery ? 'Entrega hoje' : 'Retirada no local'}
                 </Text>
                 <Text style={styles.rowSub}>
                   {isDelivery ? 'Hoje, 40 - 55 min' : 'Hoje, 15 - 25 min'}
@@ -179,7 +182,7 @@ export default function ReviseOrderModal({
                 ) : (
                   <>
                     <Text style={styles.rowTitle}>Nenhum cupom aplicado</Text>
-                    <Text style={styles.rowSub}>2 pra usar nesta loja</Text>
+                    <Text style={styles.rowSub}>Disponíveis para usar</Text>
                   </>
                 )}
               </View>
@@ -263,27 +266,23 @@ export default function ReviseOrderModal({
             )}
           </View>
 
-          {/* Botão principal "Fazer pedido" com animação ripple */}
-          <RipplePressable
-            style={[styles.orderButton, submitting && styles.buttonDisabled]}
+          {/* Botão principal "Fazer pedido" com PrimaryButton */}
+          <PrimaryButton
+            fullWidth
+            title="Fazer pedido"
             onPress={onSubmitOrder}
             disabled={submitting}
-            rippleColor="rgba(0, 0, 0, 0.22)"
+            loading={submitting}
             accessibilityLabel="Fazer pedido"
-          >
-            {submitting ? (
-              <ActivityIndicator color={COLORS.text} size="small" />
-            ) : (
-              <Text style={styles.orderButtonText}>Fazer pedido</Text>
-            )}
-          </RipplePressable>
+            style={{ marginBottom: SPACING[2] }}
+          />
 
           {/* Link "Alterar pedido" com animação ripple */}
           <RipplePressable
             style={styles.alterarLink}
             onPress={onClose}
             hitSlop={10}
-            rippleColor="rgba(193, 68, 14, 0.12)"
+            rippleColor="rgba(227, 160, 8, 0.12)"
           >
             <Text style={styles.alterarLinkText}>Alterar pedido</Text>
           </RipplePressable>
@@ -347,8 +346,8 @@ const styles = StyleSheet.create({
     marginRight: SPACING[3],
   },
   cupomIcon: {
-    width: 24,
-    height: 24,
+    width: 28,
+    height: 28,
   },
   rowTexts: {
     flex: 1,
@@ -430,7 +429,7 @@ const styles = StyleSheet.create({
   orderButtonText: {
     fontSize: 16,
     fontWeight: '700',
-    color: COLORS.text,
+    color: COLORS.white,
   },
   alterarLink: {
     alignItems: 'center',
@@ -441,7 +440,7 @@ const styles = StyleSheet.create({
   alterarLinkText: {
     fontSize: 14,
     fontWeight: '700',
-    color: COLORS.secondary,
+    color: COLORS.primary,
   },
   buttonDisabled: {
     opacity: 0.6,

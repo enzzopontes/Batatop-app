@@ -312,7 +312,7 @@ const styles = StyleSheet.create({
     color: COLORS.grayText,
   },
   tabTextActive: {
-    color: COLORS.primaryText,
+    color: COLORS.primary,
     fontWeight: '700',
   },
   body: {
@@ -390,6 +390,6 @@ const styles = StyleSheet.create({
   addNewCardText: {
     fontSize: 14,
     fontWeight: '700',
-    color: COLORS.primaryText,
+    color: COLORS.primary,
   },
 });

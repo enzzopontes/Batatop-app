@@ -11,9 +11,10 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { COLORS, TYPOGRAPHY, SPACING, RADIUS } from '../../constants/theme';
+import { COLORS, SPACING, RADIUS } from '../../constants/theme';
 import { PaymentMethod } from './useCheckoutFlow';
 import { SavedCard } from '../../utils/usePaymentCards';
+import { useFooterInsets } from '../../hooks/useFooterInsets';
 import RipplePressable from './RipplePressable';
 
 const LOGO_ESTENDIDA = require('../../assets/batatatopestendida.png');
@@ -37,7 +38,7 @@ export default function PaymentModal({
   onSelectPayment,
   onAddNewCard,
 }: PaymentModalProps) {
-  const insets = useSafeAreaInsets();
+  const { paddingBottom } = useFooterInsets({ extraPadding: 16 });
   const [tab, setTab] = useState<'app' | 'entrega'>(
     currentMethod === 'dinheiro' ||
       currentMethod === 'cartão de crédito (entrega)' ||
@@ -72,14 +73,14 @@ export default function PaymentModal({
     >
       <View style={styles.modalOverlay}>
         <Pressable style={styles.modalBackdrop} onPress={onClose} />
-        <View style={[styles.sheetContent, { paddingBottom: Math.max(insets.bottom, 20) + 10 }]}>
+        <View style={[styles.sheetContent, { paddingBottom }]}>
           {/* Handle superior curvo */}
           <View style={styles.sheetHandle} />
 
-          {/* Header com botão voltar circular e logo batatatopestendida.png */}
+          {/* Header com botão voltar na esquerda e logo no centro (idêntico ao print) */}
           <View style={styles.headerRow}>
-            <RipplePressable onPress={onClose} style={styles.backCircleBtn} hitSlop={10} rippleColor="rgba(0,0,0,0.1)">
-              <Ionicons name="chevron-back" size={20} color="#18181B" />
+            <RipplePressable onPress={onClose} style={styles.backBtn} hitSlop={12} rippleColor="rgba(0,0,0,0.1)">
+              <Ionicons name="chevron-back" size={24} color="#18181B" />
             </RipplePressable>
             <Image
               source={LOGO_ESTENDIDA}
@@ -231,21 +232,19 @@ export default function PaymentModal({
               </>
             ) : (
               <>
-                {/* Seção Dinheiro */}
+                {/* Seção Dinheiro (Item 4: idêntico ao print do iFood) */}
                 <Text style={styles.sectionHeaderTitle}>Dinheiro</Text>
                 <RipplePressable
-                  style={[styles.cardItem, currentMethod === 'dinheiro' && styles.cardItemSelected]}
+                  style={styles.deliveryCardItem}
                   onPress={() => handleSelect('dinheiro')}
-                  rippleColor="rgba(0, 0, 0, 0.08)"
+                  rippleColor="rgba(0, 0, 0, 0.06)"
+                  accessibilityLabel="Pagar em dinheiro na entrega"
                 >
-                  <View style={styles.cardItemLeft}>
-                    <View style={styles.brandIconBox}>
-                      <Ionicons name="cash-outline" size={22} color="#16A34A" />
+                  <View style={styles.deliveryCardLeft}>
+                    <View style={styles.cashIconWrap}>
+                      <Ionicons name="cash" size={24} color="#16A34A" />
                     </View>
-                    <View style={styles.cardInfo}>
-                      <Text style={styles.cardTitle}>Dinheiro</Text>
-                      <Text style={styles.cardSubtitle}>Pagamento no momento da entrega</Text>
-                    </View>
+                    <Text style={styles.deliveryCardName}>Dinheiro</Text>
                   </View>
 
                   <View
@@ -261,21 +260,16 @@ export default function PaymentModal({
                 {/* Seção Crédito */}
                 <Text style={styles.sectionHeaderTitle}>Crédito</Text>
                 <RipplePressable
-                  style={[
-                    styles.cardItem,
-                    currentMethod === 'cartão de crédito (entrega)' && styles.cardItemSelected,
-                  ]}
+                  style={styles.deliveryCardItem}
                   onPress={() => handleSelect('cartão de crédito (entrega)')}
-                  rippleColor="rgba(0, 0, 0, 0.08)"
+                  rippleColor="rgba(0, 0, 0, 0.06)"
+                  accessibilityLabel="Pagar com cartão de crédito na entrega"
                 >
-                  <View style={styles.cardItemLeft}>
-                    <View style={styles.brandIconBox}>
-                      <Ionicons name="card-outline" size={22} color="#18181B" />
+                  <View style={styles.deliveryCardLeft}>
+                    <View style={styles.cardIconWrap}>
+                      <Ionicons name="card" size={22} color="#18181B" />
                     </View>
-                    <View style={styles.cardInfo}>
-                      <Text style={styles.cardTitle}>Cartão de Crédito</Text>
-                      <Text style={styles.cardSubtitle}>Pague na maquininha ao receber</Text>
-                    </View>
+                    <Text style={styles.deliveryCardName}>Cartão de Crédito</Text>
                   </View>
 
                   <View
@@ -293,21 +287,16 @@ export default function PaymentModal({
                 {/* Seção Débito */}
                 <Text style={styles.sectionHeaderTitle}>Débito</Text>
                 <RipplePressable
-                  style={[
-                    styles.cardItem,
-                    currentMethod === 'cartão de débito (entrega)' && styles.cardItemSelected,
-                  ]}
+                  style={styles.deliveryCardItem}
                   onPress={() => handleSelect('cartão de débito (entrega)')}
-                  rippleColor="rgba(0, 0, 0, 0.08)"
+                  rippleColor="rgba(0, 0, 0, 0.06)"
+                  accessibilityLabel="Pagar com cartão de débito na entrega"
                 >
-                  <View style={styles.cardItemLeft}>
-                    <View style={styles.brandIconBox}>
-                      <Ionicons name="card-outline" size={22} color="#18181B" />
+                  <View style={styles.deliveryCardLeft}>
+                    <View style={styles.cardIconWrap}>
+                      <Ionicons name="card" size={22} color="#18181B" />
                     </View>
-                    <View style={styles.cardInfo}>
-                      <Text style={styles.cardTitle}>Cartão de Débito</Text>
-                      <Text style={styles.cardSubtitle}>Pague na maquininha ao receber</Text>
-                    </View>
+                    <Text style={styles.deliveryCardName}>Cartão de Débito</Text>
                   </View>
 
                   <View
@@ -366,17 +355,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: SPACING[3],
   },
-  backCircleBtn: {
+  backBtn: {
     width: 36,
     height: 36,
-    borderRadius: 18,
-    backgroundColor: '#F4F4F5',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'center',
-    overflow: 'hidden',
   },
   headerLogo: {
-    width: 190,
+    width: 160,
     height: 38,
   },
   headerSpacer: {
@@ -418,17 +404,58 @@ const styles = StyleSheet.create({
   },
   bodyContent: {
     paddingVertical: SPACING[2],
-    gap: SPACING[3],
   },
+  sectionHeaderTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#18181B',
+    marginTop: SPACING[3],
+    marginBottom: SPACING[2],
+  },
+  // Card de entrega idêntico ao print do iFood
+  deliveryCardItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E4E4E7',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginBottom: SPACING[1],
+  },
+  deliveryCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  cashIconWrap: {
+    width: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardIconWrap: {
+    width: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deliveryCardName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#18181B',
+  },
+  // Cards do app
   cardItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: '#FFFFFF',
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: '#E4E4E7',
-    borderRadius: RADIUS.lg,
+    borderRadius: 14,
     padding: SPACING[3],
+    marginBottom: SPACING[3],
     overflow: 'hidden',
   },
   cardItemSelected: {
@@ -487,38 +514,32 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    borderWidth: 2,
-    borderColor: '#D4D4D8',
+    backgroundColor: '#E5E7EB', // Círculo cinza claro preenchido (idêntico ao print do iFood)
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: SPACING[2],
   },
   radioOuterSelected: {
-    borderColor: '#18181B',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: COLORS.primary,
   },
   radioInnerSelected: {
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#18181B',
+    backgroundColor: COLORS.primary,
   },
   addCardLink: {
     alignSelf: 'center',
     paddingVertical: SPACING[3],
     paddingHorizontal: SPACING[4],
     borderRadius: RADIUS.md,
+    marginTop: SPACING[2],
     overflow: 'hidden',
   },
   addCardLinkText: {
     fontSize: 14,
     fontWeight: '700',
     color: COLORS.primary,
-  },
-  sectionHeaderTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#18181B',
-    marginTop: SPACING[2],
-    marginBottom: SPACING[1],
   },
 });

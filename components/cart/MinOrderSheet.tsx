@@ -1,9 +1,10 @@
 import React from 'react';
 import { View, Text, StyleSheet, Modal, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING, RADIUS } from '../../constants/theme';
 import { MIN_ORDER_VALUE } from '../../constants/store';
+import { useFooterInsets } from '../../hooks/useFooterInsets';
+import PrimaryButton from '../PrimaryButton';
 
 interface MinOrderSheetProps {
   visible: boolean;
@@ -12,7 +13,7 @@ interface MinOrderSheetProps {
 
 export default function MinOrderSheet({ visible, onClose }: MinOrderSheetProps) {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
+  const { paddingBottom } = useFooterInsets({ extraPadding: 16 });
   const minFormatted = `R$ ${MIN_ORDER_VALUE.toFixed(2).replace('.', ',')}`;
 
   const handleAddMore = () => {
@@ -30,21 +31,21 @@ export default function MinOrderSheet({ visible, onClose }: MinOrderSheetProps) 
       <View style={styles.overlay}>
         <Pressable style={styles.backdrop} onPress={onClose} />
 
-        <View style={[styles.sheet, { paddingBottom: insets.bottom > 0 ? insets.bottom : SPACING[4] }]}>
+        <View style={[styles.sheet, { paddingBottom }]}>
           <View style={styles.handle} />
 
           <Text style={styles.title}>Valor mínimo do pedido</Text>
           <Text style={styles.description}>
-            O pedido mínimo dessa loja é {minFormatted} sem contar com a taxa de entrega
+            O pedido mínimo é {minFormatted} sem contar com a taxa de entrega
           </Text>
 
-          <Pressable
-            style={styles.actionBtn}
+          <PrimaryButton
+            fullWidth
+            title="Adicionar mais itens"
             onPress={handleAddMore}
             accessibilityLabel="Adicionar mais itens"
-          >
-            <Text style={styles.actionBtnText}>Adicionar mais itens</Text>
-          </Pressable>
+            style={{ marginBottom: 12 }}
+          />
 
           <Pressable
             style={styles.cancelBtn}
@@ -104,27 +105,13 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     paddingHorizontal: 8,
   },
-  actionBtn: {
-    backgroundColor: COLORS.primary,
-    width: '100%',
-    height: 48,
-    borderRadius: RADIUS.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  actionBtnText: {
-    color: COLORS.text,
-    fontWeight: '700',
-    fontSize: 15,
-  },
   cancelBtn: {
     paddingVertical: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
   cancelBtnText: {
-    color: COLORS.primaryText,
+    color: COLORS.primary,
     fontWeight: '700',
     fontSize: 15,
   },

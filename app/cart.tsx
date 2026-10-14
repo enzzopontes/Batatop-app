@@ -8,7 +8,10 @@ import { useCheckoutFlow } from '../components/cart/useCheckoutFlow';
 import CartHeader from '../components/cart/CartHeader';
 import CartFooter from '../components/cart/CartFooter';
 import StepItens from '../components/cart/StepItens';
+import StepEntrega from '../components/cart/StepEntrega';
+import StepPagamento from '../components/cart/StepPagamento';
 import PaymentModal from '../components/cart/PaymentModal';
+import InstallmentsModal from '../components/cart/InstallmentsModal';
 import ReviseOrderModal from '../components/cart/ReviseOrderModal';
 import MinOrderSheet from '../components/cart/MinOrderSheet';
 import CardWizard from '../components/CardWizard';
@@ -18,7 +21,7 @@ export default function CartScreen() {
   const router = useRouter();
   const flow = useCheckoutFlow();
 
-  // Android hardware back handler
+  // Android hardware back handler sincronizado com o fluxo de 3 passos
   useEffect(() => {
     const onBackPress = () => {
       flow.handleBack();
@@ -59,26 +62,49 @@ export default function CartScreen() {
           />
 
           <View style={styles.content}>
-            <StepItens
-              items={flow.items}
-              subtotal={flow.subtotal}
-              deliveryFee={flow.deliveryFee}
-              discount={flow.discount}
-              total={flow.total}
-              coupon={flow.coupon}
-              deliveryType={flow.deliveryType}
-              paymentMethod={flow.paymentMethod}
-              selectedSavedCard={flow.selectedSavedCard}
-              wantsCutlery={flow.wantsCutlery}
-              setWantsCutlery={flow.setWantsCutlery}
-              rankedProducts={flow.rankedProducts}
-              onUpdateQty={flow.updateQty}
-              onRemoveItem={flow.removeFromCart}
-              onRemoveCoupon={() => flow.setCoupon(null)}
-              onAddQuickItem={flow.handleAddQuickItem}
-              onEditItem={flow.onEditItem}
-              onOpenPaymentSelector={() => flow.setShowPaymentSelector(true)}
-            />
+            {flow.step === 'itens' && (
+              <StepItens
+                items={flow.items}
+                subtotal={flow.subtotal}
+                deliveryFee={flow.deliveryFee}
+                discount={flow.discount}
+                total={flow.total}
+                coupon={flow.coupon}
+                deliveryType={flow.deliveryType}
+                rankedProducts={flow.rankedProducts}
+                onUpdateQty={flow.updateQty}
+                onRemoveItem={flow.removeFromCart}
+                onRemoveCoupon={() => flow.setCoupon(null)}
+                onAddQuickItem={flow.handleAddQuickItem}
+                onEditItem={flow.onEditItem}
+              />
+            )}
+
+            {flow.step === 'entrega' && (
+              <StepEntrega
+                deliveryType={flow.deliveryType}
+                setDeliveryType={flow.setDeliveryType}
+                selectedAddress={flow.selectedAddress}
+                loadingAddress={flow.loadingAddress}
+              />
+            )}
+
+            {flow.step === 'pagamento' && (
+              <StepPagamento
+                paymentMethod={flow.paymentMethod}
+                selectedSavedCard={flow.selectedSavedCard}
+                subtotal={flow.subtotal}
+                deliveryFee={flow.deliveryFee}
+                discount={flow.discount}
+                total={flow.total}
+                coupon={flow.coupon}
+                deliveryType={flow.deliveryType}
+                onRemoveCoupon={() => flow.setCoupon(null)}
+                onOpenPaymentSelector={() => flow.setShowPaymentSelector(true)}
+                onOpenInstallments={flow.openInstallments}
+                installmentText={flow.installmentLabel}
+              />
+            )}
           </View>
 
           {flow.items.length > 0 && (
@@ -93,7 +119,7 @@ export default function CartScreen() {
             />
           )}
 
-          {/* Modal "Revise o seu pedido" (Imagem 1) */}
+          {/* Modal "Revise o seu pedido" */}
           <ReviseOrderModal
             visible={flow.showReviseModal}
             total={flow.total}
@@ -111,7 +137,7 @@ export default function CartScreen() {
             onSubmitOrder={flow.submitOrder}
             onEditAddress={() => {
               flow.setShowReviseModal(false);
-              router.push('/addresses');
+              flow.setStep('entrega');
             }}
             onEditCoupon={() => {
               flow.setShowReviseModal(false);
@@ -124,7 +150,7 @@ export default function CartScreen() {
             onToggleDeliveryType={flow.toggleDeliveryType}
           />
 
-          {/* Modal de Pagamento estilo profile (Imagens 3 e 4) */}
+          {/* Modal de Pagamento (bottom sheet aberto ao tocar no card da tela 3) */}
           <PaymentModal
             visible={flow.showPaymentSelector}
             currentMethod={flow.paymentMethod}
@@ -136,6 +162,19 @@ export default function CartScreen() {
               flow.setShowPaymentSelector(false);
               flow.setShowCardWizard(true);
             }}
+          />
+
+          {/* Modal de Parcelamento (bottom sheet cartão de crédito) */}
+          <InstallmentsModal
+            visible={flow.showInstallmentsModal}
+            baseAmount={flow.baseTotal}
+            options={flow.installmentOptions}
+            selectedInstallments={flow.selectedInstallment?.installments || 1}
+            loading={flow.loadingInstallments}
+            error={flow.installmentsError}
+            onClose={() => flow.setShowInstallmentsModal(false)}
+            onSelectInstallment={flow.handleSelectInstallment}
+            onRetry={flow.loadInstallments}
           />
         </>
       )}

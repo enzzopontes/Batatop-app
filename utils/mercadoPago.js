@@ -94,6 +94,8 @@ export async function createCardPayment({
   issuerId = null,
   docNumber,
   savedCardId = null,
+  installments = 1,
+  installmentsBaseAmount = null,
 }) {
   return callBackend('card-payment', {
     orderId,
@@ -102,7 +104,17 @@ export async function createCardPayment({
     issuerId,
     docNumber,
     savedCardId,
+    installments,
+    installmentsBaseAmount,
   });
+}
+
+/**
+ * Opções reais de parcelamento no crédito (Mercado Pago), consultadas no backend.
+ * Cartão salvo: envia só savedCardId (BIN/emissor resolvidos no servidor). Cartão digitado: envia o BIN.
+ */
+export async function getInstallments({ amount, savedCardId = null, bin = null }) {
+  return callBackend('installments', { amount, savedCardId, bin });
 }
 
 // ── Funções no cliente com Public Key (Checkout Transparente) ────────────────
@@ -208,6 +220,8 @@ export async function chargeWithSavedCard({
   paymentMethodId,
   issuerId = null,
   docNumber,
+  installments = 1,
+  installmentsBaseAmount = null,
 }) {
   const tokenResult = await tokenizeSavedCardCvv({ cardId, securityCode });
   if (!tokenResult.success) {
@@ -221,6 +235,8 @@ export async function chargeWithSavedCard({
     issuerId,
     docNumber,
     savedCardId,
+    installments,
+    installmentsBaseAmount,
   });
 }
 
