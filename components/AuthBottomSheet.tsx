@@ -535,14 +535,14 @@ export default function AuthBottomSheet({ visible, onClose }: AuthBottomSheetPro
             pointerEvents={estado === 'C' ? 'auto' : 'none'}
           >
             <Text style={styles.comoContinuarTitle}>Como deseja continuar?</Text>
+            <Pressable style={styles.btnFilled} onPress={handleEscolherEmail}>
+              <Text style={styles.btnFilledText}>E-mail</Text>
+            </Pressable>
             <Pressable
-              style={[styles.btnFilled, styles.btnDisabled]}
+              style={[styles.btnOutline, styles.btnOutlineDisabled]}
               onPress={handleEscolherCelular}
             >
-              <Text style={[styles.btnFilledText, styles.btnDisabledText]}>Celular (Indisponível)</Text>
-            </Pressable>
-            <Pressable style={styles.btnOutline} onPress={handleEscolherEmail}>
-              <Text style={styles.btnOutlineText}>E-mail</Text>
+              <Text style={[styles.btnOutlineText, styles.btnDisabledText]}>Celular (Indisponível)</Text>
             </Pressable>
           </Animated.View>
         </Animated.View>
@@ -756,6 +756,10 @@ const styles = StyleSheet.create({
   },
   btnDisabled: {
     backgroundColor: '#E4E4E7',
+    opacity: 0.7,
+  },
+  btnOutlineDisabled: {
+    borderColor: '#E4E4E7',
     opacity: 0.7,
   },
   btnDisabledText: {
