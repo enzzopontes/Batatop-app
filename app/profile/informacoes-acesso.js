@@ -165,7 +165,7 @@ export default function InformacoesAcesso() {
           {accessPhone ? (
             <Text style={s.fieldValue}>{formatPhoneDisplay(accessPhone)}</Text>
           ) : (
-            <Pressable style={s.linkRow} onPress={() => router.push('/auth/telefone')}>
+            <Pressable style={s.linkRow} onPress={() => showThemedAlert('Em breve', 'Verificação por celular temporariamente indisponível.')}>
               <Text style={s.linkText}>Adicionar telefone</Text>
               <Ionicons name="chevron-forward" size={16} color={COLORS.primary} />
             </Pressable>

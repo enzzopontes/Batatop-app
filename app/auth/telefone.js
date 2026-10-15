@@ -14,6 +14,7 @@ import { useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { supabase } from '../../supabaseConfig';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../../constants/theme';
+import { showThemedAlert } from '../../components/ThemedAlert';
 
 // (XX) XXXXX-XXXX enquanto digita
 function formatPhone(value) {
@@ -44,6 +45,11 @@ export default function TelefoneScreen() {
     transform: [{ translateY: keyboardHeight.value }],
   }));
 
+  useEffect(() => {
+    showThemedAlert('Em breve', 'Login por celular temporariamente indisponível. Use e-mail ou Google.');
+    router.replace('/auth/login');
+  }, [router]);
+
   // Foco manual com atraso — autoFocus abre o teclado no meio da
   // transição de entrada da tela (Expo Router) e desalinha o layout.
   useEffect(() => {
@@ -52,6 +58,8 @@ export default function TelefoneScreen() {
   }, []);
 
   async function handleReceberCodigo(channel) {
+    setBanner({ type: 'error', text: 'Login por celular temporariamente indisponível.' });
+    return;
     if (!isValid || loadingChannel) return;
     setLoadingChannel(channel);
     setBanner(null);
@@ -129,7 +137,7 @@ export default function TelefoneScreen() {
         </View>
 
         <Animated.View style={[styles.footerAvoider, footerAnimatedStyle]}>
-          <View style={styles.footer}>
+          <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 16) + 10 }]}>
             <Text style={styles.sectionLabel}>Como deseja receber o código?</Text>
 
             <TouchableOpacity

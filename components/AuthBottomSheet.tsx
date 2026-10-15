@@ -6,8 +6,10 @@ import {
   Pressable,
   StyleSheet,
   Linking,
+  Dimensions,
   useWindowDimensions,
   LayoutChangeEvent,
+  PanResponder,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,6 +26,7 @@ import Animated, {
   withTiming,
   withDelay,
   Easing,
+  runOnJS,
 } from 'react-native-reanimated';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS } from '../constants/theme';
 
@@ -47,26 +50,51 @@ const SWITCH_STAGGER = 120; // atraso do conteúdo novo em relação à saída d
 export default function AuthBottomSheet({ visible, onClose }: AuthBottomSheetProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useWindowDimensions();
+  const { width: SCREEN_WIDTH, height: windowHeight } = useWindowDimensions();
+  // No Android com navegação edge-to-edge / 3 botões, useWindowDimensions().height
+  // desconta as barras de navegação enquanto o container ocupa screen.height.
+  const SCREEN_HEIGHT = Math.max(windowHeight, Dimensions.get('screen').height, Dimensions.get('window').height);
   // loginfoto.jpeg é 900x1600 (9:16) — altura de base calculada da largura
   // real da tela, usada só como fallback antes da primeira medição do painel.
   const IMAGE_HEIGHT_FALLBACK = SCREEN_WIDTH * (16 / 9);
-  // Sobreposição de segurança: a foto sempre estende um pouco além de onde o
-  // painel começa, pra nunca sobrar aquela faixa preta do fundo do sheet
-  // entre a foto e o painel branco. Precisa ser maior que o raio arredondado
-  // do topo do painel (RADIUS['2xl']), senão sobra uma frestinha bem na
-  // pontinha da curva.
-  const IMAGE_OVERLAP = 80;
+  // Sobreposição de segurança: a foto cobre o topo sem excesso de corte/zoom
+  const IMAGE_OVERLAP = 40;
 
   // Distância real até o fim da tela: insets.bottom já muda sozinho conforme
   // o aparelho está em navegação por gestos (barrinha fina, inset pequeno)
-  // ou por botões (inset maior por causa da barra do sistema) — por isso
-  // basta somar ao respiro padrão em vez de usar um valor fixo, senão o
-  // conteúdo cola na barra de botões ou sobra espaço demais no modo gesto.
-  const bottomPadding = SPACING[8] + insets.bottom;
+  const bottomInset = Math.max(insets.bottom || 0, 16);
+  const bottomPadding = SPACING[8] + bottomInset;
 
   const translateY = useSharedValue(SCREEN_HEIGHT);
   const backdropOpacity = useSharedValue(0);
+  const [mounted, setMounted] = useState(visible);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gestureState) => gestureState.dy > 6,
+      onPanResponderMove: (_, gestureState) => {
+        if (gestureState.dy > 0) {
+          translateY.value = gestureState.dy;
+          backdropOpacity.value = Math.max(0, 1 - gestureState.dy / 300);
+        } else {
+          translateY.value = 0;
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dy > 120 || gestureState.vy > 0.5) {
+          onClose();
+        } else {
+          translateY.value = withTiming(0, { duration: 200, easing: Easing.out(Easing.ease) });
+          backdropOpacity.value = withTiming(1, { duration: 150 });
+        }
+      },
+      onPanResponderTerminate: () => {
+        translateY.value = withTiming(0, { duration: 200, easing: Easing.out(Easing.ease) });
+        backdropOpacity.value = withTiming(1, { duration: 150 });
+      },
+    })
+  ).current;
 
   const [savedUser, setSavedUser] = useState<SavedUser | null>(null);
   // 'A' = Já tenho conta / Criar conta (padrão)
@@ -155,14 +183,23 @@ export default function AuthBottomSheet({ visible, onClose }: AuthBottomSheetPro
 
   useEffect(() => {
     if (visible) {
+      setMounted(true);
       checkSavedUser();
-      translateY.value = withTiming(0, { duration: 450, easing: Easing.out(Easing.cubic) });
-      backdropOpacity.value = withTiming(1, { duration: 400 });
+      translateY.value = withTiming(0, { duration: 350, easing: Easing.out(Easing.cubic) });
+      backdropOpacity.value = withTiming(1, { duration: 180, easing: Easing.out(Easing.ease) });
     } else {
-      translateY.value = withTiming(SCREEN_HEIGHT, { duration: 350, easing: Easing.in(Easing.cubic) });
-      backdropOpacity.value = withTiming(0, { duration: 300 });
+      backdropOpacity.value = withTiming(0, { duration: 130, easing: Easing.in(Easing.ease) });
+      translateY.value = withTiming(
+        SCREEN_HEIGHT,
+        { duration: 250, easing: Easing.in(Easing.cubic) },
+        (finished) => {
+          if (finished) {
+            runOnJS(setMounted)(false);
+          }
+        }
+      );
     }
-  }, [visible, checkSavedUser]);
+  }, [visible, checkSavedUser, SCREEN_HEIGHT]);
 
   function handleAcessarOutraConta() {
     hasSwitchedRef.current = true;
@@ -287,8 +324,8 @@ export default function AuthBottomSheet({ visible, onClose }: AuthBottomSheetPro
       console.log('📵 Fallback: Abrindo login de novo');
       onClose();
       if (savedUser?.phone) {
-        console.log('📞 → Abrindo /auth/telefone');
-        router.push('/auth/telefone');
+        console.log('📞 → Redirecionando para /auth/login (celular indisponível)');
+        router.push('/auth/login');
       } else {
         console.log('📧 → Abrindo /auth/login');
         router.push({ pathname: '/auth/login', params: { email: savedUser?.email || '' } });
@@ -303,8 +340,7 @@ export default function AuthBottomSheet({ visible, onClose }: AuthBottomSheetPro
 
   // Estado C: escolha de Celular ou E-mail.
   function handleEscolherCelular() {
-    onClose();
-    router.push('/auth/telefone');
+    showThemedAlert('Em breve', 'Login por celular temporariamente indisponível. Use e-mail ou Google.');
   }
 
   function handleEscolherEmail() {
@@ -333,8 +369,10 @@ export default function AuthBottomSheet({ visible, onClose }: AuthBottomSheetPro
   }
 
   function handleContactSupport() {
-    // TODO: confirmar número real do WhatsApp de suporte
-    Linking.openURL('https://wa.me/5500000000000');
+    const msg = encodeURIComponent('Olá! Preciso de ajuda para acessar minha conta no app Batata Top.');
+    Linking.openURL(`https://wa.me/5514997361015?text=${msg}`).catch(() => {
+      showThemedAlert('Suporte', 'Não foi possível abrir o WhatsApp. Telefone: (14) 99736-1015');
+    });
   }
 
   function handleLayoutA(e: LayoutChangeEvent) {
@@ -362,11 +400,10 @@ export default function AuthBottomSheet({ visible, onClose }: AuthBottomSheetPro
 
   const imageStyle = useAnimatedStyle(() => {
     if (panelHeight.value > 0) {
-      // Math.max garante que a foto nunca fica curta demais lá em cima
-      // (sempre cobre no mínimo até a status bar), mesmo se o painel de
-      // baixo (Estado A/B/C) ficar muito alto e "comer" quase toda a tela.
       const computed = SCREEN_HEIGHT - panelHeight.value + IMAGE_OVERLAP;
-      return { height: Math.max(computed, insets.top + IMAGE_OVERLAP) };
+      // Não ultrapassa a proporção nativa da foto para evitar zoom-in agressivo
+      const clampedHeight = Math.min(Math.max(computed, insets.top + IMAGE_OVERLAP), IMAGE_HEIGHT_FALLBACK);
+      return { height: clampedHeight };
     }
     return { height: IMAGE_HEIGHT_FALLBACK };
   });
@@ -390,7 +427,7 @@ export default function AuthBottomSheet({ visible, onClose }: AuthBottomSheetPro
     transform: [{ translateY: translateYC.value }],
   }));
 
-  if (!visible) return null;
+  if (!mounted) return null;
 
   return (
     <View style={styles.overlay} pointerEvents="box-none">
@@ -425,7 +462,8 @@ export default function AuthBottomSheet({ visible, onClose }: AuthBottomSheetPro
             os três blocos abaixo ficam sempre montados, sobrepostos, e só
             trocam de opacidade/posição — assim dá pra medir a altura de um
             enquanto outro está visível, sem pulos na troca. */}
-        <Animated.View style={[styles.content, panelStyle]}>
+        <Animated.View style={[styles.content, panelStyle]} {...panResponder.panHandlers}>
+          <View style={styles.handle} />
           <Animated.View
             style={[styles.stateBlock, blockBStyle, { paddingBottom: bottomPadding }]}
             onLayout={handleLayoutB}
@@ -497,11 +535,14 @@ export default function AuthBottomSheet({ visible, onClose }: AuthBottomSheetPro
             pointerEvents={estado === 'C' ? 'auto' : 'none'}
           >
             <Text style={styles.comoContinuarTitle}>Como deseja continuar?</Text>
-            <Pressable style={styles.btnFilled} onPress={handleEscolherCelular}>
-              <Text style={styles.btnFilledText}>Celular</Text>
+            <Pressable
+              style={[styles.btnFilled, styles.btnDisabled]}
+              onPress={handleEscolherCelular}
+            >
+              <Text style={[styles.btnFilledText, styles.btnDisabledText]}>Celular (Indisponível)</Text>
             </Pressable>
-            <Pressable style={styles.btnTextOnly} onPress={handleEscolherEmail} hitSlop={8}>
-              <Text style={styles.btnTextOnlyLabel}>E-mail</Text>
+            <Pressable style={styles.btnOutline} onPress={handleEscolherEmail}>
+              <Text style={styles.btnOutlineText}>E-mail</Text>
             </Pressable>
           </Animated.View>
         </Animated.View>
@@ -564,6 +605,16 @@ const styles = StyleSheet.create({
     borderTopRightRadius: RADIUS['2xl'],
     overflow: 'hidden',
   },
+  handle: {
+    width: 38,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#D4D4D8',
+    alignSelf: 'center',
+    marginTop: 8,
+    marginBottom: 4,
+    zIndex: 10,
+  },
   // Cada bloco (Estado A / B / C) ocupa a largura toda e se posiciona no
   // topo do painel; é o `content` (panelStyle) que controla a altura visível.
   stateBlock: {
@@ -589,7 +640,7 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.sizes.base,
   },
   btnOutline: {
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderColor: COLORS.primary,
     borderRadius: RADIUS.lg,
     height: 55,
@@ -702,5 +753,12 @@ const styles = StyleSheet.create({
     color: COLORS.accent,
     fontWeight: '700',
     fontSize: TYPOGRAPHY.sizes.base,
+  },
+  btnDisabled: {
+    backgroundColor: '#E4E4E7',
+    opacity: 0.7,
+  },
+  btnDisabledText: {
+    color: '#A1A1AA',
   },
 });
