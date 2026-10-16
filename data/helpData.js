@@ -304,40 +304,79 @@ As avaliações no Batata Top têm como objetivo coletar a opinião sincera dos 
     id: 'declaracao-de-privacidade',
     categoryId: 'politicas',
     title: 'Declaração de Privacidade',
-    shortDesc: 'Como tratamos e protegemos seus dados pessoais.',
+    shortDesc: 'Como tratamos e protegemos seus dados pessoais sob a LGPD.',
     isRichPrivacy: true,
-    updateDate: '2 de outubro de 2026',
-    readingTime: '5 minutos',
+    updateDate: '16 de outubro de 2026',
+    readingTime: '6 minutos',
     content: `
 ### Seus dados são seus.
 
-A proteção dos seus dados é muito importante para o **Batata Top**. Respeitamos a sua privacidade na nossa missão de proporcionar o melhor delivery de batatas recheadas de Iacanga-SP!
+A proteção da sua privacidade é prioridade absoluta no Batata Top. Assumimos o compromisso de tratar suas informações pessoais com total transparência, segurança e em estrita conformidade com a Lei Geral de Proteção de Dados Pessoais (LGPD — Lei nº 13.709/2018).
 
-Esta **Declaração de Privacidade** descreve como obtemos, armazenamos, utilizamos, compartilhamos e protegemos as suas informações pessoais.
+Esta Declaração de Privacidade descreve como coletamos, utilizamos, armazenamos, compartilhamos e protegemos os seus dados durante o uso do nosso aplicativo de delivery em Iacanga-SP.
 
-Recomendamos que você conheça nossas práticas:
+Ao utilizar o Batata Top, você concorda com as práticas descritas a seguir.
 
 ### 1. Que dados coletamos?
-- **Dados cadastrais:** Nome completo, e-mail, número de telefone com DDD e data de nascimento.
-- **Endereço de entrega:** Logradouro, número, bairro, cidade (Iacanga-SP) e ponto de referência.
-- **Dados de pagamento:** As transações online com cartão de crédito/débito e PIX são processadas diretamente pelo **Mercado Pago**. O Batata Top não armazena o número completo do seu cartão de crédito.
-- **Histórico de pedidos:** Itens comprados, adicionais selecionados, valores e cupons utilizados.
+
+Coletamos apenas as informações necessárias para operar o serviço de delivery e cumprir exigências legais:
+
+- Dados cadastrais: Nome completo, endereço de e-mail e número de telefone celular com DDD (utilizado para confirmação da conta e contato operacional sobre o pedido).
+- CPF (opcional): Coletado somente caso você opte por incluí-lo na emissão do documento fiscal ou para cumprimento de obrigações tributárias.
+- Dados de entrega e endereço: Rua, número, complemento, bairro, cidade (Iacanga-SP) e referências fornecidas por você para a localização exata do imóvel.
+- Localização e GPS (opcional): Coordenadas obtidas quando você autoriza a permissão no aparelho, utilizadas exclusivamente em primeiro plano para agilizar a seleção do endereço e exibir a estimativa de entrega no mapa.
+- Dados de pagamento: Todas as cobranças online por PIX e cartão de crédito ou débito são processadas de forma criptografada pelo Mercado Pago. O Batata Top não armazena números de cartão, códigos de segurança (CVV) ou senhas bancárias em seus servidores.
+- Histórico de pedidos: Produtos adquiridos, complementos, valores, cupons aplicados, datas e horários das compras.
+- Identificadores de dispositivo e acesso: Versão do aplicativo, modelo do dispositivo, endereço IP, logs de acesso (conforme o Marco Civil da Internet) e token de notificação para entrega de avisos no aparelho.
 
 ### 2. Para que usamos seus dados?
-- Para processar, preparar e entregar seu pedido no seu endereço em Iacanga-SP.
-- Para enviar notificações sobre o andamento do seu pedido (em preparo, saiu para entrega, etc.).
-- Para permitir a aplicação de cupons de desconto e promoções personalizadas.
-- Para garantir a segurança do seu cadastro e evitar fraudes.
 
-### 3. Como protegemos seus dados?
-- Todas as conexões entre o app e nossos servidores Supabase e Mercado Pago são protegidas com **criptografia SSL de alta segurança**.
-- Seus dados nunca são vendidos ou repassados a terceiros para marketing ou publicidade indesejada.
+Utilizamos os dados coletados com fundamentos legais legítimos previstos na LGPD:
 
-### 4. Quais são os seus direitos?
-Nos termos da Lei Geral de Proteção de Dados (LGPD), você tem o direito de:
-- Confirmar a existência de tratamento dos seus dados;
-- Acessar e atualizar seus dados pessoais na tela **Meus Dados** no app;
-- Solicitar a exclusão definitiva da sua conta e dos seus dados armazenados através do nosso suporte.
+- Processar e entregar seus pedidos: Preparar os alimentos encomendados e garantir que o entregador chegue com precisão ao seu endereço em Iacanga-SP.
+- Envio de notificações em tempo real: Manter você informado sobre cada status do pedido (recebido, em preparo, saiu para entrega) por meio de notificações push (serviço Expo) ou mensagens operacionais.
+- Suporte e atendimento: Solucionar dúvidas, atender solicitações de suporte, cancelamento ou ajustes em pedidos.
+- Prevenção à fraude e segurança: Identificar atividades suspeitas, validar pagamentos e proteger os clientes e a plataforma contra fraudes eletrônicas.
+- Cumprimento de obrigações legais: Emissão de comprovantes fiscais e guarda obrigatória de registros de conexão nos termos da lei.
+
+### 3. Compartilhamento de dados
+
+O Batata Top não comercializa, não aluga e não transfere seus dados pessoais para terceiros com finalidade de propaganda ou mala direta. O compartilhamento ocorre apenas quando essencial:
+
+- Entregadores parceiros: Recebem unicamente o primeiro nome, telefone de contato e endereço de entrega completo para viabilizar a entrega física da sua refeição.
+- Intermediador de pagamento (Mercado Pago): Envio seguro dos dados da transação para autorização e liquidação dos pagamentos em ambiente criptografado e certificado PCI-DSS.
+- Provedores de infraestrutura: Serviços de hospedagem em nuvem de alto padrão de segurança e serviço de notificações (Expo) para entrega técnica de mensagens.
+- Autoridades competentes: Apenas mediante determinação judicial formal ou exigência legal cabível.
+
+### 4. Como protegemos e armazenamos seus dados?
+
+- Criptografia de ponta a ponta: Todo o tráfego de dados entre o aplicativo e os nossos servidores opera sob protocolo HTTPS com criptografia SSL/TLS.
+- Acesso controlado: Somente operadores autorizados e vinculados a termos de confidencialidade têm acesso aos dados operacionais necessários ao atendimento.
+- Retenção responsável: Os dados pessoais são mantidos enquanto sua conta estiver ativa ou pelo período necessário para cumprimento de prazos legais e regulatórios vigentes.
+
+### 5. Quais são os seus direitos (LGPD — Art. 18)?
+
+A Lei Geral de Proteção de Dados assegura a você os seguintes direitos:
+
+- Confirmação e acesso: Saber se seus dados são tratados e solicitar acesso às informações cadastradas.
+- Correção de dados: Solicitar a correção de dados incompletos, inexatos ou desatualizados diretamente pelo app.
+- Revogação de consentimento: Desativar permissões de localização (GPS) ou notificações a qualquer momento nas configurações do seu celular.
+- Eliminação dos dados: Solicitar a exclusão definitiva dos seus dados cadastrais, ressalvadas as informações de guarda legalmente obrigatória.
+
+### 6. Como solicitar a exclusão da sua conta e dados?
+
+Você pode solicitar o encerramento da conta e o expurgo dos seus dados pessoais a qualquer momento:
+
+- Pelo aplicativo: Acesse o menu Perfil e selecione a opção de exclusão de conta ou entre em contato direto pelo suporte.
+- Pelo canal de suporte: Encaminhe sua solicitação com o assunto "Exclusão de Dados — LGPD" contendo seu telefone ou e-mail cadastrado para o nosso atendimento oficial. O processo é analisado e concluído em conformidade com os prazos da legislação brasileira.
+
+### 7. Contato do Encarregado de Dados (DPO) e Suporte
+
+Para esclarecer dúvidas sobre esta Declaração de Privacidade ou exercer seus direitos de titular de dados:
+
+- Encarregado pelo tratamento de dados (DPO): Equipe de Privacidade e Suporte Batata Top
+- E-mail de atendimento: suporte@batatatop.com.br
+- Atendimento direto em Iacanga-SP: Pelo chat de ajuda no aplicativo ou WhatsApp oficial de suporte da loja.
     `,
   },
 ];
