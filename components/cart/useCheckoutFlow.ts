@@ -79,6 +79,8 @@ export interface Address {
   city: string;
   cep: string;
   is_default: boolean;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 function isValidCpf(cpf: string): boolean {
@@ -124,6 +126,7 @@ export function useCheckoutFlow() {
   const [deliveryType, setDeliveryType] = useState<DeliveryType>('delivery');
   const [selectedAddress, setSelectedAddress] = useState<Address | null>(null);
   const [loadingAddress, setLoadingAddress] = useState(false);
+  const [dynamicDeliveryFee, setDynamicDeliveryFee] = useState<number>(DELIVERY_FEE);
 
   // Payment
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix');
@@ -170,7 +173,7 @@ export function useCheckoutFlow() {
 
   // Calculations
   const subtotal = totalCents / 100;
-  const deliveryFee = deliveryType === 'delivery' ? DELIVERY_FEE : 0;
+  const deliveryFee = deliveryType === 'delivery' ? dynamicDeliveryFee : 0;
 
   // Coupon discount calculation
   let discount = 0;
@@ -181,7 +184,7 @@ export function useCheckoutFlow() {
       discount = 0;
     } else {
       discount =
-        coupon.discount_type === 'percent'
+        coupon.discount_type === 'percent' || coupon.discount_type === 'percentage'
           ? subtotal * (Number(coupon.discount_value) / 100)
           : Number(coupon.discount_value);
     }
@@ -199,6 +202,29 @@ export function useCheckoutFlow() {
     const hasInterest = Math.abs(selectedInstallment.totalAmount - baseTotal) > 0.05;
     return `${selectedInstallment.installments}x de R$ ${selectedInstallment.installmentAmount.toFixed(2).replace('.', ',')}${hasInterest ? ' com acréscimos' : ''}`;
   }, [selectedInstallment, baseTotal]);
+
+  // Load dynamic delivery fee from store_settings
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('store_settings')
+          .select('setting_value')
+          .eq('setting_key', 'store_status')
+          .maybeSingle();
+        const val = data?.setting_value;
+        if (val) {
+          if (val.isDeliveryFeeEnabled === false) {
+            setDynamicDeliveryFee(0);
+          } else if (val.deliveryFee !== undefined) {
+            setDynamicDeliveryFee(Number(val.deliveryFee));
+          }
+        }
+      } catch {
+        // fallback to DELIVERY_FEE
+      }
+    })();
+  }, []);
 
   // Load Session and Profile
   const refreshUser = useCallback(async () => {
@@ -518,6 +544,8 @@ export function useCheckoutFlow() {
       const orderMetadata: any = {
         source: 'app',
         cep: deliveryType === 'delivery' && selectedAddress ? selectedAddress.cep : null,
+        delivery_lat: deliveryType === 'delivery' && selectedAddress ? selectedAddress.latitude ?? null : null,
+        delivery_lng: deliveryType === 'delivery' && selectedAddress ? selectedAddress.longitude ?? null : null,
       };
       if (isCredit) {
         orderMetadata.card_type = 'credit';
@@ -586,7 +614,7 @@ export function useCheckoutFlow() {
       let cardResult: any = null;
 
       if (paymentMethod === 'pix') {
-        const pixResult = await createPixPayment(currentOrderId);
+        const pixResult: any = await createPixPayment(currentOrderId);
         if (!pixResult.success) {
           setSubmitting(false);
           if (pixResult.error === 'order_status_not_payable' || pixResult.error === 'order_not_found') {
@@ -599,6 +627,25 @@ export function useCheckoutFlow() {
           setErrorMessage(err);
           showThemedAlert(isConfigErr ? 'Serviço indisponível' : 'Erro no PIX', err);
           return;
+        }
+
+        const qrCodeVal = pixResult.qrCode || pixResult.qr_code || '';
+        const qrBase64Val = pixResult.qrCodeBase64 || pixResult.qr_code_base64 || '';
+        if (qrCodeVal || qrBase64Val) {
+          try {
+            await supabase.rpc('merge_order_metadata', {
+              order_id: currentOrderId,
+              patch: {
+                pix: {
+                  payment_id: String(pixResult.paymentId || pixResult.id || ''),
+                  qr_code: qrCodeVal,
+                  qr_code_base64: qrBase64Val,
+                  ticket_url: pixResult.ticketUrl || pixResult.ticket_url || '',
+                  expiration_date: pixResult.expirationDate || pixResult.expiration_date || null,
+                },
+              },
+            });
+          } catch {}
         }
       } else if (paymentMethod === 'cartão de crédito' || paymentMethod === 'cartão de débito') {
         try {
@@ -682,14 +729,14 @@ export function useCheckoutFlow() {
             'Seu pagamento está sendo analisado pelo Mercado Pago. Você pode acompanhar o status pelo pedido.'
           );
         }
-      } else {
-        // Pedido offline (dinheiro / cartão na entrega)
-        notifyAdminNewOrder(currentOrderId);
       }
 
       // Sucesso na submissão
       const finalOrderId = currentOrderId;
       pendingOrderIdRef.current = null;
+      if (paymentMethod !== 'pix') {
+        notifyAdminNewOrder(finalOrderId);
+      }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       clearCart();
       setShowReviseModal(false);

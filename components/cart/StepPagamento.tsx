@@ -93,7 +93,7 @@ export default function StepPagamento({
             <>
               <Text style={styles.couponTitle}>{coupon.code}</Text>
               <Text style={styles.couponSub}>
-                {coupon.discount_type === 'percent'
+                {(coupon.discount_type === 'percent' || coupon.discount_type === 'percentage')
                   ? `${Number(coupon.discount_value)}% de desconto`
                   : `R$ ${Number(coupon.discount_value).toFixed(2).replace('.', ',')} de desconto`}
               </Text>

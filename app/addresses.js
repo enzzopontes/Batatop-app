@@ -8,16 +8,18 @@ import {
   TextInput, ActivityIndicator,
   KeyboardAvoidingView, Platform,
   FlatList, TouchableOpacity, BackHandler, Modal,
-  StatusBar, Image, AppState,
+  StatusBar, Image, AppState, Animated as RNAnimated,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets, SafeAreaProvider } from 'react-native-safe-area-context';
 import { useNavContext } from './_layout';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../constants/theme';
+import { useModalFade } from './hooks/useModalFade';
+import { useBottomInset } from './hooks/useBottomInset';
 import { supabase } from '../supabaseConfig';
 import { getEffectiveSession, subscribeAuthUiChange } from '../utils/authSession';
 import { getPendingAddress, setPendingAddress, clearPendingAddress } from '../utils/pendingAddress';
@@ -32,6 +34,22 @@ import AddressModal from '../components/AddressModal';
 import { ThemedAlertHost, showThemedAlert } from '../components/ThemedAlert';
 import useGeolocationWithMaps from './hooks/useGeolocationWithMaps';
 import usePlacesAutocomplete from './hooks/usePlacesAutocomplete';
+
+class PreviewErrorBoundary extends React.Component {
+  state = { hasError: false };
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(err) { console.warn('[PreviewMap] error:', err); }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={{ flex: 1, backgroundColor: COLORS.backgroundElevated, alignItems: 'center', justifyContent: 'center' }}>
+          <Ionicons name="map-outline" size={32} color={COLORS.textMuted} />
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // Amarelo do pin de confirmação no preview do mapa (Estado D). Ainda não
 // existe token pra isso em constants/theme.js — se surgir mais um uso,
@@ -74,46 +92,58 @@ function BuscaLogradouroModal({ visible, onClose, onSelect }) {
     finally  { setLoading(false); }
   };
 
+  const { mounted, fadeAnim } = useModalFade(visible);
+  const bottomInset = useBottomInset(16);
+
   const handleSelect = (item) => {
     onSelect({ cep: item.cep.replace('-', ''), street: item.logradouro, neighborhood: item.bairro, city: item.localidade, state: item.uf });
     onClose(); setRua(''); setResults([]); setError('');
   };
 
+  if (!mounted && !visible) return null;
+
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={m.overlay}>
-        <View style={m.sheet}>
-          <View style={m.header}>
-            <Text style={m.headerTitle}>Buscar pelo nome da rua</Text>
-            <Pressable onPress={onClose} style={m.closeBtn}>
-              <Ionicons name="close" size={20} color={COLORS.textSecondary} />
-            </Pressable>
+    <Modal visible={mounted} animationType="none" transparent statusBarTranslucent navigationBarTranslucent onRequestClose={onClose}>
+      <SafeAreaProvider>
+        <View style={m.overlay}>
+          <RNAnimated.View style={[m.backdrop, { opacity: fadeAnim }]}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+          </RNAnimated.View>
+          <RNAnimated.View style={[m.sheetWrap, { opacity: fadeAnim }]}>
+          <View style={[m.sheet, { paddingBottom: bottomInset }]}>
+            <View style={m.header}>
+              <Text style={m.headerTitle}>Buscar pelo nome da rua</Text>
+              <Pressable onPress={onClose} style={m.closeBtn}>
+                <Ionicons name="close" size={20} color={COLORS.textSecondary} />
+              </Pressable>
+            </View>
+            <Text style={m.hint}>Buscamos apenas endereços em {CIDADE_PERMITIDA}/{UF_PERMITIDA}.</Text>
+            <View style={m.searchRow}>
+              <TextInput style={m.searchInput} value={rua} onChangeText={setRua}
+                placeholder="Ex: Rua das Flores" placeholderTextColor={COLORS.textMuted}
+                autoFocus onSubmitEditing={buscar} returnKeyType="search" />
+              <Pressable style={m.searchBtn} onPress={buscar}>
+                {loading ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="search" size={18} color="#fff" />}
+              </Pressable>
+            </View>
+            {!!error && <View style={m.errorRow}><Ionicons name="alert-circle-outline" size={14} color="#EF4444" /><Text style={m.errorText}>{error}</Text></View>}
+            <FlatList data={results} keyExtractor={(i) => i.cep} style={m.list}
+              renderItem={({ item }) => (
+                <TouchableOpacity style={m.resultItem} onPress={() => handleSelect(item)}>
+                  <Ionicons name="location-outline" size={16} color={COLORS.primary} />
+                  <View style={m.resultText}>
+                    <Text style={m.resultRua}>{item.logradouro}</Text>
+                    <Text style={m.resultSub}>{item.bairro} · CEP {item.cep}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={14} color={COLORS.textMuted} />
+                </TouchableOpacity>
+              )}
+              ItemSeparatorComponent={() => <View style={m.separator} />}
+            />
           </View>
-          <Text style={m.hint}>Buscamos apenas endereços em {CIDADE_PERMITIDA}/{UF_PERMITIDA}.</Text>
-          <View style={m.searchRow}>
-            <TextInput style={m.searchInput} value={rua} onChangeText={setRua}
-              placeholder="Ex: Rua das Flores" placeholderTextColor={COLORS.textMuted}
-              autoFocus onSubmitEditing={buscar} returnKeyType="search" />
-            <Pressable style={m.searchBtn} onPress={buscar}>
-              {loading ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="search" size={18} color="#fff" />}
-            </Pressable>
-          </View>
-          {!!error && <View style={m.errorRow}><Ionicons name="alert-circle-outline" size={14} color="#EF4444" /><Text style={m.errorText}>{error}</Text></View>}
-          <FlatList data={results} keyExtractor={(i) => i.cep} style={m.list}
-            renderItem={({ item }) => (
-              <TouchableOpacity style={m.resultItem} onPress={() => handleSelect(item)}>
-                <Ionicons name="location-outline" size={16} color={COLORS.primary} />
-                <View style={m.resultText}>
-                  <Text style={m.resultRua}>{item.logradouro}</Text>
-                  <Text style={m.resultSub}>{item.bairro} · CEP {item.cep}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={14} color={COLORS.textMuted} />
-              </TouchableOpacity>
-            )}
-            ItemSeparatorComponent={() => <View style={m.separator} />}
-          />
-        </View>
+        </RNAnimated.View>
       </View>
+      </SafeAreaProvider>
     </Modal>
   );
 }
@@ -531,12 +561,14 @@ function AddressDetailsForm({ initialValues, onAdjustMarker, onSave, onBack, sav
 
       <ScrollView contentContainerStyle={df.scrollContent} keyboardShouldPersistTaps="handled">
         <View style={df.mapPreviewWrap}>
-          <MapView
-            style={StyleSheet.absoluteFillObject}
-            region={previewRegion}
-            scrollEnabled={false} zoomEnabled={false} rotateEnabled={false} pitchEnabled={false}
-            pointerEvents="none"
-          />
+          <PreviewErrorBoundary>
+            <MapView
+              style={StyleSheet.absoluteFillObject}
+              region={previewRegion}
+              scrollEnabled={false} zoomEnabled={false} rotateEnabled={false} pitchEnabled={false}
+              pointerEvents="none"
+            />
+          </PreviewErrorBoundary>
           <View style={df.pinPreview} pointerEvents="none">
             <Ionicons name="location" size={34} color={PIN_YELLOW} />
           </View>
@@ -637,7 +669,7 @@ function AddressDetailsForm({ initialValues, onAdjustMarker, onSave, onBack, sav
           style={({ pressed }) => [
             df.submitBtn,
             !isFormValid && df.submitBtnDisabled,
-            { marginBottom: insets.bottom || SPACING[3] },
+            { marginBottom: Math.max(insets.bottom || 0, 16) + 4 },
             saving && { opacity: 0.7 },
             pressed && { opacity: 0.85 },
           ]}
@@ -1257,7 +1289,9 @@ export default function Addresses() {
 
 // Estilos Modal busca
 const m = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  overlay: { flex: 1, justifyContent: 'flex-end' },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
+  sheetWrap: { width: '100%' },
   sheet: { backgroundColor: COLORS.background, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: SPACING[5], maxHeight: '75%' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: SPACING[2] },
   headerTitle: { color: COLORS.text, fontWeight: '800', fontSize: TYPOGRAPHY.sizes.base },

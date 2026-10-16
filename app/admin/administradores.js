@@ -186,7 +186,11 @@ export default function AdminAdministradores() {
     );
   }
 
-  const isCurrentUserOwner = ['enzzobaraldo2008@gmail.com', 'maraysis9010@gmail.com'].includes(currentEmail?.toLowerCase());
+  const isCurrentUserOwner = Boolean(
+    currentEmail &&
+      (admins.some((adm) => adm.is_owner === true && adm.email?.toLowerCase() === currentEmail?.toLowerCase()) ||
+        (admins.length > 0 && admins[0]?.email?.toLowerCase() === currentEmail?.toLowerCase()))
+  );
 
   return (
     <View style={s.container}>
@@ -471,7 +475,7 @@ const s = StyleSheet.create({
   listHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'between',
+    justifyContent: 'space-between',
     marginBottom: 12,
   },
   listSectionTitle: {

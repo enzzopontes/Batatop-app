@@ -87,7 +87,7 @@ export async function registerForAdminPushNotifications(userId) {
     return null;
   }
 
-  if (!userId || !Device.isDevice) return null;
+  if (!userId) return null;
 
   try {
     const Notifications = await getNotifications();
@@ -99,13 +99,7 @@ export async function registerForAdminPushNotifications(userId) {
     let finalStatus = existing;
 
     if (existing !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync({
-        ios: {
-          allowAlert: true,
-          allowBadge: true,
-          allowSound: true,
-        },
-      });
+      const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
     }
 
@@ -118,12 +112,20 @@ export async function registerForAdminPushNotifications(userId) {
       Constants.expoConfig?.extra?.eas?.projectId ??
       Constants.easConfig?.projectId;
 
-    const tokenResponse = projectId
-      ? await Notifications.getExpoPushTokenAsync({ projectId })
-      : await Notifications.getExpoPushTokenAsync();
+    let tokenResponse = null;
+    try {
+      tokenResponse = projectId
+        ? await Notifications.getExpoPushTokenAsync({ projectId })
+        : await Notifications.getExpoPushTokenAsync();
+    } catch (tokenErr) {
+      console.warn('[push] Erro ao obter ExpoPushToken:', tokenErr?.message || tokenErr);
+    }
 
-    const expoPushToken = tokenResponse.data;
-    if (!expoPushToken) return null;
+    const expoPushToken = tokenResponse?.data;
+    if (!expoPushToken) {
+      console.warn('[push] ExpoPushToken vazio');
+      return null;
+    }
 
     const deviceName = Device.modelName || `${Platform.OS} device`;
 
@@ -149,6 +151,7 @@ export async function registerForAdminPushNotifications(userId) {
     return null;
   }
 }
+
 
 export async function unregisterAdminPushToken(userId, expoPushToken) {
   if (!userId || !expoPushToken) return;

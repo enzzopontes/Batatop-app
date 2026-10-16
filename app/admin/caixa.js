@@ -5,7 +5,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useState, useEffect, useCallback } from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets, SafeAreaProvider } from 'react-native-safe-area-context';
 import { supabase } from '../../supabaseConfig';
 
 // Mapeia os dados do Supabase pro app (idêntico ao pedidos.js)
@@ -332,66 +332,68 @@ export default function AdminCaixa() {
       )}
 
       {/* Modal Detalhes */}
-      <Modal visible={detailsVisible} animationType="slide" presentationStyle="formSheet" onRequestClose={() => setDetailsVisible(false)}>
-        {selectedOrder && (
-          <View style={s.modalContainer}>
-            {/* Cabeçalho amarelo */}
-            <View style={s.modalHeader}>
-              <View>
-                <Text style={s.modalTitle}>Pedido #{selectedOrder.orderNumber}</Text>
-                <Text style={s.modalSub}>Entregue · {selectedOrder.deliveryType === 'delivery' ? 'ENTREGA' : 'RETIRADA'}</Text>
+      <Modal visible={detailsVisible} animationType="none" statusBarTranslucent navigationBarTranslucent presentationStyle="formSheet" onRequestClose={() => setDetailsVisible(false)}>
+        <SafeAreaProvider>
+          {selectedOrder && (
+            <View style={s.modalContainer}>
+              {/* Cabeçalho amarelo */}
+              <View style={s.modalHeader}>
+                <View>
+                  <Text style={s.modalTitle}>Pedido #{selectedOrder.orderNumber}</Text>
+                  <Text style={s.modalSub}>Entregue · {selectedOrder.deliveryType === 'delivery' ? 'ENTREGA' : 'RETIRADA'}</Text>
+                </View>
+                <Pressable onPress={() => setDetailsVisible(false)} style={s.modalCloseBtn}>
+                  <Ionicons name="close" size={20} color="#FFF" />
+                </Pressable>
               </View>
-              <Pressable onPress={() => setDetailsVisible(false)} style={s.modalCloseBtn}>
-                <Ionicons name="close" size={20} color="#FFF" />
-              </Pressable>
-            </View>
-            <ScrollView contentContainerStyle={s.modalBody}>
-              <InfoRow icon="call-outline" label="WhatsApp" value={selectedOrder.customerPhone} />
-              <InfoRow 
-                icon="location-outline" 
-                label="Endereço" 
-                value={
-                  selectedOrder.deliveryType === 'delivery' 
-                    ? `${selectedOrder.address || ''}${selectedOrder.neighborhood ? ', ' + selectedOrder.neighborhood : ''}${selectedOrder.complement ? ' - ' + selectedOrder.complement : ''}`
-                    : 'Retirada na loja pelo cliente'
-                } 
-              />
-              <InfoRow icon="card-outline" label="Pagamento" value={(selectedOrder.paymentMethod || '').toUpperCase()} />
+              <ScrollView contentContainerStyle={s.modalBody}>
+                <InfoRow icon="call-outline" label="WhatsApp" value={selectedOrder.customerPhone} />
+                <InfoRow 
+                  icon="location-outline" 
+                  label="Endereço" 
+                  value={
+                    selectedOrder.deliveryType === 'delivery' 
+                      ? `${selectedOrder.address || ''}${selectedOrder.neighborhood ? ', ' + selectedOrder.neighborhood : ''}${selectedOrder.complement ? ' - ' + selectedOrder.complement : ''}`
+                      : 'Retirada na loja pelo cliente'
+                  } 
+                />
+                <InfoRow icon="card-outline" label="Pagamento" value={(selectedOrder.paymentMethod || '').toUpperCase()} />
 
-              <Text style={[s.sectionTitle, { marginTop: 16 }]}>Itens</Text>
-              {selectedOrder.items.map((item, i) => (
-                <View key={i} style={s.itemLine}>
-                  <Text style={s.itemQty}>{item.quantity}x</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.itemName}>{item.name}</Text>
-                    {item.pastaType && <Text style={s.itemDetail}>Massa: {item.pastaType}</Text>}
-                    {Array.isArray(item.adicionais) && item.adicionais.length > 0 && (
-                      <Text style={s.itemDetail}>Adicionais: {item.adicionais.map(a => `${a.quantity}x ${a.name}`).join(', ')}</Text>
-                    )}
+                <Text style={[s.sectionTitle, { marginTop: 16 }]}>Itens</Text>
+                {selectedOrder.items.map((item, i) => (
+                  <View key={i} style={s.itemLine}>
+                    <Text style={s.itemQty}>{item.quantity}x</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.itemName}>{item.name}</Text>
+                      {item.pastaType && <Text style={s.itemDetail}>Massa: {item.pastaType}</Text>}
+                      {Array.isArray(item.adicionais) && item.adicionais.length > 0 && (
+                        <Text style={s.itemDetail}>Adicionais: {item.adicionais.map(a => `${a.quantity}x ${a.name}`).join(', ')}</Text>
+                      )}
+                    </View>
+                    <Text style={s.itemPrice}>R$ {(item.price * item.quantity).toFixed(2).replace('.', ',')}</Text>
                   </View>
-                  <Text style={s.itemPrice}>R$ {(item.price * item.quantity).toFixed(2).replace('.', ',')}</Text>
+                ))}
+
+                {selectedOrder.notes && (
+                  <View style={s.notesBox}>
+                    <Text style={s.notesTitle}>Observações:</Text>
+                    <Text style={s.notesText}>{selectedOrder.notes}</Text>
+                  </View>
+                )}
+
+                <View style={s.totalLine}>
+                  <Text style={s.totalLabel}>Total Pago</Text>
+                  <Text style={s.totalValue}>R$ {selectedOrder.total.toFixed(2).replace('.', ',')}</Text>
                 </View>
-              ))}
 
-              {selectedOrder.notes && (
-                <View style={s.notesBox}>
-                  <Text style={s.notesTitle}>Observações:</Text>
-                  <Text style={s.notesText}>{selectedOrder.notes}</Text>
-                </View>
-              )}
-
-              <View style={s.totalLine}>
-                <Text style={s.totalLabel}>Total Pago</Text>
-                <Text style={s.totalValue}>R$ {selectedOrder.total.toFixed(2).replace('.', ',')}</Text>
-              </View>
-
-              <Pressable style={s.deleteBtnFull} onPress={() => handleDelete(selectedOrder)}>
-                <Ionicons name="trash-outline" size={16} color="#DC2626" />
-                <Text style={s.deleteBtnText}>Deletar Pedido</Text>
-              </Pressable>
-            </ScrollView>
-          </View>
-        )}
+                <Pressable style={s.deleteBtnFull} onPress={() => handleDelete(selectedOrder)}>
+                  <Ionicons name="trash-outline" size={16} color="#DC2626" />
+                  <Text style={s.deleteBtnText}>Deletar Pedido</Text>
+                </Pressable>
+              </ScrollView>
+            </View>
+          )}
+        </SafeAreaProvider>
       </Modal>
     </View>
   );

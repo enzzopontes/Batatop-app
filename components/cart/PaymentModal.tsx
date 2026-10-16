@@ -1,21 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  Modal,
   Pressable,
   Image,
   ScrollView,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { COLORS, SPACING, RADIUS } from '../../constants/theme';
 import { PaymentMethod } from './useCheckoutFlow';
 import { SavedCard } from '../../utils/usePaymentCards';
-import { useFooterInsets } from '../../hooks/useFooterInsets';
 import RipplePressable from './RipplePressable';
+import SwipeableBottomSheetModal from '../SwipeableBottomSheetModal';
 
 const LOGO_ESTENDIDA = require('../../assets/batatatopestendida.png');
 
@@ -38,7 +36,6 @@ export default function PaymentModal({
   onSelectPayment,
   onAddNewCard,
 }: PaymentModalProps) {
-  const { paddingBottom } = useFooterInsets({ extraPadding: 16 });
   const [tab, setTab] = useState<'app' | 'entrega'>(
     currentMethod === 'dinheiro' ||
       currentMethod === 'cartão de crédito (entrega)' ||
@@ -46,6 +43,16 @@ export default function PaymentModal({
       ? 'entrega'
       : 'app'
   );
+  const [isAtTop, setIsAtTop] = useState(true);
+  const scrollViewRef = useRef<ScrollView>(null);
+
+  const switchTab = (newTab: 'app' | 'entrega') => {
+    if (tab === newTab) return;
+    Haptics.selectionAsync();
+    setTab(newTab);
+    setIsAtTop(true);
+    scrollViewRef.current?.scrollTo({ y: 0, animated: false });
+  };
 
   const handleSelect = (method: PaymentMethod, card?: SavedCard) => {
     Haptics.selectionAsync();
@@ -64,258 +71,253 @@ export default function PaymentModal({
   const debitCards = savedCards.filter((c) => c.card_type === 'cartão de débito');
 
   return (
-    <Modal
+    <SwipeableBottomSheetModal
       visible={visible}
-      transparent
-      animationType="slide"
-      statusBarTranslucent
       onRequestClose={onClose}
+      backdropColor="rgba(0, 0, 0, 0.45)"
+      contentStyle={styles.sheetContent}
+      scrollable
+      isAtTop={isAtTop}
     >
-      <View style={styles.modalOverlay}>
-        <Pressable style={styles.modalBackdrop} onPress={onClose} />
-        <View style={[styles.sheetContent, { paddingBottom }]}>
-          {/* Handle superior curvo */}
-          <View style={styles.sheetHandle} />
+      {/* Header com botão voltar na esquerda e logo no centro (idêntico ao print) */}
+      <View style={styles.headerRow}>
+        <RipplePressable onPress={onClose} style={styles.backBtn} hitSlop={12} rippleColor="rgba(0,0,0,0.1)">
+          <Ionicons name="chevron-back" size={24} color="#18181B" />
+        </RipplePressable>
+        <Image
+          source={LOGO_ESTENDIDA}
+          style={styles.headerLogo}
+          resizeMode="contain"
+        />
+        <View style={styles.headerSpacer} />
+      </View>
 
-          {/* Header com botão voltar na esquerda e logo no centro (idêntico ao print) */}
-          <View style={styles.headerRow}>
-            <RipplePressable onPress={onClose} style={styles.backBtn} hitSlop={12} rippleColor="rgba(0,0,0,0.1)">
-              <Ionicons name="chevron-back" size={24} color="#18181B" />
-            </RipplePressable>
-            <Image
-              source={LOGO_ESTENDIDA}
-              style={styles.headerLogo}
-              resizeMode="contain"
-            />
-            <View style={styles.headerSpacer} />
-          </View>
+      {/* Abas: Pagar pelo app | Pagar na entrega */}
+      <View style={styles.tabsRow}>
+        <RipplePressable
+          style={[styles.tab, tab === 'app' && styles.tabActive]}
+          onPress={() => switchTab('app')}
+          rippleColor="rgba(0,0,0,0.06)"
+        >
+          <Text style={[styles.tabText, tab === 'app' && styles.tabTextActive]}>
+            Pagar pelo app
+          </Text>
+          {tab === 'app' && <View style={styles.activeTabIndicator} />}
+        </RipplePressable>
 
-          {/* Abas: Pagar pelo app | Pagar na entrega */}
-          <View style={styles.tabsRow}>
-            <RipplePressable
-              style={[styles.tab, tab === 'app' && styles.tabActive]}
-              onPress={() => {
-                Haptics.selectionAsync();
-                setTab('app');
-              }}
-              rippleColor="rgba(0,0,0,0.06)"
-            >
-              <Text style={[styles.tabText, tab === 'app' && styles.tabTextActive]}>
-                Pagar pelo app
-              </Text>
-              {tab === 'app' && <View style={styles.activeTabIndicator} />}
-            </RipplePressable>
+        <RipplePressable
+          style={[styles.tab, tab === 'entrega' && styles.tabActive]}
+          onPress={() => switchTab('entrega')}
+          rippleColor="rgba(0,0,0,0.06)"
+        >
+          <Text style={[styles.tabText, tab === 'entrega' && styles.tabTextActive]}>
+            Pagar na entrega
+          </Text>
+          {tab === 'entrega' && <View style={styles.activeTabIndicator} />}
+        </RipplePressable>
+      </View>
 
-            <RipplePressable
-              style={[styles.tab, tab === 'entrega' && styles.tabActive]}
-              onPress={() => {
-                Haptics.selectionAsync();
-                setTab('entrega');
-              }}
-              rippleColor="rgba(0,0,0,0.06)"
-            >
-              <Text style={[styles.tabText, tab === 'entrega' && styles.tabTextActive]}>
-                Pagar na entrega
-              </Text>
-              {tab === 'entrega' && <View style={styles.activeTabIndicator} />}
-            </RipplePressable>
-          </View>
-
-          <ScrollView
-            style={styles.bodyList}
-            contentContainerStyle={styles.bodyContent}
-            showsVerticalScrollIndicator={false}
-          >
-            {tab === 'app' ? (
-              <>
-                {/* Cartões de crédito salvos */}
-                {creditCards.map((card) => {
-                  const selected = isCardSelected(card);
-                  return (
-                    <RipplePressable
-                      key={card.id}
-                      style={[styles.cardItem, selected && styles.cardItemSelected]}
-                      onPress={() => handleSelect('cartão de crédito', card)}
-                      rippleColor="rgba(0, 0, 0, 0.08)"
-                    >
-                      <View style={styles.cardItemLeft}>
-                        <View style={styles.brandIconBox}>
-                          <Ionicons name="card" size={20} color="#2563EB" />
-                        </View>
-                        <View style={styles.cardInfo}>
-                          <Text style={styles.cardTitle}>
-                            Crédito • {card.cardholder_name || 'Cartão'}
-                          </Text>
-                          <View style={styles.cardSubRow}>
-                            <Text style={styles.cardLastFour}>•••• {card.last_four}</Text>
-                            <View style={styles.tagParcele}>
-                              <Text style={styles.tagParceleText}>Parcele seu pedido</Text>
-                            </View>
-                          </View>
-                        </View>
-                      </View>
-
-                      <View style={[styles.radioOuter, selected && styles.radioOuterSelected]}>
-                        {selected && <View style={styles.radioInnerSelected} />}
-                      </View>
-                    </RipplePressable>
-                  );
-                })}
-
-                {/* Cartões de débito salvos */}
-                {debitCards.map((card) => {
-                  const selected = isCardSelected(card);
-                  return (
-                    <RipplePressable
-                      key={card.id}
-                      style={[styles.cardItem, selected && styles.cardItemSelected]}
-                      onPress={() => handleSelect('cartão de débito', card)}
-                      rippleColor="rgba(0, 0, 0, 0.08)"
-                    >
-                      <View style={styles.cardItemLeft}>
-                        <View style={styles.brandIconBox}>
-                          <Ionicons name="card" size={20} color="#16A34A" />
-                        </View>
-                        <View style={styles.cardInfo}>
-                          <Text style={styles.cardTitle}>
-                            Débito • {card.cardholder_name || 'Cartão'}
-                          </Text>
-                          <Text style={styles.cardLastFour}>•••• {card.last_four}</Text>
-                        </View>
-                      </View>
-
-                      <View style={[styles.radioOuter, selected && styles.radioOuterSelected]}>
-                        {selected && <View style={styles.radioInnerSelected} />}
-                      </View>
-                    </RipplePressable>
-                  );
-                })}
-
-                {/* Pix */}
+      <ScrollView
+        ref={scrollViewRef}
+        style={styles.bodyList}
+        contentContainerStyle={styles.bodyContent}
+        showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={(e) => setIsAtTop(e.nativeEvent.contentOffset.y <= 0)}
+      >
+        {tab === 'app' ? (
+          <View key="panel-app" style={styles.tabPanel}>
+            {/* Cartões de crédito salvos */}
+            {creditCards.map((card) => {
+              const selected = isCardSelected(card);
+              return (
                 <RipplePressable
-                  style={[styles.cardItem, currentMethod === 'pix' && styles.cardItemSelected]}
-                  onPress={() => handleSelect('pix')}
+                  key={card.id}
+                  style={[styles.cardItem, selected && styles.cardItemSelected]}
+                  onPress={() => handleSelect('cartão de crédito', card)}
                   rippleColor="rgba(0, 0, 0, 0.08)"
                 >
                   <View style={styles.cardItemLeft}>
                     <View style={styles.brandIconBox}>
-                      <Ionicons name="qr-code" size={20} color="#00B494" />
+                      <Ionicons name="card" size={20} color="#2563EB" />
                     </View>
                     <View style={styles.cardInfo}>
-                      <Text style={styles.cardTitle}>Pix</Text>
-                      <Text style={styles.cardSubtitle}>Aprovação automática</Text>
+                      <Text style={styles.cardTitle}>
+                        Crédito • {card.cardholder_name || 'Cartão'}
+                      </Text>
+                      <View style={styles.cardSubRow}>
+                        <Text style={styles.cardLastFour}>•••• {card.last_four}</Text>
+                        <View style={styles.tagParcele}>
+                          <Text style={styles.tagParceleText}>Parcele seu pedido</Text>
+                        </View>
+                      </View>
                     </View>
                   </View>
 
-                  <View
-                    style={[
-                      styles.radioOuter,
-                      currentMethod === 'pix' && styles.radioOuterSelected,
-                    ]}
-                  >
-                    {currentMethod === 'pix' && <View style={styles.radioInnerSelected} />}
+                  <View style={[styles.radioOuter, selected && styles.radioOuterSelected]}>
+                    {selected && <View style={styles.radioInnerSelected} />}
                   </View>
                 </RipplePressable>
+              );
+            })}
 
-                {/* Link Adicionar novo cartão */}
+            {/* Cartões de débito salvos */}
+            {debitCards.map((card) => {
+              const selected = isCardSelected(card);
+              return (
                 <RipplePressable
-                  style={styles.addCardLink}
-                  onPress={() => {
-                    onClose();
-                    onAddNewCard();
-                  }}
-                  hitSlop={8}
-                  rippleColor="rgba(227, 160, 8, 0.15)"
+                  key={card.id}
+                  style={[styles.cardItem, selected && styles.cardItemSelected]}
+                  onPress={() => handleSelect('cartão de débito', card)}
+                  rippleColor="rgba(0, 0, 0, 0.08)"
                 >
-                  <Text style={styles.addCardLinkText}>Adicionar novo cartão</Text>
-                </RipplePressable>
-              </>
-            ) : (
-              <>
-                {/* Seção Dinheiro (Item 4: idêntico ao print do iFood) */}
-                <Text style={styles.sectionHeaderTitle}>Dinheiro</Text>
-                <RipplePressable
-                  style={styles.deliveryCardItem}
-                  onPress={() => handleSelect('dinheiro')}
-                  rippleColor="rgba(0, 0, 0, 0.06)"
-                  accessibilityLabel="Pagar em dinheiro na entrega"
-                >
-                  <View style={styles.deliveryCardLeft}>
-                    <View style={styles.cashIconWrap}>
-                      <Ionicons name="cash" size={24} color="#16A34A" />
+                  <View style={styles.cardItemLeft}>
+                    <View style={styles.brandIconBox}>
+                      <Ionicons name="card" size={20} color="#16A34A" />
                     </View>
-                    <Text style={styles.deliveryCardName}>Dinheiro</Text>
-                  </View>
-
-                  <View
-                    style={[
-                      styles.radioOuter,
-                      currentMethod === 'dinheiro' && styles.radioOuterSelected,
-                    ]}
-                  >
-                    {currentMethod === 'dinheiro' && <View style={styles.radioInnerSelected} />}
-                  </View>
-                </RipplePressable>
-
-                {/* Seção Crédito */}
-                <Text style={styles.sectionHeaderTitle}>Crédito</Text>
-                <RipplePressable
-                  style={styles.deliveryCardItem}
-                  onPress={() => handleSelect('cartão de crédito (entrega)')}
-                  rippleColor="rgba(0, 0, 0, 0.06)"
-                  accessibilityLabel="Pagar com cartão de crédito na entrega"
-                >
-                  <View style={styles.deliveryCardLeft}>
-                    <View style={styles.cardIconWrap}>
-                      <Ionicons name="card" size={22} color="#18181B" />
+                    <View style={styles.cardInfo}>
+                      <Text style={styles.cardTitle}>
+                        Débito • {card.cardholder_name || 'Cartão'}
+                      </Text>
+                      <Text style={styles.cardLastFour}>•••• {card.last_four}</Text>
                     </View>
-                    <Text style={styles.deliveryCardName}>Cartão de Crédito</Text>
                   </View>
 
-                  <View
-                    style={[
-                      styles.radioOuter,
-                      currentMethod === 'cartão de crédito (entrega)' && styles.radioOuterSelected,
-                    ]}
-                  >
-                    {currentMethod === 'cartão de crédito (entrega)' && (
-                      <View style={styles.radioInnerSelected} />
-                    )}
+                  <View style={[styles.radioOuter, selected && styles.radioOuterSelected]}>
+                    {selected && <View style={styles.radioInnerSelected} />}
                   </View>
                 </RipplePressable>
+              );
+            })}
 
-                {/* Seção Débito */}
-                <Text style={styles.sectionHeaderTitle}>Débito</Text>
-                <RipplePressable
-                  style={styles.deliveryCardItem}
-                  onPress={() => handleSelect('cartão de débito (entrega)')}
-                  rippleColor="rgba(0, 0, 0, 0.06)"
-                  accessibilityLabel="Pagar com cartão de débito na entrega"
-                >
-                  <View style={styles.deliveryCardLeft}>
-                    <View style={styles.cardIconWrap}>
-                      <Ionicons name="card" size={22} color="#18181B" />
-                    </View>
-                    <Text style={styles.deliveryCardName}>Cartão de Débito</Text>
-                  </View>
+            {/* Pix */}
+            <RipplePressable
+              key="app-method-pix"
+              style={[styles.cardItem, currentMethod === 'pix' && styles.cardItemSelected]}
+              onPress={() => handleSelect('pix')}
+              rippleColor="rgba(0, 0, 0, 0.08)"
+            >
+              <View style={styles.cardItemLeft}>
+                <View style={styles.brandIconBox}>
+                  <Ionicons name="qr-code" size={20} color="#00B494" />
+                </View>
+                <View style={styles.cardInfo}>
+                  <Text style={styles.cardTitle}>Pix</Text>
+                  <Text style={styles.cardSubtitle}>Aprovação automática</Text>
+                </View>
+              </View>
 
-                  <View
-                    style={[
-                      styles.radioOuter,
-                      currentMethod === 'cartão de débito (entrega)' && styles.radioOuterSelected,
-                    ]}
-                  >
-                    {currentMethod === 'cartão de débito (entrega)' && (
-                      <View style={styles.radioInnerSelected} />
-                    )}
-                  </View>
-                </RipplePressable>
-              </>
-            )}
+              <View
+                style={[
+                  styles.radioOuter,
+                  currentMethod === 'pix' && styles.radioOuterSelected,
+                ]}
+              >
+                {currentMethod === 'pix' && <View style={styles.radioInnerSelected} />}
+              </View>
+            </RipplePressable>
+
+            {/* Link Adicionar novo cartão */}
+            <RipplePressable
+              key="app-btn-add-new-card"
+              style={styles.addCardLink}
+              onPress={() => {
+                onClose();
+                onAddNewCard();
+              }}
+              hitSlop={8}
+              rippleColor="rgba(227, 160, 8, 0.15)"
+            >
+              <Text style={styles.addCardLinkText}>Adicionar novo cartão</Text>
+            </RipplePressable>
+          </View>
+        ) : (
+          <View key="panel-entrega" style={styles.tabPanel}>
+            {/* Seção Dinheiro (Item 4: idêntico ao print do iFood) */}
+            <Text key="header-dinheiro" style={styles.sectionHeaderTitle}>Dinheiro</Text>
+            <RipplePressable
+              key="delivery-method-dinheiro"
+              style={styles.deliveryCardItem}
+              onPress={() => handleSelect('dinheiro')}
+              rippleColor="rgba(0, 0, 0, 0.06)"
+              accessibilityLabel="Pagar em dinheiro na entrega"
+            >
+              <View style={styles.deliveryCardLeft}>
+                <View style={styles.cashIconWrap}>
+                  <Ionicons name="cash" size={24} color="#16A34A" />
+                </View>
+                <Text style={styles.deliveryCardName}>Dinheiro</Text>
+              </View>
+
+              <View
+                style={[
+                  styles.radioOuter,
+                  currentMethod === 'dinheiro' && styles.radioOuterSelected,
+                ]}
+              >
+                {currentMethod === 'dinheiro' && <View style={styles.radioInnerSelected} />}
+              </View>
+            </RipplePressable>
+
+            {/* Seção Crédito */}
+            <Text key="header-credito" style={styles.sectionHeaderTitle}>Crédito</Text>
+            <RipplePressable
+              key="delivery-method-credito"
+              style={styles.deliveryCardItem}
+              onPress={() => handleSelect('cartão de crédito (entrega)')}
+              rippleColor="rgba(0, 0, 0, 0.06)"
+              accessibilityLabel="Pagar com cartão de crédito na entrega"
+            >
+              <View style={styles.deliveryCardLeft}>
+                <View style={styles.cardIconWrap}>
+                  <Ionicons name="card" size={22} color="#18181B" />
+                </View>
+                <Text style={styles.deliveryCardName}>Cartão de Crédito</Text>
+              </View>
+
+              <View
+                style={[
+                  styles.radioOuter,
+                  currentMethod === 'cartão de crédito (entrega)' && styles.radioOuterSelected,
+                ]}
+              >
+                {currentMethod === 'cartão de crédito (entrega)' && (
+                  <View style={styles.radioInnerSelected} />
+                )}
+              </View>
+            </RipplePressable>
+
+            {/* Seção Débito */}
+            <Text key="header-debito" style={styles.sectionHeaderTitle}>Débito</Text>
+            <RipplePressable
+              key="delivery-method-debito"
+              style={styles.deliveryCardItem}
+              onPress={() => handleSelect('cartão de débito (entrega)')}
+              rippleColor="rgba(0, 0, 0, 0.06)"
+              accessibilityLabel="Pagar com cartão de débito na entrega"
+            >
+              <View style={styles.deliveryCardLeft}>
+                <View style={styles.cardIconWrap}>
+                  <Ionicons name="card" size={22} color="#18181B" />
+                </View>
+                <Text style={styles.deliveryCardName}>Cartão de Débito</Text>
+              </View>
+
+              <View
+                style={[
+                  styles.radioOuter,
+                  currentMethod === 'cartão de débito (entrega)' && styles.radioOuterSelected,
+                ]}
+              >
+                {currentMethod === 'cartão de débito (entrega)' && (
+                  <View style={styles.radioInnerSelected} />
+                )}
+              </View>
+            </RipplePressable>
+          </View>
+        )}
           </ScrollView>
-        </View>
-      </View>
-    </Modal>
+    </SwipeableBottomSheetModal>
   );
 }
 
@@ -323,10 +325,13 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
   },
   modalBackdrop: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+  },
+  sheetWrap: {
+    width: '100%',
   },
   sheetContent: {
     backgroundColor: '#FFFFFF',
@@ -400,10 +405,15 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
   },
   bodyList: {
-    flexGrow: 0,
+    width: '100%',
+    flexShrink: 1,
   },
   bodyContent: {
     paddingVertical: SPACING[2],
+    paddingBottom: SPACING[6],
+  },
+  tabPanel: {
+    width: '100%',
   },
   sectionHeaderTitle: {
     fontSize: 15,
@@ -531,15 +541,21 @@ const styles = StyleSheet.create({
   },
   addCardLink: {
     alignSelf: 'center',
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    borderColor: 'transparent',
     paddingVertical: SPACING[3],
     paddingHorizontal: SPACING[4],
     borderRadius: RADIUS.md,
     marginTop: SPACING[2],
+    opacity: 1,
     overflow: 'hidden',
   },
   addCardLinkText: {
     fontSize: 14,
     fontWeight: '700',
     color: COLORS.primary,
+    opacity: 1,
+    textAlign: 'center',
   },
 });

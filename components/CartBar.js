@@ -30,6 +30,10 @@ export default function CartBar({ tabBarHeight }) {
   const isAdminPage = pathname.includes('/admin');
   const isCuponsPage = pathname.includes('/cupons');
   const isPaymentsPage = pathname.includes('payments');
+  const isAddressesPage = pathname.includes('addresses');
+
+  if (isAddressesPage) return null;
+
   const shouldShow = totalItems > 0 && !isCartPage && !isWelcomePage && !isLocationPage && !isAdminPage && !isCuponsPage && !isPaymentsPage && !hideFloating;
 
   useEffect(() => {

@@ -1,10 +1,10 @@
 import React from 'react';
-import { View, Text, StyleSheet, Modal, Pressable } from 'react-native';
+import { Text, StyleSheet, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { COLORS, SPACING, RADIUS } from '../../constants/theme';
 import { MIN_ORDER_VALUE } from '../../constants/store';
-import { useFooterInsets } from '../../hooks/useFooterInsets';
 import PrimaryButton from '../PrimaryButton';
+import SwipeableBottomSheetModal from '../SwipeableBottomSheetModal';
 
 interface MinOrderSheetProps {
   visible: boolean;
@@ -13,7 +13,6 @@ interface MinOrderSheetProps {
 
 export default function MinOrderSheet({ visible, onClose }: MinOrderSheetProps) {
   const router = useRouter();
-  const { paddingBottom } = useFooterInsets({ extraPadding: 16 });
   const minFormatted = `R$ ${MIN_ORDER_VALUE.toFixed(2).replace('.', ',')}`;
 
   const handleAddMore = () => {
@@ -22,53 +21,48 @@ export default function MinOrderSheet({ visible, onClose }: MinOrderSheetProps) 
   };
 
   return (
-    <Modal
+    <SwipeableBottomSheetModal
       visible={visible}
-      transparent
-      animationType="fade"
       onRequestClose={onClose}
+      backdropColor="rgba(0, 0, 0, 0.5)"
+      contentStyle={styles.sheet}
     >
-      <View style={styles.overlay}>
-        <Pressable style={styles.backdrop} onPress={onClose} />
+      <Text style={styles.title}>Valor mínimo do pedido</Text>
+      <Text style={styles.description}>
+        O pedido mínimo é {minFormatted} sem contar com a taxa de entrega
+      </Text>
 
-        <View style={[styles.sheet, { paddingBottom }]}>
-          <View style={styles.handle} />
+      <PrimaryButton
+        fullWidth
+        title="Adicionar mais itens"
+        onPress={handleAddMore}
+        accessibilityLabel="Adicionar mais itens"
+        style={{ marginBottom: 12 }}
+      />
 
-          <Text style={styles.title}>Valor mínimo do pedido</Text>
-          <Text style={styles.description}>
-            O pedido mínimo é {minFormatted} sem contar com a taxa de entrega
-          </Text>
-
-          <PrimaryButton
-            fullWidth
-            title="Adicionar mais itens"
-            onPress={handleAddMore}
-            accessibilityLabel="Adicionar mais itens"
-            style={{ marginBottom: 12 }}
-          />
-
-          <Pressable
-            style={styles.cancelBtn}
-            onPress={onClose}
-            hitSlop={8}
-            accessibilityLabel="Ok, entendi"
-          >
-            <Text style={styles.cancelBtnText}>Ok, entendi</Text>
-          </Pressable>
-        </View>
-      </View>
-    </Modal>
+      <Pressable
+        style={styles.cancelBtn}
+        onPress={onClose}
+        hitSlop={8}
+        accessibilityLabel="Ok, entendi"
+      >
+        <Text style={styles.cancelBtnText}>Ok, entendi</Text>
+      </Pressable>
+    </SwipeableBottomSheetModal>
   );
 }
 
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  sheetWrap: {
+    width: '100%',
   },
   sheet: {
     backgroundColor: COLORS.white,

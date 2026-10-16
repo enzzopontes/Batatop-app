@@ -96,6 +96,14 @@ android {
         versionName "1.0.0"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
+
+        def envProps = new Properties()
+        def envFile = file('../../.env')
+        if (envFile.exists()) {
+            envFile.withInputStream { envProps.load(it) }
+        }
+        def googleMapsApiKey = System.getenv('EXPO_PUBLIC_GOOGLE_MAPS_API_KEY') ?: envProps.getProperty('EXPO_PUBLIC_GOOGLE_MAPS_API_KEY', '')
+        manifestPlaceholders = [GOOGLE_MAPS_API_KEY: googleMapsApiKey]
     }
     signingConfigs {
         debug {

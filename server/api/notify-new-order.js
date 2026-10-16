@@ -5,12 +5,27 @@
  *   api/notify-new-order.js
  *
  * Env vars necessarias no painel Vercel (Settings > Environment Variables):
- *   SUPABASE_URL=https://eucwoxjmjfqylyrqunwk.supabase.co
+ *   SUPABASE_URL=https://<project-ref>.supabase.co
  *   SUPABASE_SERVICE_ROLE_KEY=... (chave service_role do Supabase, NAO a anon)
  */
 
+const { createClient } = require('@supabase/supabase-js');
+
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 const ADMIN_ORDERS_CHANNEL_ID = 'new-orders';
+
+function getSupabaseAdmin() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !key) {
+    throw new Error('SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY nao configuradas na Vercel');
+  }
+
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
 
 function buildNewOrderPushContent(order, items = []) {
   const orderLabel = order.order_number
@@ -98,7 +113,7 @@ async function sendExpoPush(messages) {
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Webhook-Secret');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -109,6 +124,30 @@ module.exports = async function handler(req, res) {
   }
 
   try {
+    const supabase = getSupabaseAdmin();
+
+    const authHeader = req.headers?.authorization || '';
+    const bearerToken = authHeader.startsWith('Bearer ')
+      ? authHeader.slice(7).trim()
+      : authHeader.trim();
+    const token = bearerToken || req.headers?.['x-webhook-secret'] || '';
+
+    const isWebhookAuthorized = Boolean(
+      process.env.NOTIFY_WEBHOOK_SECRET && token === process.env.NOTIFY_WEBHOOK_SECRET,
+    );
+
+    let authData = null;
+    if (!isWebhookAuthorized) {
+      if (!token) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      const { data: userRes, error: authErr } = await supabase.auth.getUser(token);
+      if (authErr || !userRes?.user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      authData = userRes;
+    }
+
     const { orderId } = req.body || {};
     if (!orderId) {
       return res.status(400).json({ success: false, error: 'orderId obrigatorio' });
@@ -121,6 +160,28 @@ module.exports = async function handler(req, res) {
     const order = orders?.[0];
     if (!order) {
       return res.status(404).json({ success: false, error: 'Pedido nao encontrado' });
+    }
+
+    if (!isWebhookAuthorized) {
+      if (order.user_id !== authData.user.id) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', authData.user.id)
+          .maybeSingle();
+
+        if (profile?.role !== 'admin') {
+          return res.status(403).json({ error: 'Forbidden' });
+        }
+      }
+    }
+
+    if (order.status === 'awaiting_payment') {
+      return res.status(200).json({ success: false, skipped: 'awaiting_payment' });
+    }
+
+    if (order.metadata?.admin_push_sent === true) {
+      return res.status(200).json({ success: true, alreadySent: true });
     }
 
     const tokens = await supabaseFetch(
@@ -152,6 +213,15 @@ module.exports = async function handler(req, res) {
     }));
 
     const pushResult = await sendExpoPush(messages);
+
+    if (pushResult.ok) {
+      await supabase
+        .from('orders')
+        .update({
+          metadata: { ...(order.metadata || {}), admin_push_sent: true },
+        })
+        .eq('id', order.id);
+    }
 
     return res.status(200).json({
       success: true,

@@ -37,13 +37,14 @@ export default function RipplePressable({
 
   const rippleStyle = useAnimatedStyle(() => {
     const d = Math.max(size.w, size.h, 40) * 2.4;
+    const opacity = progress.value <= 0 ? 0 : (1 - progress.value) * 0.9;
     return {
       width: d,
       height: d,
       borderRadius: d / 2,
       left: originX.value - d / 2,
       top: originY.value - d / 2,
-      opacity: (1 - progress.value) * 0.9,
+      opacity,
       transform: [{ scale: progress.value }],
     };
   });

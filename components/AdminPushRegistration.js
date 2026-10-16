@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useRouter } from 'expo-router';
 
 import { supabase } from '../supabaseConfig';
+import { getEffectiveSession, subscribeAuthUiChange } from '../utils/authSession';
 import { isAdminUser, checkIsAdmin } from '../utils/isAdmin';
 import {
   setupAdminNotificationListeners,
@@ -20,7 +21,8 @@ export default function AdminPushRegistration() {
   useEffect(() => {
     let mounted = true;
 
-    async function init(session) {
+    async function tryRegister() {
+      const session = await getEffectiveSession();
       if (!mounted || !session?.user) return;
       const isInstant = isAdminUser(session.user);
       let isDb = false;
@@ -33,23 +35,19 @@ export default function AdminPushRegistration() {
       if (mounted) pushTokenRef.current = token;
     }
 
-    supabase.auth.getSession().then(({ data: { session } }) => init(session));
+    tryRegister();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session?.user) {
-        const isInstant = isAdminUser(session.user);
-        let isDb = false;
-        if (!isInstant) {
-          isDb = await checkIsAdmin(session.user.id);
-        }
-        if (isInstant || isDb) {
-          init(session);
-        }
-      }
+    const unsubscribeUi = subscribeAuthUiChange(() => {
+      tryRegister();
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
+      tryRegister();
     });
 
     return () => {
       mounted = false;
+      unsubscribeUi();
       subscription.unsubscribe();
     };
   }, []);

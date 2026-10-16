@@ -8,6 +8,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Modal,
+  Animated,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,6 +16,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../supabaseConfig';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../../constants/theme';
+import { ThemedAlertHost, showThemedAlert, hideThemedAlert } from '../../components/ThemedAlert';
+import SwipeableBottomSheetModal from '../../components/SwipeableBottomSheetModal';
 
 const RESEND_SECONDS = 59;
 const SAVED_USER_KEY = '@batatatop:savedUser';
@@ -67,7 +70,6 @@ export default function CodigoScreen() {
   const [focusedBox, setFocusedBox] = useState(null);
   const [secondsLeft, setSecondsLeft] = useState(RESEND_SECONDS);
   const [loading, setLoading] = useState(false);
-  const [banner, setBanner] = useState(null); // { type: 'error' | 'success', text }
   const [helpVisible, setHelpVisible] = useState(false);
   const codeRefs = useRef([]);
 
@@ -113,18 +115,12 @@ export default function CodigoScreen() {
     return () => clearTimeout(t);
   }, [step, secondsLeft]);
 
-  useEffect(() => {
-    if (banner?.type !== 'success') return;
-    const t = setTimeout(() => setBanner(null), 3000);
-    return () => clearTimeout(t);
-  }, [banner]);
-
   const formatTime = (s) => `0:${String(s).padStart(2, '0')}`;
 
   async function handleResend() {
     setHelpVisible(false);
     setLoading(true);
-    setBanner(null);
+    hideThemedAlert();
 
     let error;
     if (verifying === 'phone') {
@@ -139,13 +135,13 @@ export default function CodigoScreen() {
     setLoading(false);
 
     if (error) {
-      setBanner({ type: 'error', text: 'Não foi possível reenviar o código. Tente novamente.' });
+      showThemedAlert.error('Não foi possível reenviar o código. Tente novamente.');
       return;
     }
 
     setCode(['', '', '', '', '', '']);
     setSecondsLeft(RESEND_SECONDS);
-    setBanner({ type: 'success', text: 'Código reenviado' });
+    showThemedAlert.success('Código reenviado');
     setTimeout(() => codeRefs.current[0]?.focus(), 150);
   }
 
@@ -168,7 +164,7 @@ export default function CodigoScreen() {
     setLoading(false);
 
     if (error) {
-      setBanner({ type: 'error', text: 'Código inválido ou expirado. Tente novamente.' });
+      showThemedAlert.error('Código inválido ou expirado. Tente novamente.');
       setCode(['', '', '', '', '', '']);
       setTimeout(() => codeRefs.current[0]?.focus(), 100);
       return;
@@ -192,7 +188,7 @@ export default function CodigoScreen() {
         // Conta nova por celular (só tem phone) — e-mail ainda não foi
         // vinculado. Precisa vincular um e-mail ANTES de pedir o nome.
         // Telefone sozinho não é suficiente pro cadastro.
-        setBanner(null);
+        hideThemedAlert();
         setCode(['', '', '', '', '', '']);
         setStep('email');
         return;
@@ -202,7 +198,7 @@ export default function CodigoScreen() {
       // Tem e-mail já vinculado, mas falta o nome.
       // Fluxo anterior foi interrompido entre email e name, ou foi um
       // fluxo antigo que deixou email sem nome. Pula direto pro name.
-      setBanner(null);
+      hideThemedAlert();
       setStep('name');
       return;
     }
@@ -214,7 +210,7 @@ export default function CodigoScreen() {
       return;
     }
 
-    setBanner(null);
+    hideThemedAlert();
     setStep('name');
   }
 
@@ -225,7 +221,7 @@ export default function CodigoScreen() {
       const next = digits.slice(0, 6).split('');
       while (next.length < 6) next.push('');
       setCode(next);
-      if (banner) setBanner(null);
+      hideThemedAlert();
 
       const lastFilledIndex = Math.min(digits.length, 6) - 1;
       codeRefs.current[lastFilledIndex]?.focus();
@@ -239,7 +235,7 @@ export default function CodigoScreen() {
     const next = [...code];
     next[index] = digit;
     setCode(next);
-    if (banner) setBanner(null);
+    hideThemedAlert();
 
     if (digit && index < 5) {
       codeRefs.current[index + 1]?.focus();
@@ -268,7 +264,7 @@ export default function CodigoScreen() {
     setNameSaving(false);
 
     if (error) {
-      setBanner({ type: 'error', text: 'Não foi possível salvar seu nome. Tente novamente.' });
+      showThemedAlert.error('Não foi possível salvar seu nome. Tente novamente.');
       return;
     }
 
@@ -280,7 +276,7 @@ export default function CodigoScreen() {
   async function handleEmailContinue() {
     if (!isEmailValid || emailSaving) return;
     setEmailSaving(true);
-    setBanner(null);
+    hideThemedAlert();
     const trimmedEmail = email.trim();
 
     // Vincula o e-mail na sessão já ativa (aberta via telefone) — não cria
@@ -294,12 +290,11 @@ export default function CodigoScreen() {
       // — só troca o texto quando o e-mail já pertence a outra conta.
       const emailAlreadyInUse =
         error.code === 'email_exists' || /already.*(registered|in use|use)/i.test(error.message || '');
-      setBanner({
-        type: 'error',
-        text: emailAlreadyInUse
+      showThemedAlert.error(
+        emailAlreadyInUse
           ? 'Esse e-mail já está em uso por outra conta.'
-          : 'Não foi possível vincular o e-mail. Tente novamente.',
-      });
+          : 'Não foi possível vincular o e-mail. Tente novamente.'
+      );
       return;
     }
 
@@ -308,7 +303,7 @@ export default function CodigoScreen() {
     setCode(['', '', '', '', '', '']);
     setSecondsLeft(RESEND_SECONDS);
     setStep('code');
-    setBanner({ type: 'success', text: 'Código enviado' });
+    showThemedAlert.success('Código enviado');
     setTimeout(() => codeRefs.current[0]?.focus(), 150);
   }
 
@@ -321,7 +316,7 @@ export default function CodigoScreen() {
       router.replace('/auth/telefone');
     } else {
       setStep('email');
-      setBanner(null);
+      hideThemedAlert();
     }
   }
 
@@ -331,23 +326,20 @@ export default function CodigoScreen() {
     <View style={styles.container}>
       <Pressable
         style={[styles.backBtn, { top: insets.top + 8 }]}
-        onPress={() => (step === 'name' || step === 'email' ? router.replace('/') : router.back())}
+        onPress={async () => {
+          if (step === 'name' || step === 'email') {
+            await supabase.auth.signOut();
+            router.replace('/');
+          } else {
+            router.back();
+          }
+        }}
         hitSlop={8}
       >
         <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
       </Pressable>
 
       <View style={[styles.content, { paddingTop: insets.top + 64 }]}>
-        {banner && (
-          <View style={[styles.banner, banner.type === 'error' ? styles.bannerError : styles.bannerSuccess]}>
-            <Ionicons
-              name={banner.type === 'error' ? 'alert-circle' : 'checkmark-circle'}
-              size={20}
-              color={COLORS.white}
-            />
-            <Text style={styles.bannerText}>{banner.text}</Text>
-          </View>
-        )}
 
         {step === 'code' && (
           <>
@@ -476,35 +468,30 @@ export default function CodigoScreen() {
         )}
       </View>
 
-      <Modal
+      <SwipeableBottomSheetModal
         visible={helpVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setHelpVisible(false)}
+        onClose={() => setHelpVisible(false)}
+        contentContainerStyle={{ paddingHorizontal: SPACING[6], paddingTop: 8 }}
       >
-        <Pressable style={styles.modalOverlay} onPress={() => setHelpVisible(false)}>
-          <Pressable style={styles.modalSheet} onPress={() => {}}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Não recebeu o código?</Text>
-            <Text style={styles.modalSubtitle}>
-              {verifying === 'phone'
-                ? 'Verifique se o número está correto. Pode levar alguns minutos pra chegar.'
-                : 'Verifique se o e-mail está correto. Pode levar alguns minutos pra chegar.'}
-            </Text>
-            <Text style={styles.modalPhone}>{verifying === 'phone' ? phoneDisplay : linkedEmail}</Text>
+        <Text style={styles.modalTitle}>Não recebeu o código?</Text>
+        <Text style={styles.modalSubtitle}>
+          {verifying === 'phone'
+            ? 'Verifique se o número está correto. Pode levar alguns minutos pra chegar.'
+            : 'Verifique se o e-mail está correto. Pode levar alguns minutos pra chegar.'}
+        </Text>
+        <Text style={styles.modalPhone}>{verifying === 'phone' ? phoneDisplay : linkedEmail}</Text>
 
-            <TouchableOpacity style={styles.modalResendBtn} onPress={handleResend}>
-              <Text style={styles.modalResendBtnText}>Reenviar código</Text>
-            </TouchableOpacity>
+        <TouchableOpacity style={styles.modalResendBtn} onPress={handleResend}>
+          <Text style={styles.modalResendBtnText}>Reenviar código</Text>
+        </TouchableOpacity>
 
-            <TouchableOpacity style={styles.modalChangePhoneBtn} onPress={handleAlterarIdentificador}>
-              <Text style={styles.modalChangePhoneText}>
-                {verifying === 'phone' ? 'Alterar número' : 'Alterar e-mail'}
-              </Text>
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
+        <TouchableOpacity style={styles.modalChangePhoneBtn} onPress={handleAlterarIdentificador}>
+          <Text style={styles.modalChangePhoneText}>
+            {verifying === 'phone' ? 'Alterar número' : 'Alterar e-mail'}
+          </Text>
+        </TouchableOpacity>
+      </SwipeableBottomSheetModal>
+      <ThemedAlertHost />
     </View>
   );
 }
@@ -525,28 +512,6 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: SPACING[6],
-  },
-  banner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    borderRadius: RADIUS.lg,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    marginBottom: SPACING[5],
-    ...SHADOWS.sm,
-  },
-  bannerError: {
-    backgroundColor: COLORS.error,
-  },
-  bannerSuccess: {
-    backgroundColor: COLORS.success,
-  },
-  bannerText: {
-    color: COLORS.white,
-    fontSize: 14,
-    fontWeight: '600',
-    flex: 1,
   },
   title: {
     fontSize: TYPOGRAPHY.sizes.xl,
@@ -647,8 +612,14 @@ const styles = StyleSheet.create({
   // ── Bottom sheet "Não recebeu o código?" ───────────────────────────
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'flex-end',
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  modalContentWrap: {
+    width: '100%',
   },
   modalSheet: {
     backgroundColor: COLORS.white,
@@ -699,7 +670,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   modalChangePhoneBtn: {
-    paddingVertical: 4,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   modalChangePhoneText: {
     color: COLORS.secondary,

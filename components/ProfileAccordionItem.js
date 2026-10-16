@@ -11,6 +11,9 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, TYPOGRAPHY, SPACING } from '../constants/theme';
+import usePressScale from '../hooks/usePressScale';
+import useChevronRotation from '../hooks/useChevronRotation';
+import useStaggerEntrance from '../hooks/useStaggerEntrance';
 
 if (
   Platform.OS === 'android' &&
@@ -45,15 +48,9 @@ if (
  */
 export default function ProfileAccordionItem({ icon, title, subtitle, items = [] }) {
   const [expanded, setExpanded] = useState(false);
-  const rotateAnim = useRef(new Animated.Value(0)).current;
-  const pressScale = useRef(new Animated.Value(1)).current;
-  // Um Animated.Value por item, pra dar o efeito cascata (stagger) na
-  // entrada. Recriado sempre que a lista de items muda de tamanho.
-  const itemAnims = useRef(items.map(() => new Animated.Value(0))).current;
-  if (itemAnims.length !== items.length) {
-    itemAnims.length = 0;
-    items.forEach(() => itemAnims.push(new Animated.Value(0)));
-  }
+  const { onPressIn, onPressOut, scaleStyle } = usePressScale();
+  const { rotateStyle } = useChevronRotation(expanded);
+  const { getItemStyle, trigger: triggerItems } = useStaggerEntrance(items.length, expanded);
 
   const toggleExpand = () => {
     const opening = !expanded;
@@ -61,51 +58,22 @@ export default function ProfileAccordionItem({ icon, title, subtitle, items = []
     LayoutAnimation.configureNext(
       LayoutAnimation.create(260, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity)
     );
-    Animated.spring(rotateAnim, {
-      toValue: opening ? 1 : 0,
-      useNativeDriver: true,
-      friction: 7,
-      tension: 60,
-    }).start();
 
     if (opening) {
-      itemAnims.forEach((val) => val.setValue(0));
-      Animated.stagger(
-        45,
-        itemAnims.map((val) =>
-          Animated.spring(val, {
-            toValue: 1,
-            useNativeDriver: true,
-            friction: 8,
-            tension: 70,
-          })
-        )
-      ).start();
+      triggerItems();
     }
 
     setExpanded(opening);
   };
 
-  const handlePressIn = () => {
-    Animated.spring(pressScale, { toValue: 0.985, useNativeDriver: true, speed: 30 }).start();
-  };
-  const handlePressOut = () => {
-    Animated.spring(pressScale, { toValue: 1, useNativeDriver: true, speed: 20 }).start();
-  };
-
-  const rotate = rotateAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '180deg'],
-  });
-
   return (
     <View>
       <Pressable
         onPress={toggleExpand}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
+        onPressIn={onPressIn}
+        onPressOut={onPressOut}
       >
-        <Animated.View style={[styles.header, { transform: [{ scale: pressScale }] }]}>
+        <Animated.View style={[styles.header, scaleStyle]}>
           <View style={styles.iconBox}>
             <Ionicons name={icon} size={19} color={COLORS.textMuted} />
           </View>
@@ -119,7 +87,7 @@ export default function ProfileAccordionItem({ icon, title, subtitle, items = []
             ) : null}
           </View>
 
-          <Animated.View style={{ transform: [{ rotate }] }}>
+          <Animated.View style={rotateStyle}>
             <Ionicons name="chevron-down" size={16} color={COLORS.textMuted} />
           </Animated.View>
         </Animated.View>
@@ -128,21 +96,10 @@ export default function ProfileAccordionItem({ icon, title, subtitle, items = []
       {expanded && (
         <View style={styles.content}>
           {items.map((item, index) => {
-            const anim = itemAnims[index];
             return (
               <Animated.View
                 key={item.label + index}
-                style={{
-                  opacity: anim,
-                  transform: [
-                    {
-                      translateY: anim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [-6, 0],
-                      }),
-                    },
-                  ],
-                }}
+                style={getItemStyle(index)}
               >
                 <Pressable
                   style={styles.itemRow}

@@ -103,7 +103,14 @@ export const cartStore = {
     return cart.reduce((sum, item) => sum + item.quantity, 0);
   },
   getCartTotal() {
-    return cart.reduce((sum, item) => sum + item.precoNum * item.quantity, 0);
+    return cart.reduce((sum, item) => {
+      const precoCentavos =
+        typeof item.precoNum === 'number' && !isNaN(item.precoNum)
+          ? item.precoNum
+          : Math.round(Number(item.price || item.preco || 0) * 100);
+      const qty = Number(item.quantity || item.quantidade || 1) || 1;
+      return sum + (isNaN(precoCentavos) ? 0 : precoCentavos) * qty;
+    }, 0);
   }
 };
 

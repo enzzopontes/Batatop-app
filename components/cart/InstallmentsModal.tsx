@@ -3,16 +3,15 @@ import {
   View,
   Text,
   StyleSheet,
-  Modal,
   Pressable,
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { COLORS, RADIUS, SPACING } from '../../constants/theme';
 import RipplePressable from './RipplePressable';
 import PrimaryButton from '../PrimaryButton';
+import SwipeableBottomSheetModal from '../SwipeableBottomSheetModal';
 
 export interface InstallmentOption {
   installments: number;
@@ -47,8 +46,8 @@ export default function InstallmentsModal({
   onSelectInstallment,
   onRetry,
 }: InstallmentsModalProps) {
-  const insets = useSafeAreaInsets();
   const [tempSelected, setTempSelected] = useState<number>(selectedInstallments || 1);
+  const [isAtTop, setIsAtTop] = useState(true);
 
   useEffect(() => {
     if (visible) {
@@ -71,25 +70,20 @@ export default function InstallmentsModal({
   };
 
   return (
-    <Modal
+    <SwipeableBottomSheetModal
       visible={visible}
-      transparent
-      animationType="slide"
-      statusBarTranslucent
       onRequestClose={onClose}
+      backdropColor="rgba(0, 0, 0, 0.55)"
+      contentStyle={styles.sheetContent}
+      scrollable
+      isAtTop={isAtTop}
     >
-      <View style={styles.modalOverlay}>
-        <Pressable style={styles.modalBackdrop} onPress={onClose} />
-        <View style={[styles.sheetContent, { paddingBottom: Math.max(insets.bottom, 16) }]}>
-          {/* Barrinha cinza de arrastar no topo */}
-          <View style={styles.sheetHandle} />
+      {/* Título centralizado */}
+      <Text style={styles.sheetTitle}>Parcelamento</Text>
 
-          {/* Título centralizado */}
-          <Text style={styles.sheetTitle}>Parcelamento</Text>
-
-          {loading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={COLORS.primary} />
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
               <Text style={styles.loadingText}>Buscando opções de parcelamento...</Text>
             </View>
           ) : error && options.length === 0 ? (
@@ -106,6 +100,8 @@ export default function InstallmentsModal({
               style={styles.optionsList}
               contentContainerStyle={styles.optionsContent}
               showsVerticalScrollIndicator={false}
+              scrollEventThrottle={16}
+              onScroll={(e) => setIsAtTop(e.nativeEvent.contentOffset.y <= 0)}
             >
               {options.map((option) => {
                 const isSelected = tempSelected === option.installments;
@@ -174,9 +170,7 @@ export default function InstallmentsModal({
           >
             <Text style={styles.cancelBtnText}>Cancelar</Text>
           </RipplePressable>
-        </View>
-      </View>
-    </Modal>
+    </SwipeableBottomSheetModal>
   );
 }
 
@@ -184,10 +178,13 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
   },
   modalBackdrop: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+  },
+  sheetWrap: {
+    width: '100%',
   },
   sheetContent: {
     backgroundColor: '#FFFFFF',

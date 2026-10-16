@@ -125,24 +125,50 @@ export const useHeaderHidden = () => useContext(HeaderHiddenContext).headerHidde
    DRAWER MENU LATERAL
    ============================================================ */
 function MenuDrawer({ visible, onClose, user, router }) {
+  const [mounted, setMounted] = useState(visible);
   const translateX = useRef(new Animated.Value(-320)).current;
   const opacity    = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (visible) {
+      setMounted(true);
       Animated.parallel([
-        Animated.timing(translateX, { toValue: 0,    duration: 280, useNativeDriver: true }),
-        Animated.timing(opacity,    { toValue: 1,    duration: 280, useNativeDriver: true }),
+        Animated.timing(translateX, {
+          toValue: 0,
+          duration: 250,
+          easing: Easing.out(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacity, {
+          toValue: 1,
+          duration: 180,
+          easing: Easing.out(Easing.ease),
+          useNativeDriver: true,
+        }),
       ]).start();
     } else {
       Animated.parallel([
-        Animated.timing(translateX, { toValue: -320, duration: 220, useNativeDriver: true }),
-        Animated.timing(opacity,    { toValue: 0,    duration: 220, useNativeDriver: true }),
-      ]).start();
+        Animated.timing(translateX, {
+          toValue: -320,
+          duration: 200,
+          easing: Easing.in(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacity, {
+          toValue: 0,
+          duration: 130,
+          easing: Easing.in(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ]).start(({ finished }) => {
+        if (finished) {
+          setMounted(false);
+        }
+      });
     }
   }, [visible]);
 
-  if (!visible) return null;
+  if (!mounted) return null;
 
   const items = [
     { icon: 'home-outline',        label: 'Início',       route: '/' },
@@ -839,7 +865,7 @@ export default function RootLayout() {
                 }}
               />
             </View>
-            <CartBar tabBarHeight={tabBarHeight} />
+            {!pathname.includes('addresses') && <CartBar tabBarHeight={tabBarHeight} />}
             <BottomTabBar onHeightChange={setTabBarHeight} />
             {!pathname.includes('welcome') && !pathname.includes('location') && !pathname.includes('cart') && !pathname.includes('checkout') && (
               <EntrarBanner onPress={() => setAuthSheetVisible(true)} tabBarHeight={tabBarHeight} />

@@ -1,7 +1,7 @@
 import { getEffectiveSession } from './authSession';
 
 const MERCADO_PAGO_PUBLIC_KEY = process.env.EXPO_PUBLIC_MERCADO_PAGO_PUBLIC_KEY;
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatop.vercel.app';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatopiacanga.com.br';
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
   const controller = new AbortController();

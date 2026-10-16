@@ -30,8 +30,15 @@
         "backgroundColor": "#FFFFFF"
       },
       "permissions": [
-        "POST_NOTIFICATIONS"
-      ]
+        "POST_NOTIFICATIONS",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": ""
+        }
+      }
     },
     "web": {
       "bundler": "metro",

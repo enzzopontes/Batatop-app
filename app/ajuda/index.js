@@ -89,7 +89,7 @@ export default function HelpIndex() {
             <Image
               source={require('../../assets/imageajuda.png')}
               style={s.bannerImg}
-              resizeMode="contain"
+              resizeMode="cover"
             />
           </View>
         </View>
@@ -216,10 +216,12 @@ const s = StyleSheet.create({
     height: 140,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+    borderRadius: RADIUS.lg,
   },
   bannerImg: {
-    width: 135,
-    height: 135,
+    width: '100%',
+    height: '100%',
   },
 
   loginBtn: {

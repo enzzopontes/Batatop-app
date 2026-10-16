@@ -63,7 +63,7 @@ export default function AdminImagens() {
     const pickerResult = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
-      quality: 0.8,
+      quality: 0.6,
       base64: true, // Importante: pegar o base64 para salvar no Supabase!
     });
 
@@ -72,6 +72,11 @@ export default function AdminImagens() {
     const asset = pickerResult.assets[0];
     if (!asset.base64) {
       Alert.alert('Erro', 'Não foi possível ler os dados da imagem.');
+      return;
+    }
+
+    if (asset.base64.length > 2800000) {
+      Alert.alert('Imagem muito grande', 'Escolha uma imagem menor que 2MB.');
       return;
     }
 
@@ -110,7 +115,7 @@ export default function AdminImagens() {
   // ─── Copiar URL de imagem para clipboard ──────────────────────────
   const handleCopyUrl = async (id) => {
     // A URL gerada no site é no formato `/api/images/${id}`
-    const url = `/api/images/${id}`;
+    const url = `${process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatop.vercel.app'}/api/images/${id}`;
     await Clipboard.setStringAsync(url);
     setCopiedId(id);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -251,7 +256,7 @@ const s = StyleSheet.create({
   emptyText: { color: '#D1D5DB', fontWeight: '600', fontSize: 14 },
 
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  imgCard: { width: '48%', backgroundColor: '#FFF', borderRadius: 18, borderHeight: 200, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.03, shadowRadius: 6, elevation: 1 },
+  imgCard: { width: '48%', backgroundColor: '#FFF', borderRadius: 18, minHeight: 200, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.03, shadowRadius: 6, elevation: 1 },
   gridImage: { width: '100%', height: 110, backgroundColor: '#F3F4F6' },
   imgCardBody: { padding: 10, gap: 4 },
   imgName: { fontSize: 11, fontWeight: '700', color: '#1A1A1A' },

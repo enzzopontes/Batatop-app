@@ -10,9 +10,11 @@
  * dois modais de endereço.
  */
 
-import { View, Text, StyleSheet, Pressable, Modal } from 'react-native';
+import React from 'react';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../constants/theme';
+import SwipeableBottomSheetModal from './SwipeableBottomSheetModal';
 
 type Props = {
   visible: boolean;
@@ -22,31 +24,32 @@ type Props = {
 
 export default function NoAddressModal({ visible, onClose, onCadastrar }: Props) {
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={s.overlay}>
-        <View style={s.sheet}>
-          <View style={s.handle} />
-
-          <View style={s.iconWrap}>
-            <Ionicons name="location-outline" size={28} color={COLORS.primary} />
-          </View>
-
-          <Text style={s.title}>Nenhum endereço cadastrado</Text>
-          <Text style={s.subtitle}>
-            Cadastre um endereço de entrega pra continuar com o seu pedido.
-          </Text>
-
-          <Pressable style={s.button} onPress={onCadastrar}>
-            <Text style={s.buttonText}>Cadastrar endereço</Text>
-          </Pressable>
-        </View>
+    <SwipeableBottomSheetModal
+      visible={visible}
+      onRequestClose={onClose}
+      backdropColor="rgba(0,0,0,0.5)"
+      contentStyle={s.sheet}
+    >
+      <View style={s.iconWrap}>
+        <Ionicons name="location-outline" size={28} color={COLORS.primary} />
       </View>
-    </Modal>
+
+      <Text style={s.title}>Nenhum endereço cadastrado</Text>
+      <Text style={s.subtitle}>
+        Cadastre um endereço de entrega pra continuar com o seu pedido.
+      </Text>
+
+      <Pressable style={s.button} onPress={onCadastrar}>
+        <Text style={s.buttonText}>Cadastrar endereço</Text>
+      </Pressable>
+    </SwipeableBottomSheetModal>
   );
 }
 
 const s = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  container: { flex: 1, justifyContent: 'flex-end' },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
+  contentWrap: { width: '100%' },
   sheet: {
     backgroundColor: COLORS.background,
     borderTopLeftRadius: RADIUS.xl,

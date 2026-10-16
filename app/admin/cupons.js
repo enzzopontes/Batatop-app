@@ -5,7 +5,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets, SafeAreaProvider } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { supabase } from '../../supabaseConfig';
 import { checkIsAdmin } from '../../utils/isAdmin';
@@ -381,8 +381,9 @@ export default function AdminCupons() {
         </ScrollView>
       )}
 
-      <Modal visible={modalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setModalVisible(false)}>
-        <View style={s.modalContainer}>
+      <Modal visible={modalVisible} animationType="none" statusBarTranslucent navigationBarTranslucent presentationStyle="pageSheet" onRequestClose={() => setModalVisible(false)}>
+        <SafeAreaProvider>
+          <View style={s.modalContainer}>
           <View style={s.modalHeader}>
             <Text style={s.modalTitle}>{editingCoupon ? 'Editar Cupom' : 'Novo Cupom'}</Text>
             <Pressable onPress={() => setModalVisible(false)} style={s.modalCloseBtn}>
@@ -565,6 +566,7 @@ export default function AdminCupons() {
             </Pressable>
           </ScrollView>
         </View>
+        </SafeAreaProvider>
       </Modal>
     </View>
   );

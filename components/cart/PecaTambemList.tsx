@@ -33,14 +33,16 @@ const QuickProductCard = memo(function QuickProductCard({ item, onAdd }: QuickCa
 
   return (
     <View style={styles.card}>
-      <View style={styles.imageWrapper}>
-        <ExpoImage
-          source={{ uri: resolveItemImage(item.imagem) }}
-          style={styles.image}
-          contentFit="contain"
-          cachePolicy="memory-disk"
-          transition={100}
-        />
+      <View style={styles.imageContainer}>
+        <View style={styles.imageWrapper}>
+          <ExpoImage
+            source={{ uri: resolveItemImage(item.imagem) }}
+            style={styles.image}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            transition={100}
+          />
+        </View>
         <RipplePressable
           style={styles.quickAddBtn}
           onPress={handlePress}
@@ -263,19 +265,22 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     padding: 8,
   },
-  imageWrapper: {
+  imageContainer: {
     width: '100%',
     height: 72,
-    backgroundColor: COLORS.backgroundElevated,
-    borderRadius: RADIUS.md,
-    alignItems: 'center',
-    justifyContent: 'center',
     marginBottom: 6,
     position: 'relative',
   },
+  imageWrapper: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: COLORS.backgroundElevated,
+    borderRadius: RADIUS.md,
+    overflow: 'hidden',
+  },
   image: {
-    width: '85%',
-    height: '85%',
+    width: '100%',
+    height: '100%',
   },
   quickAddBtn: {
     position: 'absolute',

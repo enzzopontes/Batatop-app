@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Modal,
   StatusBar,
+  Animated,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -18,6 +19,7 @@ import { COLORS, TYPOGRAPHY, SPACING, RADIUS } from '../../constants/theme';
 import { usePaymentCards, formatCardDisplay } from '../../utils/usePaymentCards';
 import { ThemedAlertHost, showThemedAlert } from '../../components/ThemedAlert';
 import CardWizard from '../../components/CardWizard';
+import SwipeableBottomSheetModal from '../../components/SwipeableBottomSheetModal';
 
 /**
  * Página "Pagamentos" — gerencia cartões salvos (listar/adicionar/remover)
@@ -169,49 +171,38 @@ export default function PaymentsScreen() {
           </View>
 
           {/* Bottom Sheet Modal minimalista estilo iFood (preto/cinza, sem excesso de amarelo) */}
-          <Modal
+          <SwipeableBottomSheetModal
             visible={sheetVisible}
-            transparent
-            animationType="slide"
-            statusBarTranslucent
             onRequestClose={() => setSheetVisible(false)}
+            backdropColor="rgba(0, 0, 0, 0.45)"
+            contentStyle={s.sheetContent}
           >
-            <View style={s.modalOverlay}>
-              <Pressable
-                style={s.modalBackdrop}
-                onPress={() => setSheetVisible(false)}
-              />
-              <View style={[s.sheetContent, { paddingBottom: Math.max(insets.bottom, 20) + 12 }]}>
-                <View style={s.sheetHandle} />
+            <Text style={s.sheetTitle}>Escolha uma opção de pagamento</Text>
 
-                <Text style={s.sheetTitle}>Escolha uma opção de pagamento</Text>
-
-                <Pressable
-                  style={({ pressed }) => [s.sheetOption, pressed && s.sheetOptionPressed]}
-                  onPress={() => handleSelectType('cartão de crédito')}
-                >
-                  <View style={s.sheetOptionLeft}>
-                    <Ionicons name="card-outline" size={22} color="#18181B" />
-                    <Text style={s.sheetOptionText}>Crédito</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={18} color="#71717A" />
-                </Pressable>
-
-                <View style={s.sheetDivider} />
-
-                <Pressable
-                  style={({ pressed }) => [s.sheetOption, pressed && s.sheetOptionPressed]}
-                  onPress={() => handleSelectType('cartão de débito')}
-                >
-                  <View style={s.sheetOptionLeft}>
-                    <Ionicons name="card-outline" size={22} color="#18181B" />
-                    <Text style={s.sheetOptionText}>Débito</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={18} color="#71717A" />
-                </Pressable>
+            <Pressable
+              style={({ pressed }) => [s.sheetOption, pressed && s.sheetOptionPressed]}
+              onPress={() => handleSelectType('cartão de crédito')}
+            >
+              <View style={s.sheetOptionLeft}>
+                <Ionicons name="card-outline" size={22} color="#18181B" />
+                <Text style={s.sheetOptionText}>Crédito</Text>
               </View>
-            </View>
-          </Modal>
+              <Ionicons name="chevron-forward" size={18} color="#71717A" />
+            </Pressable>
+
+            <View style={s.sheetDivider} />
+
+            <Pressable
+              style={({ pressed }) => [s.sheetOption, pressed && s.sheetOptionPressed]}
+              onPress={() => handleSelectType('cartão de débito')}
+            >
+              <View style={s.sheetOptionLeft}>
+                <Ionicons name="card-outline" size={22} color="#18181B" />
+                <Text style={s.sheetOptionText}>Débito</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#71717A" />
+            </Pressable>
+          </SwipeableBottomSheetModal>
         </View>
       )}
     </>
@@ -384,7 +375,6 @@ const s = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
   },
   modalBackdrop: {
     flex: 1,

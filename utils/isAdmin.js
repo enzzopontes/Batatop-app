@@ -1,12 +1,7 @@
 import { supabase } from '../supabaseConfig';
 
 export function isAdminUser(user) {
-  if (!user) return false;
-  return (
-    user.email === 'enzzobaraldo2008@gmail.com' ||
-    user.email === 'maraysis9010@gmail.com' ||
-    user.app_metadata?.role === 'admin'
-  );
+  return user?.app_metadata?.role === 'admin';
 }
 
 export async function checkIsAdmin(userId) {

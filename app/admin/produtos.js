@@ -6,7 +6,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useState, useEffect, useCallback } from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets, SafeAreaProvider } from 'react-native-safe-area-context';
 import { supabase } from '../../supabaseConfig';
 import * as Haptics from 'expo-haptics';
 
@@ -313,8 +313,9 @@ export default function AdminProdutos() {
       )}
 
       {/* Modal Produto */}
-      <Modal visible={prodModalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setProdModalVisible(false)}>
-        <View style={s.modalContainer}>
+      <Modal visible={prodModalVisible} animationType="none" statusBarTranslucent navigationBarTranslucent presentationStyle="pageSheet" onRequestClose={() => setProdModalVisible(false)}>
+        <SafeAreaProvider>
+          <View style={s.modalContainer}>
           <View style={s.modalHeader}>
             <Text style={s.modalTitle}>{editingProduct ? 'Editar Produto' : 'Novo Produto'}</Text>
             <Pressable onPress={() => setProdModalVisible(false)} style={s.modalCloseBtn}>
@@ -370,11 +371,13 @@ export default function AdminProdutos() {
             </Pressable>
           </ScrollView>
         </View>
+        </SafeAreaProvider>
       </Modal>
 
       {/* Modal Adicional */}
-      <Modal visible={adicModalVisible} animationType="slide" presentationStyle="formSheet" onRequestClose={() => setAdicModalVisible(false)}>
-        <View style={s.modalContainer}>
+      <Modal visible={adicModalVisible} animationType="none" statusBarTranslucent navigationBarTranslucent presentationStyle="formSheet" onRequestClose={() => setAdicModalVisible(false)}>
+        <SafeAreaProvider>
+          <View style={s.modalContainer}>
           <View style={s.modalHeader}>
             <Text style={s.modalTitle}>{editingAdic ? 'Editar Adicional' : 'Novo Adicional'}</Text>
             <Pressable onPress={() => setAdicModalVisible(false)} style={s.modalCloseBtn}>
@@ -403,6 +406,7 @@ export default function AdminProdutos() {
             </Pressable>
           </View>
         </View>
+        </SafeAreaProvider>
       </Modal>
     </View>
   );

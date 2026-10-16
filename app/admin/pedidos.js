@@ -1,32 +1,38 @@
 import {
   View, Text, ScrollView, StyleSheet, Pressable,
-  ActivityIndicator, Alert, RefreshControl, Modal, Linking,
+  ActivityIndicator, RefreshControl, Modal, Linking,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../supabaseConfig';
 import * as Haptics from 'expo-haptics';
+import { startMaraTracking, stopMaraTracking, subscribeTrackingStatus } from '../../utils/maraTrackingEngine';
+import { playNewOrderSound } from '../../utils/notificationSound';
+import { syncAdminPushRegistration } from '../../utils/pushNotifications';
+import { showThemedAlert } from '../../components/ThemedAlert';
 
 // ─── Configurações ─────────────────────────────────────────────────
 const STATUS_CONFIG = {
-  pending:   { label: 'Pendente',   color: '#EA580C', bg: '#FFEDD5', icon: 'time-outline' },
-  preparing: { label: 'Preparando', color: '#2563EB', bg: '#DBEAFE', icon: 'restaurant-outline' },
-  preparo:   { label: 'Preparando', color: '#2563EB', bg: '#DBEAFE', icon: 'restaurant-outline' },
-  ready:     { label: 'Pronto',     color: '#7C3AED', bg: '#F3E8FF', icon: 'checkmark-circle-outline' },
-  delivered: { label: 'Entregue',   color: '#059669', bg: '#D1FAE5', icon: 'checkmark-done-outline' },
-  entregue:  { label: 'Entregue',   color: '#059669', bg: '#D1FAE5', icon: 'checkmark-done-outline' },
-  cancelled: { label: 'Cancelado',  color: '#DC2626', bg: '#FEE2E2', icon: 'close-circle-outline' },
+  pending:          { label: 'Pendente',   color: '#EA580C', bg: '#FFEDD5', icon: 'time-outline' },
+  preparing:        { label: 'Preparando', color: '#2563EB', bg: '#DBEAFE', icon: 'restaurant-outline' },
+  preparo:          { label: 'Preparando', color: '#2563EB', bg: '#DBEAFE', icon: 'restaurant-outline' },
+  ready:            { label: 'Pronto',     color: '#7C3AED', bg: '#F3E8FF', icon: 'checkmark-circle-outline' },
+  out_for_delivery: { label: 'Em Rota',    color: '#D97706', bg: '#FEF3C7', icon: 'bicycle-outline' },
+  delivered:        { label: 'Entregue',   color: '#059669', bg: '#D1FAE5', icon: 'checkmark-done-outline' },
+  entregue:         { label: 'Entregue',   color: '#059669', bg: '#D1FAE5', icon: 'checkmark-done-outline' },
+  cancelled:        { label: 'Cancelado',  color: '#DC2626', bg: '#FEE2E2', icon: 'close-circle-outline' },
 };
 
 const FILTERS = [
-  { key: 'all',       label: 'Todos',     color: '#FFB800' },
-  { key: 'pending',   label: 'Pendentes', color: '#EA580C' },
-  { key: 'preparing', label: 'Preparo',   color: '#2563EB' },
-  { key: 'ready',     label: 'Pronto',    color: '#7C3AED' },
-  { key: 'delivered', label: 'Entregues', color: '#059669' },
-  { key: 'cancelled', label: 'Cancelados',color: '#DC2626' },
+  { key: 'all',              label: 'Todos',     color: '#FFB800' },
+  { key: 'pending',          label: 'Pendentes', color: '#EA580C' },
+  { key: 'preparing',        label: 'Preparo',   color: '#2563EB' },
+  { key: 'ready',            label: 'Pronto',    color: '#7C3AED' },
+  { key: 'out_for_delivery', label: 'Em Rota',   color: '#D97706' },
+  { key: 'delivered',        label: 'Entregues', color: '#059669' },
+  { key: 'cancelled',        label: 'Cancelados',color: '#DC2626' },
 ];
 
 // Mapeia os dados do Supabase
@@ -89,6 +95,75 @@ export default function AdminPedidos() {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [updatingId, setUpdatingId] = useState(null);
+  const [trackingState, setTrackingState] = useState({ isRunning: false });
+  const [togglingTracking, setTogglingTracking] = useState(false);
+  const [hasNotificationPermission, setHasNotificationPermission] = useState(true);
+
+  const checkNotificationPermission = useCallback(async () => {
+    try {
+      const Notifications = await import('expo-notifications');
+      const { status } = await Notifications.getPermissionsAsync();
+      setHasNotificationPermission(status === 'granted');
+    } catch {
+      setHasNotificationPermission(true);
+    }
+  }, []);
+
+  const requestNotificationPermission = async () => {
+    try {
+      const Notifications = await import('expo-notifications');
+      const { status, canAskAgain } = await Notifications.requestPermissionsAsync();
+      if (status === 'granted') {
+        setHasNotificationPermission(true);
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          await syncAdminPushRegistration(session.user);
+        }
+        playNewOrderSound(1);
+        showThemedAlert('Notificações Ativadas', 'Você receberá avisos sonoros com todos os detalhes dos novos pedidos.');
+      } else {
+        setHasNotificationPermission(false);
+        if (!canAskAgain) {
+          showThemedAlert(
+            'Permissão Necessária',
+            'As notificações foram bloqueadas no dispositivo. Toque em Abrir Configurações para autorizar.',
+            [
+              { text: 'Cancelar', style: 'cancel' },
+              { text: 'Abrir Configurações', onPress: () => Linking.openSettings() },
+            ]
+          );
+        }
+      }
+    } catch (e) {
+      console.warn('Erro ao solicitar permissão:', e);
+    }
+  };
+
+  useEffect(() => {
+    checkNotificationPermission();
+  }, [checkNotificationPermission]);
+
+  useEffect(() => {
+    const unsub = subscribeTrackingStatus(setTrackingState);
+    return unsub;
+  }, []);
+
+  const handleToggleTracking = async () => {
+    setTogglingTracking(true);
+    try {
+      if (trackingState.isRunning) {
+        stopMaraTracking();
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } else {
+        await startMaraTracking();
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    } catch (e) {
+      showThemedAlert('Erro no GPS', e?.message || 'Não foi possível iniciar o rastreamento.');
+    } finally {
+      setTogglingTracking(false);
+    }
+  };
 
   const lastCountRef = useRef(0);
   const intervalRef = useRef(null);
@@ -133,13 +208,18 @@ export default function AdminPedidos() {
           const { eventType, new: newRow, old: oldRow } = payload;
           if (eventType === 'INSERT') {
             if (newRow?.status === 'awaiting_payment') return;
+            playNewOrderSound(3);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             loadOrders();
           } else if (eventType === 'UPDATE') {
             if (newRow?.status === 'awaiting_payment') {
               setOrders((prev) => prev.filter((o) => o.id !== newRow.id));
               return;
             }
-            // Quando um pedido sai de awaiting_payment para pending (ou outro), ele é recarregado e aparece
+            if (oldRow?.status === 'awaiting_payment' && newRow?.status !== 'awaiting_payment' && newRow?.status !== 'cancelled') {
+              playNewOrderSound(3);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            }
             loadOrders();
           } else if (eventType === 'DELETE') {
             setOrders((prev) => prev.filter((o) => o.id !== oldRow.id));
@@ -172,7 +252,7 @@ export default function AdminPedidos() {
         setSelectedOrder(prev => prev ? { ...prev, status: newStatus } : null);
       }
     } catch (e) {
-      Alert.alert('Erro', 'Não foi possível atualizar o status.');
+      showThemedAlert('Erro', 'Não foi possível atualizar o status.');
     } finally {
       setUpdatingId(null);
     }
@@ -180,7 +260,7 @@ export default function AdminPedidos() {
 
   // ─── Deletar pedido ─────────────────────────────────────────────
   const handleDelete = (order) => {
-    Alert.alert(
+    showThemedAlert(
       'Deletar Pedido',
       `Tem certeza que deseja deletar o Pedido #${order.orderNumber}?`,
       [
@@ -197,7 +277,7 @@ export default function AdminPedidos() {
               setModalVisible(false);
               await loadOrders();
             } catch {
-              Alert.alert('Erro', 'Não foi possível deletar o pedido.');
+              showThemedAlert('Erro', 'Não foi possível deletar o pedido.');
             }
           },
         },
@@ -236,6 +316,55 @@ export default function AdminPedidos() {
         </View>
         <Pressable onPress={() => { setRefreshing(true); loadOrders(); }} style={s.refreshBtn}>
           <Ionicons name="refresh-outline" size={22} color="#FFB800" />
+        </Pressable>
+      </View>
+
+      {/* Banner de permissão de notificação se desativada */}
+      {!hasNotificationPermission && (
+        <View style={s.permBanner}>
+          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <Ionicons name="notifications-off-outline" size={22} color="#DC2626" />
+            <View style={{ flex: 1 }}>
+              <Text style={s.permBannerTitle}>Notificações desativadas</Text>
+              <Text style={s.permBannerSub}>Ative para receber alertas sonoros com todos os detalhes</Text>
+            </View>
+          </View>
+          <Pressable style={s.permBannerBtn} onPress={requestNotificationPermission}>
+            <Text style={s.permBannerBtnText}>Ativar</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {/* Painel Batata Top Tracking Zero Cliques */}
+      <View style={s.trackingCard}>
+        <View style={s.trackingInfo}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <View style={[s.trackingDot, trackingState.isRunning && s.trackingDotActive]} />
+            <Text style={s.trackingTitle}>Rastreio Batata Top (Zero Cliques)</Text>
+          </View>
+          <Text style={s.trackingSub}>
+            {trackingState.isRunning
+              ? 'GPS ao vivo ativo • Auto-despacho e auto-baixa ligados'
+              : 'Desativado • Ligue ao sair para entregas'}
+          </Text>
+        </View>
+        <Pressable
+          style={[s.trackingBtn, trackingState.isRunning && s.trackingBtnActive]}
+          onPress={handleToggleTracking}
+          disabled={togglingTracking}
+        >
+          {togglingTracking ? (
+            <ActivityIndicator size="small" color="#FFF" />
+          ) : (
+            <Ionicons
+              name={trackingState.isRunning ? 'pause' : 'navigate'}
+              size={16}
+              color="#FFF"
+            />
+          )}
+          <Text style={s.trackingBtnText}>
+            {trackingState.isRunning ? 'Parar' : 'Ligar GPS'}
+          </Text>
         </Pressable>
       </View>
 
@@ -432,12 +561,13 @@ function OrderModal({ visible, order, cfg, updatingId, onClose, onStatusChange, 
   const handleWhatsApp = () => {
     const cleanPhone = order.customerPhone.replace(/\D/g, '');
     const url = `https://wa.me/55${cleanPhone}`;
-    Linking.openURL(url).catch(() => Alert.alert('Erro', 'Não foi possível abrir o WhatsApp.'));
+    Linking.openURL(url).catch(() => showThemedAlert('Erro', 'Não foi possível abrir o WhatsApp.'));
   };
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={s.modalContainer}>
+    <Modal visible={visible} animationType="none" statusBarTranslucent navigationBarTranslucent presentationStyle="pageSheet" onRequestClose={onClose}>
+      <SafeAreaProvider>
+        <View style={s.modalContainer}>
         {/* Modal Header */}
         <View style={[s.modalHeader, { backgroundColor: c.color }]}>
           <View>
@@ -544,6 +674,11 @@ function OrderModal({ visible, order, cfg, updatingId, onClose, onStatusChange, 
                 </Pressable>
               )}
               {order.status === 'ready' && (
+                <Pressable style={[s.modalActionBtn, { backgroundColor: '#D97706' }]} onPress={() => onStatusChange(order.id, 'out_for_delivery')} disabled={updatingId === order.id}>
+                  {updatingId === order.id ? <ActivityIndicator color="#FFF" /> : <><Ionicons name="bicycle-outline" size={18} color="#FFF" /><Text style={s.modalActionText}>Saiu para Entrega</Text></>}
+                </Pressable>
+              )}
+              {(order.status === 'ready' || order.status === 'out_for_delivery') && (
                 <Pressable style={[s.modalActionBtn, { backgroundColor: '#059669' }]} onPress={() => onStatusChange(order.id, 'delivered')} disabled={updatingId === order.id}>
                   {updatingId === order.id ? <ActivityIndicator color="#FFF" /> : <><Ionicons name="checkmark-done-outline" size={18} color="#FFF" /><Text style={s.modalActionText}>Marcar como Entregue</Text></>}
                 </Pressable>
@@ -561,6 +696,7 @@ function OrderModal({ visible, order, cfg, updatingId, onClose, onStatusChange, 
           </Pressable>
         </ScrollView>
       </View>
+      </SafeAreaProvider>
     </Modal>
   );
 }
@@ -728,4 +864,77 @@ const s = StyleSheet.create({
 
   deleteOrderBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginHorizontal: 16, marginTop: 12, padding: 14, borderRadius: 16, borderWidth: 1.5, borderColor: '#FEE2E2', backgroundColor: '#FFF' },
   deleteOrderText: { fontSize: 14, fontWeight: '700', color: '#DC2626' },
+
+  // Tracking Painel Mara
+  trackingCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 16,
+    marginTop: 10,
+    marginBottom: 6,
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#F3E8FF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  trackingInfo: { flex: 1, marginRight: 8 },
+  trackingDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#9CA3AF' },
+  trackingDotActive: { backgroundColor: '#10B981' },
+  trackingTitle: { fontSize: 13, fontWeight: '800', color: '#1F2937' },
+  trackingSub: { fontSize: 11, color: '#6B7280', marginTop: 2 },
+  trackingBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#7C3AED',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  trackingBtnActive: { backgroundColor: '#DC2626' },
+  trackingBtnText: { color: '#FFF', fontSize: 12, fontWeight: '800' },
+
+  // Banner de Permissão de Notificações
+  permBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FEF2F2',
+    marginHorizontal: 16,
+    marginTop: 10,
+    marginBottom: 4,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    gap: 10,
+  },
+  permBannerTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#991B1B',
+  },
+  permBannerSub: {
+    fontSize: 11,
+    color: '#B91C1C',
+    marginTop: 2,
+  },
+  permBannerBtn: {
+    backgroundColor: '#DC2626',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  permBannerBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
 });

@@ -57,7 +57,8 @@ export default function AdminPromocoes() {
         .from('uploaded_images')
         .select('*')
         .eq('category', 'promo')
-        .order('uploaded_at', { ascending: false });
+        .order('uploaded_at', { ascending: false })
+        .limit(30);
       if (ie) throw ie;
       setPromoImages(imgs || []);
 
@@ -477,7 +478,7 @@ const s = StyleSheet.create({
   productPriceOrig: { fontSize: 11, color: '#9CA3AF', fontWeight: '600', marginTop: 1 },
   promoInputCol: { alignItems: 'flex-end', marginLeft: 10 },
   promoPriceLabel: { fontSize: 9, fontWeight: '700', color: '#9CA3AF', marginBottom: 2 },
-  smallPriceInput: { borderHeight: 32, width: 70, backgroundColor: '#FFF', borderWidth: 1.5, borderColor: '#D1D5DB', borderRadius: 10, paddingHorizontal: 6, paddingVertical: 4, fontSize: 12, fontWeight: '700', color: '#1A1A1A', textAlign: 'center' },
+  smallPriceInput: { height: 32, width: 70, backgroundColor: '#FFF', borderWidth: 1.5, borderColor: '#D1D5DB', borderRadius: 10, paddingHorizontal: 6, paddingVertical: 4, fontSize: 12, fontWeight: '700', color: '#1A1A1A', textAlign: 'center' },
 
   saveBtn: { backgroundColor: '#FFB800', borderRadius: 16, height: 52, alignItems: 'center', justifyContent: 'center', marginTop: 24 },
   saveBtnText: { color: '#FFF', fontWeight: '900', fontSize: 16 },

@@ -651,18 +651,58 @@ export function initAuthStateListener() {
 
 ---
 
-## 12. Alertas — sempre `ThemedAlert`, nunca `Alert.alert`
+## 12. Alertas — OBRIGATÓRIO: sempre `ThemedAlert` global
 
-Nunca usar o `Alert.alert` nativo do `react-native` (alerta cinza do sistema, foge do visual do app). Sempre usar `components/ThemedAlert.js`:
+**REGRA OBRIGATÓRIA:** Todo e qualquer alerta, notificação, toast ou aviso de erro/sucesso no app **DEVE** usar o sistema unificado `components/ThemedAlert.js`.
+
+- ❌ **NUNCA** usar `Alert.alert` nativo do `react-native` (alerta cinza feio do sistema operacional).
+- ❌ **NUNCA** criar banners estáticos locais em tela (ex: `const [banner, setBanner] = useState(null)` que empurram o layout).
+- ❌ **NUNCA** criar modais ou toasts de feedback paralelos/isolados por componente.
+
+### Como funciona
+- **Erros, avisos e sucessos simples (0 ou 1 botão):** renderizam automaticamente como a barrinha flutuante no topo do app (estilo iFood), com animação física (`translateY` spring + bounce + fade), sem bloquear interação na tela, sumindo sozinhas em 3.5s ou ao tocar no banner.
+- **Confirmações interativas (2+ botões, ex: Cancelar + Excluir):** abrem automaticamente em modal temático centralizado com backdrop suave e botões estilizados.
+
+### Como usar
 
 ```js
-import { ThemedAlertHost, showThemedAlert } from '../components/ThemedAlert';
+import { showThemedAlert, hideThemedAlert, ThemedAlertHost } from '../components/ThemedAlert';
 ```
 
-- **`showThemedAlert(title, message, buttons?)`** — mesma assinatura do `Alert.alert` (`buttons` aceita `style: 'cancel' | 'destructive'`), é só trocar o nome da chamada.
-- **`<ThemedAlertHost />`** precisa estar montado na árvore de qualquer tela que chame `showThemedAlert` (é ele quem renderiza o modal — sem ele montado, a chamada só loga um warning e não mostra nada). Padrão singleton: uma vez montado num ponto da árvore, `showThemedAlert` funciona de qualquer componente/arquivo, mesmo sem prop-drilling.
-- Se a tela tem mais de um `return` (branches tipo `screen === 'x' ? <A/> : <B/>` retornando cedo), o Host precisa estar em **cada** branch que pode disparar alerta — já aplicado assim em `app/addresses.js`.
-- Já aplicado em: `app/addresses.js`.
+#### 1. Notificação de Sucesso (banner verde animado no topo):
+```js
+showThemedAlert.success('Código enviado');
+showThemedAlert.success('Endereço salvo com sucesso!', 'Pronto');
+```
+
+#### 2. Notificação de Erro (banner vermelho animado no topo):
+```js
+showThemedAlert.error('Código inválido ou expirado. Tente novamente.');
+showThemedAlert.error('Não foi possível conectar com o servidor.');
+```
+
+#### 3. Alerta simples / Atenção:
+```js
+showThemedAlert('Atenção', 'Selecione uma opção antes de continuar.');
+```
+
+#### 4. Confirmação com botões (abre em modal):
+```js
+showThemedAlert('Limpar sacola?', 'Deseja remover todos os itens?', [
+  { text: 'Cancelar', style: 'cancel' },
+  { text: 'Limpar', style: 'destructive', onPress: () => clearCart() },
+]);
+```
+
+#### 5. Fechar alerta programaticamente (ex: usuário começou a digitar de novo):
+```js
+hideThemedAlert();
+```
+
+### `<ThemedAlertHost />`
+- Está montado globalmente na raiz em `app/_layout.js`.
+- Pode ser mantido no final de qualquer tela para garantir renderização direta (o singleton despacha sempre para o host ativo mais recente, sem duplicar banners).
+- Se a tela possui múltiplos retornos antecipados com árvore própria, monte `<ThemedAlertHost />` no retorno correspondente.
 
 ---
 

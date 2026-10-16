@@ -46,6 +46,9 @@ const CATEGORY_FALLBACKS = {
 function resolveImage(imageUrl, categoria) {
   if (imageUrl) {
     if (imageUrl.startsWith('http')) return { uri: imageUrl };
+    if (imageUrl.startsWith('/api/images/')) {
+      return { uri: `${process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatop.vercel.app'}${imageUrl}` };
+    }
     return { uri: SUPABASE_STORAGE + imageUrl.replace(/^\/products\//, '') };
   }
   const fallback = CATEGORY_FALLBACKS[categoria?.toLowerCase()] ||
@@ -150,10 +153,20 @@ export default function ProdutoDetail() {
 
   const fetchAdicionais = async () => {
     try {
+      const { data: linked } = await supabase
+        .from('product_adicionais')
+        .select('adicional_id, adicionais(*)')
+        .eq('product_id', id);
+
+      if (linked && linked.length > 0) {
+        setAdicionais(linked.map((r) => r.adicionais).filter((a) => a && a.available !== false));
+        return;
+      }
+
       const { data, error } = await supabase
         .from('adicionais')
         .select('*')
-        .eq('available', true);
+        .or('available.eq.true,available.is.null');
 
       if (error) throw error;
       setAdicionais(data || []);
@@ -736,6 +749,7 @@ export default function ProdutoDetail() {
         address={verifyAddressData}
         onTrocar={handleTrocarEndereco}
         onContinuar={handleContinuarMesmoEndereco}
+        onClose={() => setShowVerify(false)}
       />
     </View>
   );

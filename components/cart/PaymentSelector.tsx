@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -32,6 +32,14 @@ export default function PaymentSelector({
       ? 'entrega'
       : 'app'
   );
+  const scrollViewRef = useRef<ScrollView>(null);
+
+  const switchTab = (newTab: 'app' | 'entrega') => {
+    if (tab === newTab) return;
+    Haptics.selectionAsync();
+    setTab(newTab);
+    scrollViewRef.current?.scrollTo({ y: 0, animated: false });
+  };
 
   const isCardMethod = currentMethod === 'cartão de crédito' || currentMethod === 'cartão de débito';
 
@@ -62,10 +70,7 @@ export default function PaymentSelector({
       <View style={styles.tabsRow}>
         <Pressable
           style={[styles.tab, tab === 'app' && styles.tabActive]}
-          onPress={() => {
-            Haptics.selectionAsync();
-            setTab('app');
-          }}
+          onPress={() => switchTab('app')}
           accessibilityLabel="Aba pagar pelo app"
         >
           <Text style={[styles.tabText, tab === 'app' && styles.tabTextActive]}>
@@ -75,10 +80,7 @@ export default function PaymentSelector({
 
         <Pressable
           style={[styles.tab, tab === 'entrega' && styles.tabActive]}
-          onPress={() => {
-            Haptics.selectionAsync();
-            setTab('entrega');
-          }}
+          onPress={() => switchTab('entrega')}
           accessibilityLabel="Aba pagar na entrega"
         >
           <Text style={[styles.tabText, tab === 'entrega' && styles.tabTextActive]}>
@@ -88,6 +90,7 @@ export default function PaymentSelector({
       </View>
 
       <ScrollView
+        ref={scrollViewRef}
         style={styles.body}
         contentContainerStyle={[
           styles.content,
@@ -96,7 +99,7 @@ export default function PaymentSelector({
         showsVerticalScrollIndicator={false}
       >
         {tab === 'app' ? (
-          <>
+          <View key="panel-app" style={styles.tabPanel}>
             {/* Cartões salvos */}
             {savedCards.map((card) => {
               const isSelected = isCardMethod && selectedCard?.id === card.id;
@@ -130,6 +133,7 @@ export default function PaymentSelector({
 
             {/* Pix */}
             <Pressable
+              key="app-method-pix"
               style={[styles.cardOption, currentMethod === 'pix' && styles.cardOptionSelected]}
               onPress={() => handleSelect('pix')}
               accessibilityLabel="Pagar com Pix"
@@ -156,17 +160,19 @@ export default function PaymentSelector({
 
             {/* Link Adicionar novo cartão */}
             <Pressable
+              key="app-btn-add-new-card"
               style={styles.addNewCardBtn}
               onPress={onAddNewCard}
               accessibilityLabel="Adicionar novo cartão"
             >
               <Text style={styles.addNewCardText}>Adicionar novo cartão</Text>
             </Pressable>
-          </>
+          </View>
         ) : (
-          <>
+          <View key="panel-entrega" style={styles.tabPanel}>
             {/* Dinheiro */}
             <Pressable
+              key="delivery-method-dinheiro"
               style={[
                 styles.cardOption,
                 currentMethod === 'dinheiro' && styles.cardOptionSelected,
@@ -196,6 +202,7 @@ export default function PaymentSelector({
 
             {/* Cartão de crédito na entrega */}
             <Pressable
+              key="delivery-method-credito"
               style={[
                 styles.cardOption,
                 currentMethod === 'cartão de crédito (entrega)' && styles.cardOptionSelected,
@@ -227,6 +234,7 @@ export default function PaymentSelector({
 
             {/* Cartão de débito na entrega */}
             <Pressable
+              key="delivery-method-debito"
               style={[
                 styles.cardOption,
                 currentMethod === 'cartão de débito (entrega)' && styles.cardOptionSelected,
@@ -255,7 +263,7 @@ export default function PaymentSelector({
                 )}
               </View>
             </Pressable>
-          </>
+          </View>
         )}
       </ScrollView>
     </View>
@@ -386,10 +394,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    borderColor: 'transparent',
+    opacity: 1,
   },
   addNewCardText: {
     fontSize: 14,
     fontWeight: '700',
     color: COLORS.primary,
+    opacity: 1,
+    textAlign: 'center',
+  },
+  tabPanel: {
+    width: '100%',
   },
 });

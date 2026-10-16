@@ -1,6 +1,6 @@
 import { Stack, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { supabase } from '../../supabaseConfig';
+import { getEffectiveSession } from '../../utils/authSession';
 import { isAdminUser, checkIsAdmin } from '../../utils/isAdmin';
 
 export default function AdminLayout() {
@@ -10,7 +10,7 @@ export default function AdminLayout() {
   useEffect(() => {
     let mounted = true;
     async function checkAuth() {
-      const { data: { session } } = await supabase.auth.getSession();
+      const session = await getEffectiveSession();
       const user = session?.user;
       if (!user) {
         if (mounted) router.replace('/');

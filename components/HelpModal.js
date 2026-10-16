@@ -4,14 +4,19 @@ import {
   Text,
   StyleSheet,
   Pressable,
-  Modal,
   ScrollView,
   Platform,
   UIManager,
   LayoutAnimation,
+  Animated,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../constants/theme';
+import SwipeableBottomSheetModal from './SwipeableBottomSheetModal';
+import usePressScale from '../hooks/usePressScale';
+import useChevronRotation from '../hooks/useChevronRotation';
+import useStaggerEntrance from '../hooks/useStaggerEntrance';
 
 // Habilita animação de layout suave no accordion (Android)
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -83,20 +88,84 @@ const FAQ_ITEMS = [
 ];
 
 /**
+ * Item individual de FAQ com as mesmas animações do Perfil:
+ * - pressScale: afundamento suave ao pressionar (scale: 0.985)
+ * - chevron: rotação suave de 0° a 180° com spring
+ * - layout: expansão suave de 260ms easeInEaseOut
+ */
+function FaqAccordionItem({ item, expanded, onToggle, containerStyle }) {
+  const { onPressIn, onPressOut, scaleStyle } = usePressScale();
+  const { rotateStyle } = useChevronRotation(expanded);
+
+  return (
+    <Animated.View style={containerStyle}>
+      <Pressable
+        onPress={onToggle}
+        onPressIn={onPressIn}
+        onPressOut={onPressOut}
+      >
+        <Animated.View style={[s.faqItem, scaleStyle]}>
+          <View style={s.faqQuestionRow}>
+            <Text style={[s.faqQuestion, expanded && s.faqQuestionActive]}>
+              {item.question}
+            </Text>
+            <Animated.View style={rotateStyle}>
+              <Ionicons
+                name="chevron-down"
+                size={18}
+                color={expanded ? COLORS.primary : COLORS.textMuted}
+              />
+            </Animated.View>
+          </View>
+          {expanded && <Text style={s.faqAnswer}>{item.answer}</Text>}
+        </Animated.View>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
+/**
+ * Botão com animação de feedback ao toque (pressScale) idêntica ao Perfil
+ */
+function ScaleButton({ style, onPress, children }) {
+  const { onPressIn, onPressOut, scaleStyle } = usePressScale();
+
+  return (
+    <Pressable
+      onPress={onPress}
+      onPressIn={onPressIn}
+      onPressOut={onPressOut}
+      style={{ width: '100%' }}
+    >
+      <Animated.View style={[style, scaleStyle]}>
+        {children}
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+/**
  * Modal (bottom sheet compacto) de Central de Ajuda.
  *
- * Mesmo padrão visual do PaymentMethodModal: overlay + sheet com pill,
- * cantos arredondados e altura limitada ao conteúdo (não cobre a tela toda).
- *
- * Lista de FAQ em accordion — cada item expande a resposta ao tocar.
- * No final, um botão "Falar com o suporte" leva pro WhatsApp (via
- * onContactSupport, que reaproveita a lógica já existente na tela).
+ * Mesmas animações do Perfil:
+ * - Stagger entrance (45ms, spring friction 8 / tension 70, opacity 0->1, translateY -6->0)
+ * - Press feedback (pressScale toValue 0.985 / 1)
+ * - Chevron rotation (spring friction 7 / tension 60, 0deg -> 180deg)
+ * - Accordion layout transition (260ms easeInEaseOut)
+ * - Reset automático ao fechar e re-disparo a cada abertura
  */
 export default function HelpModal({ visible, onClose, onContactSupport }) {
   const [expandedId, setExpandedId] = useState(null);
+  const [isAtTop, setIsAtTop] = useState(true);
+
+  // 10 (FAQ Items) + 1 (Support Card)
+  const TOTAL_ANIMATED_ITEMS = FAQ_ITEMS.length + 1;
+  const { getItemStyle } = useStaggerEntrance(TOTAL_ANIMATED_ITEMS, visible);
 
   function toggleItem(id) {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    LayoutAnimation.configureNext(
+      LayoutAnimation.create(260, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity)
+    );
     setExpandedId((prev) => (prev === id ? null : id));
   }
 
@@ -107,157 +176,189 @@ export default function HelpModal({ visible, onClose, onContactSupport }) {
 
   function handleSupportPress() {
     handleClose();
-    onContactSupport?.();
+    if (onContactSupport) {
+      onContactSupport();
+    } else {
+      const msg = encodeURIComponent('Olá! Preciso de ajuda com o app Batata Top.');
+      Linking.openURL(`https://wa.me/5514997361015?text=${msg}`).catch(() => {});
+    }
   }
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
-      <View style={s.modalOverlay}>
-        <Pressable style={s.modalBackdrop} onPress={handleClose} />
-        <View style={s.modalContent}>
-          <View style={s.modalPill} />
-
-          <ScrollView showsVerticalScrollIndicator={false} style={{ width: '100%' }}>
-            <View style={s.headerRow}>
-              <Ionicons name="help-circle" size={22} color={COLORS.primary} />
-              <Text style={s.modalTitle}>Central de Ajuda</Text>
-            </View>
-            <Text style={s.modalSub}>
-              Veja as dúvidas mais comuns antes de falar com o suporte.
-            </Text>
-
-            {FAQ_ITEMS.map((item) => {
-              const expanded = expandedId === item.id;
-              return (
-                <Pressable
-                  key={item.id}
-                  style={[s.faqItem, expanded && s.faqItemActive]}
-                  onPress={() => toggleItem(item.id)}
-                >
-                  <View style={s.faqQuestionRow}>
-                    <Text style={[s.faqQuestion, expanded && s.faqQuestionActive]}>
-                      {item.question}
-                    </Text>
-                    <Ionicons
-                      name={expanded ? 'chevron-up' : 'chevron-down'}
-                      size={18}
-                      color={expanded ? COLORS.primary : COLORS.textMuted}
-                    />
-                  </View>
-                  {expanded && <Text style={s.faqAnswer}>{item.answer}</Text>}
-                </Pressable>
-              );
-            })}
-
-            <View style={s.supportBox}>
-              <Text style={s.supportText}>Não encontrou o que precisava?</Text>
-              <Pressable style={s.supportBtn} onPress={handleSupportPress}>
-                <Ionicons name="logo-whatsapp" size={18} color={COLORS.white} />
-                <Text style={s.supportBtnText}>Falar com o suporte</Text>
-              </Pressable>
-            </View>
-
-            <Pressable style={s.modalCloseBtn} onPress={handleClose}>
-              <Text style={s.modalCloseBtnText}>Fechar</Text>
-            </Pressable>
-          </ScrollView>
+    <SwipeableBottomSheetModal
+      visible={visible}
+      onRequestClose={handleClose}
+      backdropColor="rgba(0, 0, 0, 0.6)"
+      contentStyle={s.modalContent}
+      scrollable
+      isAtTop={isAtTop}
+      minBottomPadding={32}
+      extraBottomPadding={20}
+    >
+      {/* 1. Header limpo sem botão X (fechamento por swipe-down ou toque fora) */}
+      <View style={s.fixedHeader}>
+        <View style={s.headerLeft}>
+          <View style={s.iconBadge}>
+            <Ionicons name="help-circle" size={20} color={COLORS.primary} />
+          </View>
+          <View>
+            <Text style={s.modalTitle}>Central de Ajuda</Text>
+            <Text style={s.modalSub}>Dúvidas frequentes e suporte</Text>
+          </View>
         </View>
       </View>
-    </Modal>
+
+      {/* 2. Área rolável de perguntas e suporte */}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        style={s.scrollView}
+        contentContainerStyle={s.scrollContent}
+        scrollEventThrottle={16}
+        onScroll={(e) => setIsAtTop(e.nativeEvent.contentOffset.y <= 0)}
+      >
+        {/* Itens de FAQ com animação suave e design minimalista sem caixas */}
+        {FAQ_ITEMS.map((item, index) => (
+          <FaqAccordionItem
+            key={item.id}
+            item={item}
+            expanded={expandedId === item.id}
+            onToggle={() => toggleItem(item.id)}
+            containerStyle={getItemStyle(index)}
+          />
+        ))}
+
+        {/* 3. Card de Suporte no WhatsApp */}
+        <Animated.View style={[s.supportCard, getItemStyle(FAQ_ITEMS.length)]}>
+          <View style={s.supportCardContent}>
+            <Text style={s.supportCardTitle}>Ainda com dúvidas?</Text>
+            <Text style={s.supportCardSub}>
+              Nossa equipe está pronta para te atender no WhatsApp.
+            </Text>
+          </View>
+          <ScaleButton style={s.supportBtn} onPress={handleSupportPress}>
+            <Ionicons name="logo-whatsapp" size={19} color={COLORS.white} />
+            <Text style={s.supportBtnText}>Falar no WhatsApp</Text>
+          </ScaleButton>
+        </Animated.View>
+      </ScrollView>
+    </SwipeableBottomSheetModal>
   );
 }
 
 const s = StyleSheet.create({
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    justifyContent: 'flex-end',
-  },
-  modalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-  },
   modalContent: {
     backgroundColor: COLORS.white,
     borderTopLeftRadius: RADIUS['2xl'],
     borderTopRightRadius: RADIUS['2xl'],
-    paddingHorizontal: SPACING[6],
-    paddingTop: SPACING[3],
-    paddingBottom: SPACING[10],
-    alignItems: 'center',
-    // Sheet compacto — cresce com o conteúdo, sem cobrir a tela toda
-    maxHeight: '75%',
+    paddingTop: SPACING[2],
+    maxHeight: '85%',
   },
-  modalPill: {
-    width: 38,
-    height: 5,
-    backgroundColor: COLORS.border,
-    borderRadius: RADIUS.sm,
-    marginBottom: SPACING[5],
-  },
-  headerRow: {
+  fixedHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING[2],
-    marginBottom: SPACING[1],
+    justifyContent: 'space-between',
+    paddingHorizontal: SPACING[5],
+    paddingTop: SPACING[2],
+    paddingBottom: SPACING[4],
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: COLORS.borderLight,
+    width: '100%',
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING[3],
+  },
+  iconBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: RADIUS.full,
+    backgroundColor: `${COLORS.primary}18`,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   modalTitle: {
-    fontSize: TYPOGRAPHY.sizes.lg,
+    fontSize: TYPOGRAPHY.sizes.base,
     fontWeight: TYPOGRAPHY.weights.extrabold,
     color: COLORS.text,
   },
   modalSub: {
-    fontSize: TYPOGRAPHY.sizes.sm,
-    color: COLORS.textSecondary,
-    lineHeight: 18,
-    marginBottom: SPACING[5],
+    fontSize: 12,
+    color: COLORS.textMuted,
+    marginTop: 1,
+  },
+  topCloseBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: COLORS.backgroundElevated,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scrollView: {
+    width: '100%',
+  },
+  scrollContent: {
+    paddingHorizontal: SPACING[5],
+    paddingTop: SPACING[4],
+    paddingBottom: SPACING[10],
   },
   faqItem: {
     width: '100%',
     paddingVertical: SPACING[3],
-    paddingHorizontal: SPACING[4],
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    marginBottom: SPACING[2],
-    backgroundColor: COLORS.backgroundCard,
-  },
-  faqItemActive: {
-    borderColor: COLORS.borderAccent,
-    backgroundColor: COLORS.backgroundElevated,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#EBE6DF',
   },
   faqQuestionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING[2],
+    justifyContent: 'space-between',
+    paddingVertical: SPACING[1],
   },
   faqQuestion: {
     flex: 1,
     fontSize: TYPOGRAPHY.sizes.sm,
-    fontWeight: TYPOGRAPHY.weights.semibold,
+    fontWeight: TYPOGRAPHY.weights.medium,
     color: COLORS.text,
+    paddingRight: SPACING[3],
+    lineHeight: 20,
   },
   faqQuestionActive: {
     color: COLORS.accent,
+    fontWeight: TYPOGRAPHY.weights.bold,
   },
   faqAnswer: {
     fontSize: TYPOGRAPHY.sizes.sm,
     color: COLORS.textSecondary,
-    lineHeight: 19,
+    lineHeight: 22,
     marginTop: SPACING[2],
+    paddingBottom: SPACING[2],
   },
-  supportBox: {
+  supportCard: {
     width: '100%',
+    borderRadius: RADIUS.xl,
+    padding: SPACING[4],
+    marginTop: SPACING[6],
+    marginBottom: SPACING[4],
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
     alignItems: 'center',
-    marginTop: SPACING[4],
-    marginBottom: SPACING[2],
-    paddingTop: SPACING[4],
-    borderTopWidth: 1,
-    borderTopColor: COLORS.borderLight,
   },
-  supportText: {
-    fontSize: TYPOGRAPHY.sizes.xs,
-    color: COLORS.textMuted,
+  supportCardContent: {
+    alignItems: 'center',
     marginBottom: SPACING[3],
+  },
+  supportCardTitle: {
+    fontSize: TYPOGRAPHY.sizes.sm,
+    fontWeight: TYPOGRAPHY.weights.bold,
+    color: '#166534',
+  },
+  supportCardSub: {
+    fontSize: 12,
+    color: '#15803D',
+    textAlign: 'center',
+    marginTop: 2,
   },
   supportBtn: {
     flexDirection: 'row',
@@ -265,27 +366,13 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     gap: SPACING[2],
     width: '100%',
-    paddingVertical: SPACING[3],
+    height: 48,
     borderRadius: RADIUS.lg,
-    backgroundColor: COLORS.secondary,
+    backgroundColor: '#25D366',
     ...SHADOWS.sm,
   },
   supportBtnText: {
     color: COLORS.white,
-    fontWeight: TYPOGRAPHY.weights.bold,
-    fontSize: TYPOGRAPHY.sizes.sm,
-  },
-  modalCloseBtn: {
-    marginTop: SPACING[4],
-    marginBottom: SPACING[1],
-    width: '100%',
-    paddingVertical: SPACING[3],
-    borderRadius: RADIUS.lg,
-    alignItems: 'center',
-    backgroundColor: COLORS.backgroundElevated,
-  },
-  modalCloseBtnText: {
-    color: COLORS.textSecondary,
     fontWeight: TYPOGRAPHY.weights.bold,
     fontSize: TYPOGRAPHY.sizes.sm,
   },

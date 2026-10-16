@@ -6,7 +6,7 @@ import {
   guessPaymentMethodId,
 } from './mercadoPago';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatop.vercel.app';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatopiacanga.com.br';
 
 export type SavedCard = {
   id: string;

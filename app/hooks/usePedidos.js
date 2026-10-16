@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { supabase } from '../../supabaseConfig';
 
 /**
@@ -49,22 +49,22 @@ const mapOrderData = (o) => {
     couponCode: o.coupon_code || null,
     user_id: o.user_id || null,
     metadata: o.metadata || null,
+    deliveryLat: o.delivery_lat ?? o.metadata?.delivery_lat ?? null,
+    deliveryLng: o.delivery_lng ?? o.metadata?.delivery_lng ?? null,
   };
 };
 
 export const usePedidos = () => {
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   /**
    * Busca todos os pedidos de um usuário pelo user_id (Supabase Auth).
    * Faz join com order_items igual ao site.
    */
-  const buscarPedidosPorUsuario = async (userId) => {
+  const buscarPedidosPorUsuario = useCallback(async (userId) => {
     if (!userId) return { success: false, error: 'userId obrigatório', data: [] };
 
     try {
-      setLoading(true);
       setError(null);
 
       const { data, error: fetchError } = await supabase
@@ -80,17 +80,14 @@ export const usePedidos = () => {
       console.error('Erro ao buscar pedidos do usuário:', err);
       setError(err.message);
       return { success: false, error: err.message, data: [] };
-    } finally {
-      setLoading(false);
     }
-  };
+  }, []);
 
   /**
    * Busca um pedido específico pelo id (para tela de detalhes).
    */
-  const buscarPedidoPorId = async (pedidoId) => {
+  const buscarPedidoPorId = useCallback(async (pedidoId) => {
     try {
-      setLoading(true);
       setError(null);
 
       const { data, error: fetchError } = await supabase
@@ -106,13 +103,10 @@ export const usePedidos = () => {
       console.error('Erro ao buscar pedido:', err);
       setError(err.message);
       return { success: false, error: err.message };
-    } finally {
-      setLoading(false);
     }
-  };
+  }, []);
 
   return {
-    loading,
     error,
     buscarPedidosPorUsuario,
     buscarPedidoPorId,

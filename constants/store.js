@@ -29,4 +29,6 @@ export const STORE_ADDRESS = {
   uf: 'SP',
   full: 'Rua Carlos Roberto Crepaldi, 120',
   displayLine2: 'Batata Top - Centro, Iacanga - SP',
+  latitude: -21.8402,
+  longitude: -49.0058,
 };

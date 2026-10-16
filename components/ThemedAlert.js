@@ -18,9 +18,10 @@ import {
   Easing,
   Alert as RNAlert,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets, SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../constants/theme';
+import { useModalFade } from '../hooks/useModalFade';
 
 // Intercepta chamadas legadas ao Alert.alert nativo para padronizar com a barrinha no topo
 if (RNAlert && typeof RNAlert.alert === 'function' && !RNAlert.__batataPatched) {
@@ -33,7 +34,19 @@ if (RNAlert && typeof RNAlert.alert === 'function' && !RNAlert.__batataPatched) 
 const listeners = new Set();
 
 export function showThemedAlert(title, message, buttons = [{ text: 'OK' }], type = 'error') {
-  listeners.forEach((listener) => listener({ title, message, buttons, type }));
+  const listenerArray = Array.from(listeners);
+  if (listenerArray.length > 0) {
+    const activeListener = listenerArray[listenerArray.length - 1];
+    activeListener({ title, message, buttons, type });
+  }
+}
+
+export function hideThemedAlert() {
+  const listenerArray = Array.from(listeners);
+  if (listenerArray.length > 0) {
+    const activeListener = listenerArray[listenerArray.length - 1];
+    activeListener({ hide: true });
+  }
 }
 
 showThemedAlert.error = (message, title = '') => {
@@ -124,7 +137,12 @@ export function ThemedAlertHost() {
   }, [translateY, opacity, hideBanner]);
 
   useEffect(() => {
-    const handleAlert = ({ title, message, buttons, type }) => {
+    const handleAlert = (payload) => {
+      if (payload?.hide) {
+        hideBanner();
+        return;
+      }
+      const { title, message, buttons, type } = payload || {};
       // Se for apenas notificação/erro (0 ou 1 botão sem callback específico de confirmação)
       const isSimpleAlert =
         !buttons ||
@@ -152,6 +170,11 @@ export function ThemedAlertHost() {
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     };
   }, [showBanner]);
+
+  const { mounted, fadeAnim } = useModalFade(!!modalConfig);
+  const modalConfigRef = useRef(modalConfig);
+  if (modalConfig) modalConfigRef.current = modalConfig;
+  const activeConfig = modalConfig || modalConfigRef.current;
 
   const handleModalPress = (btn) => {
     setModalConfig(null);
@@ -192,41 +215,48 @@ export function ThemedAlertHost() {
       )}
 
       {/* ── Modal de Confirmação (Apenas para ações que exigem escolha do usuário) ── */}
-      {modalConfig && (
-        <Modal visible transparent animationType="fade" onRequestClose={() => setModalConfig(null)}>
-          <View style={a.overlay}>
-            <View style={a.card}>
-              <Text style={a.title}>{modalConfig.title}</Text>
-              {!!modalConfig.message && <Text style={a.message}>{modalConfig.message}</Text>}
+      {mounted && activeConfig && (
+        <Modal visible={mounted} transparent animationType="none" statusBarTranslucent navigationBarTranslucent onRequestClose={() => setModalConfig(null)}>
+          <SafeAreaProvider>
+            <View style={a.overlay}>
+              <Animated.View style={[a.backdrop, { opacity: fadeAnim }]}>
+                <Pressable style={StyleSheet.absoluteFill} onPress={() => setModalConfig(null)} />
+              </Animated.View>
+              <Animated.View style={[a.cardWrap, { opacity: fadeAnim }]}>
+                <View style={a.card}>
+                  <Text style={a.title}>{activeConfig.title}</Text>
+                  {!!activeConfig.message && <Text style={a.message}>{activeConfig.message}</Text>}
 
-              <View style={[a.actions, modalConfig.buttons?.length > 2 && a.actionsColumn]}>
-                {modalConfig.buttons?.map((btn, i) => (
-                  <Pressable
-                    key={i}
-                    style={({ pressed }) => [
-                      a.btn,
-                      btn.style === 'cancel' && a.btnCancel,
-                      btn.style === 'destructive' && a.btnDestructive,
-                      btn.style !== 'cancel' && btn.style !== 'destructive' && a.btnDefault,
-                      pressed && a.btnPressed,
-                    ]}
-                    onPress={() => handleModalPress(btn)}
-                  >
-                    <Text
-                      style={[
-                        a.btnText,
-                        btn.style === 'cancel' && a.btnTextCancel,
-                        btn.style === 'destructive' && a.btnTextDestructive,
-                        btn.style !== 'cancel' && btn.style !== 'destructive' && a.btnTextDefault,
-                      ]}
-                    >
-                      {btn.text}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
+                  <View style={[a.actions, activeConfig.buttons?.length > 2 && a.actionsColumn]}>
+                    {activeConfig.buttons?.map((btn, i) => (
+                      <Pressable
+                        key={i}
+                        style={({ pressed }) => [
+                          a.btn,
+                          btn.style === 'cancel' && a.btnCancel,
+                          btn.style === 'destructive' && a.btnDestructive,
+                          btn.style !== 'cancel' && btn.style !== 'destructive' && a.btnDefault,
+                          pressed && a.btnPressed,
+                        ]}
+                        onPress={() => handleModalPress(btn)}
+                      >
+                        <Text
+                          style={[
+                            a.btnText,
+                            btn.style === 'cancel' && a.btnTextCancel,
+                            btn.style === 'destructive' && a.btnTextDestructive,
+                            btn.style !== 'cancel' && btn.style !== 'destructive' && a.btnTextDefault,
+                          ]}
+                        >
+                          {btn.text}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              </Animated.View>
             </View>
-          </View>
+          </SafeAreaProvider>
         </Modal>
       )}
     </>
@@ -271,10 +301,17 @@ const styles = StyleSheet.create({
 const a = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: SPACING[6],
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  cardWrap: {
+    width: '100%',
+    alignItems: 'center',
   },
   card: {
     width: '100%',
