@@ -832,13 +832,11 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <StatusBar
         backgroundColor={
-          showSplash
-            ? '#FF0000'
-            : authSheetVisible || pathname.includes('payments')
+          showSplash || authSheetVisible || pathname.includes('payments')
             ? 'transparent'
             : '#FFFFFF'
         }
-        translucent={!showSplash && (authSheetVisible || pathname.includes('payments'))}
+        translucent={showSplash || authSheetVisible || pathname.includes('payments')}
         barStyle={showSplash || authSheetVisible ? 'light-content' : 'dark-content'}
       />
       {showSplash ? (
