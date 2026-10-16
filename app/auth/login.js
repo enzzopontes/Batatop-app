@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Modal,
   Pressable,
+  Animated as RNAnimated,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -17,8 +18,9 @@ import Animated, { useAnimatedStyle, interpolate, Extrapolation } from 'react-na
 import { supabase } from '../../supabaseConfig';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SHADOWS } from '../../constants/theme';
-import { ThemedAlertHost, showThemedAlert } from '../../components/ThemedAlert';
+import { ThemedAlertHost, showThemedAlert, hideThemedAlert } from '../../components/ThemedAlert';
 import { signInWithGoogle } from '../../utils/googleAuth';
+import SwipeableBottomSheetModal from '../../components/SwipeableBottomSheetModal';
 
 const RESEND_SECONDS = 59;
 const SAVED_USER_KEY = '@batatatop:savedUser';
@@ -94,7 +96,6 @@ export default function LoginScreen() {
   const emailRef = useRef(null);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const [banner, setBanner] = useState(null); // { type: 'error' | 'success', text }
 
   const [code, setCode] = useState(['', '', '', '', '', '']);
   const [focusedBox, setFocusedBox] = useState(null);
@@ -168,24 +169,16 @@ export default function LoginScreen() {
 
   const formatTime = (s) => `0:${String(s).padStart(2, '0')}`;
 
-  // Banner de sucesso ("Código reenviado") some sozinho depois de 3s.
-  // O de erro fica até o usuário digitar de novo (já tratado em handleDigitChange).
-  useEffect(() => {
-    if (banner?.type !== 'success') return;
-    const t = setTimeout(() => setBanner(null), 3000);
-    return () => clearTimeout(t);
-  }, [banner]);
-
   const sendCode = async () => {
     setLoading(true);
-    setBanner(null);
+    hideThemedAlert();
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: { shouldCreateUser: true },
     });
     setLoading(false);
     if (error) {
-      setBanner({ type: 'error', text: 'Não foi possível enviar o código. Tente novamente.' });
+      showThemedAlert.error('Não foi possível enviar o código. Tente novamente.');
       return false;
     }
     return true;
@@ -198,7 +191,7 @@ export default function LoginScreen() {
       setCode(['', '', '', '', '', '']);
       setSecondsLeft(RESEND_SECONDS);
       setStep('code');
-      setBanner({ type: 'success', text: 'Código enviado' });
+      showThemedAlert.success('Código enviado');
       setTimeout(() => codeRefs.current[0]?.focus(), 150);
     }
   };
@@ -209,7 +202,7 @@ export default function LoginScreen() {
     if (ok) {
       setCode(['', '', '', '', '', '']);
       setSecondsLeft(RESEND_SECONDS);
-      setBanner({ type: 'success', text: 'Código reenviado' });
+      showThemedAlert.success('Código reenviado');
       setTimeout(() => codeRefs.current[0]?.focus(), 150);
     }
   };
@@ -233,7 +226,7 @@ export default function LoginScreen() {
     setLoading(false);
     if (error) {
       // Código errado, expirado ou muitas tentativas — todos tratados como falha de verificação
-      setBanner({ type: 'error', text: 'Algo deu errado. Tente novamente.' });
+      showThemedAlert.error('Código inválido ou expirado. Tente novamente.');
       setCode(['', '', '', '', '', '']);
       setTimeout(() => codeRefs.current[0]?.focus(), 100);
       return;
@@ -251,7 +244,7 @@ export default function LoginScreen() {
     }
 
     // Usuário novo (primeiro login) — precisa pedir o nome antes de continuar.
-    setBanner(null);
+    hideThemedAlert();
     setStep('name');
   };
 
@@ -267,7 +260,7 @@ export default function LoginScreen() {
     setNameSaving(false);
 
     if (error) {
-      setBanner({ type: 'error', text: 'Não foi possível salvar seu nome. Tente novamente.' });
+      showThemedAlert.error('Não foi possível salvar seu nome. Tente novamente.');
       return;
     }
 
@@ -285,7 +278,7 @@ export default function LoginScreen() {
       const next = digits.slice(0, 6).split('');
       while (next.length < 6) next.push('');
       setCode(next);
-      if (banner) setBanner(null);
+      hideThemedAlert();
 
       const lastFilledIndex = Math.min(digits.length, 6) - 1;
       codeRefs.current[lastFilledIndex]?.focus();
@@ -299,7 +292,7 @@ export default function LoginScreen() {
     const next = [...code];
     next[index] = digit;
     setCode(next);
-    if (banner) setBanner(null);
+    hideThemedAlert();
 
     if (digit && index < 5) {
       codeRefs.current[index + 1]?.focus();
@@ -327,7 +320,7 @@ export default function LoginScreen() {
       router.replace('/');
     } else if (step === 'code') {
       setStep('email');
-      setBanner(null);
+      hideThemedAlert();
     } else {
       router.replace('/');
     }
@@ -360,16 +353,6 @@ export default function LoginScreen() {
             { paddingBottom: 140, paddingTop: insets.top + 68 },
           ]}
         >
-          {banner && (
-            <View style={[styles.banner, banner.type === 'error' ? styles.bannerError : styles.bannerSuccess]}>
-              <Ionicons
-                name={banner.type === 'error' ? 'alert-circle' : 'checkmark-circle'}
-                size={20}
-                color={COLORS.white}
-              />
-              <Text style={styles.bannerText}>{banner.text}</Text>
-            </View>
-          )}
 
           {step === 'email' && (
             <>
@@ -552,8 +535,8 @@ export default function LoginScreen() {
                 <>
                   <Text style={styles.termsText}>
                     Ao continuar, você concorda com os{' '}
-                    <Text style={styles.termsLink}>Termos de Uso</Text> e está ciente da{' '}
-                    <Text style={styles.termsLink}>Declaração de Privacidade</Text>
+                    <Text style={styles.termsLink}>Termos de Uso</Text> e confirma que leu nossa{' '}
+                    <Text style={styles.termsLink}>Política de Privacidade do Batata Top</Text>.
                   </Text>
                 </>
               )}
@@ -583,38 +566,32 @@ export default function LoginScreen() {
         )}
       </View>
 
-      <Modal
+      <SwipeableBottomSheetModal
         visible={helpVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setHelpVisible(false)}
+        onClose={() => setHelpVisible(false)}
+        contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 8 }}
       >
-        <Pressable style={styles.modalOverlay} onPress={() => setHelpVisible(false)}>
-          <Pressable style={styles.modalSheet} onPress={() => {}}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Não recebeu o código?</Text>
-            <Text style={styles.modalSubtitle}>
-              Verifique se digitou o e-mail corretamente. Talvez o código esteja na sua caixa de spam.
-            </Text>
-            <Text style={styles.modalEmail}>{email}</Text>
+        <Text style={styles.modalTitle}>Não recebeu o código?</Text>
+        <Text style={styles.modalSubtitle}>
+          Verifique se digitou o e-mail corretamente. Talvez o código esteja na sua caixa de spam.
+        </Text>
+        <Text style={styles.modalEmail}>{email}</Text>
 
-            <TouchableOpacity style={styles.modalResendBtn} onPress={handleResend}>
-              <Text style={styles.modalResendBtnText}>Reenviar código</Text>
-            </TouchableOpacity>
+        <TouchableOpacity style={styles.modalResendBtn} onPress={handleResend}>
+          <Text style={styles.modalResendBtnText}>Reenviar código</Text>
+        </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.modalChangeEmailBtn}
-              onPress={() => {
-                setHelpVisible(false);
-                setStep('email');
-                setBanner(null);
-              }}
-            >
-              <Text style={styles.modalChangeEmailText}>Alterar e-mail</Text>
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
+        <TouchableOpacity
+          style={styles.modalChangeEmailBtn}
+          onPress={() => {
+            setHelpVisible(false);
+            setStep('email');
+            hideThemedAlert();
+          }}
+        >
+          <Text style={styles.modalChangeEmailText}>Alterar e-mail</Text>
+        </TouchableOpacity>
+      </SwipeableBottomSheetModal>
 
       <ThemedAlertHost />
     </View>
@@ -638,30 +615,6 @@ const styles = StyleSheet.create({
     height: 36,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-
-  // ── Banners de status ──────────────────────────────────────────────
-  banner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    marginBottom: 20,
-    ...SHADOWS.sm,
-  },
-  bannerError: {
-    backgroundColor: COLORS.error,
-  },
-  bannerSuccess: {
-    backgroundColor: COLORS.success,
-  },
-  bannerText: {
-    color: COLORS.white,
-    fontSize: 14,
-    fontWeight: '600',
-    flex: 1,
   },
 
   // ── Título ─────────────────────────────────────────────────────────
@@ -876,8 +829,14 @@ const styles = StyleSheet.create({
   // ── Bottom sheet "Não recebeu o código?" ───────────────────────────
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'flex-end',
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  modalContentWrap: {
+    width: '100%',
   },
   modalSheet: {
     backgroundColor: COLORS.white,
@@ -928,7 +887,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   modalChangeEmailBtn: {
-    paddingVertical: 4,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   modalChangeEmailText: {
     color: COLORS.secondary,

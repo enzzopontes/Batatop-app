@@ -3,20 +3,18 @@ import {
   View,
   Text,
   StyleSheet,
-  Modal,
   Pressable,
   Image,
   ActivityIndicator,
   TextInput,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS } from '../../constants/theme';
 import { DeliveryType, PaymentMethod, Address } from './useCheckoutFlow';
 import { SavedCard } from '../../utils/usePaymentCards';
-import { useFooterInsets } from '../../hooks/useFooterInsets';
 import RipplePressable from './RipplePressable';
 import PrimaryButton from '../PrimaryButton';
+import SwipeableBottomSheetModal from '../SwipeableBottomSheetModal';
 
 const CUPOM_ICON = require('../../assets/cuponpretobranco.png');
 
@@ -61,8 +59,6 @@ export default function ReviseOrderModal({
   onEditPayment,
   onToggleDeliveryType,
 }: ReviseOrderModalProps) {
-  const insets = useSafeAreaInsets();
-  const { paddingBottom } = useFooterInsets({ extraPadding: 16 });
   const formattedTotal = `R$ ${total.toFixed(2).replace('.', ',')}`;
 
   const isDelivery = deliveryType === 'delivery';
@@ -99,22 +95,15 @@ export default function ReviseOrderModal({
   };
 
   return (
-    <Modal
+    <SwipeableBottomSheetModal
       visible={visible}
-      transparent
-      animationType="slide"
-      statusBarTranslucent
       onRequestClose={onClose}
+      backdropColor="rgba(0, 0, 0, 0.5)"
+      contentStyle={styles.sheetContent}
+      minBottomPadding={32}
+      extraBottomPadding={16}
     >
-      <View style={styles.modalOverlay}>
-        <Pressable style={styles.modalBackdrop} onPress={onClose} />
-
-        <View style={[styles.sheetContent, { paddingBottom }]}>
-          {/* Handle curvo superior */}
-          <View style={styles.sheetHandle} />
-
-          {/* Título idêntico à Imagem 1 */}
-          <Text style={styles.sheetTitle}>Revise o seu pedido</Text>
+      <Text style={styles.sheetTitle}>Revise o seu pedido</Text>
 
           <View style={styles.itemsList}>
             {/* 1. Linha Entrega hoje */}
@@ -174,7 +163,7 @@ export default function ReviseOrderModal({
                   <>
                     <Text style={styles.rowTitle}>{coupon.code}</Text>
                     <Text style={styles.rowSub}>
-                      {coupon.discount_type === 'percent'
+                      {(coupon.discount_type === 'percent' || coupon.discount_type === 'percentage')
                         ? `${Number(coupon.discount_value)}% de desconto aplicado`
                         : `R$ ${Number(coupon.discount_value).toFixed(2).replace('.', ',')} de desconto`}
                     </Text>
@@ -266,6 +255,11 @@ export default function ReviseOrderModal({
             )}
           </View>
 
+          {/* Texto de consentimento do checkout */}
+          <Text style={styles.consentText}>
+            Ao confirmar o pedido, você declara estar ciente dos Termos de Uso e das regras de preparo e entrega em Iacanga-SP.
+          </Text>
+
           {/* Botão principal "Fazer pedido" com PrimaryButton */}
           <PrimaryButton
             fullWidth
@@ -274,21 +268,19 @@ export default function ReviseOrderModal({
             disabled={submitting}
             loading={submitting}
             accessibilityLabel="Fazer pedido"
-            style={{ marginBottom: SPACING[2] }}
+            style={{ marginBottom: SPACING[3] }}
           />
 
-          {/* Link "Alterar pedido" com animação ripple */}
+          {/* Botão secundário "Alterar pedido" com borda amarela fina */}
           <RipplePressable
             style={styles.alterarLink}
             onPress={onClose}
-            hitSlop={10}
-            rippleColor="rgba(227, 160, 8, 0.12)"
+            hitSlop={8}
+            rippleColor="rgba(227, 160, 8, 0.15)"
           >
             <Text style={styles.alterarLinkText}>Alterar pedido</Text>
           </RipplePressable>
-        </View>
-      </View>
-    </Modal>
+    </SwipeableBottomSheetModal>
   );
 }
 
@@ -296,10 +288,13 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   modalBackdrop: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  sheetWrap: {
+    width: '100%',
   },
   sheetContent: {
     backgroundColor: '#FFFFFF',
@@ -432,17 +427,30 @@ const styles = StyleSheet.create({
     color: COLORS.white,
   },
   alterarLink: {
-    alignItems: 'center',
-    paddingVertical: SPACING[2],
+    width: '100%',
+    height: 44,
     borderRadius: RADIUS.md,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
     overflow: 'hidden',
   },
   alterarLinkText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
-    color: COLORS.primary,
+    color: COLORS.text,
   },
   buttonDisabled: {
     opacity: 0.6,
+  },
+  consentText: {
+    fontSize: 11,
+    color: '#71717A',
+    textAlign: 'center',
+    lineHeight: 15,
+    marginBottom: SPACING[3],
+    paddingHorizontal: SPACING[2],
   },
 });

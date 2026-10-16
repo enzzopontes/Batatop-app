@@ -230,71 +230,66 @@ As avaliações no Batata Top têm como objetivo coletar a opinião sincera dos 
     `,
   },
 
-  // TERMOS DE USO COMPLETO E ESTRUTURADO (FOTO ENVIADA PELO USUÁRIO)
+  // TERMOS DE USO COMPLETO E ESTRUTURADO (APP BATATA TOP)
   {
     id: 'termos-de-uso',
     categoryId: 'politicas',
     title: 'Termos & Condições de Uso',
     shortDesc: 'Regras gerais de utilização do aplicativo.',
     isRichTerms: true,
-    introText: `Por meio deste documento, são estabelecidos os termos e as condições gerais para a utilização da Plataforma Batata Top ("Plataforma Batata Top"), por Você ("Você"), que é nosso usuário.\n\nNosso maior objetivo é fazer milhares de pessoas felizes, proporcionando momentos únicos e importantes nos seus dias. O nosso propósito é revolucionar o universo da alimentação por uma vida mais prática e prazerosa! Nos enche de orgulho auxiliar a alavancar o comércio local de Iacanga-SP.\n\nChega mais e vem conferir como funciona o nosso serviço! :)`,
+    introText: `Estes Termos regulam o acesso e uso da plataforma mobile Batata Top para pedidos de batatas recheadas, refeições e bebidas preparadas sob demanda no município de Iacanga-SP.\n\nAo criar uma conta ou concluir um pedido, você declara ter lido, compreendido e aceito integralmente estes Termos de Uso.`,
     highlights: [
       {
         tag: '#SuaResponsabilidade',
         icon: 'heart-outline',
-        content: `Esperamos de você uma comunicação respeitosa e não agressiva com os estabelecimentos e o próprio Batata Top, sempre zelando pela ética e integridade.\nLembramos que **#NãoToleramosNoBatataTop** qualquer forma de preconceito, assédio, bullying e incitação à violência. As condutas que envolverem preconceito ou assédio estão sujeitas à suspensão ou cancelamento da sua Conta de Usuário em nossa Plataforma Batata Top, sem aviso prévio.`,
+        content: `A Batata Top preza pelo respeito mútuo. É expressamente proibido desrespeitar, ofender ou ameaçar entregadores, atendentes ou funcionários, tentar fraudar sistemas de cupons promocionais ou fornecer intencionalmente dados falsos.\nO descumprimento destas regras resultará no cancelamento imediato de pedidos e na suspensão ou exclusão da conta.`,
       },
       {
         tag: '#SeuDireito',
         icon: 'star-outline',
-        content: `Ao criar uma conta no Batata Top, nós poderemos coletar algumas informações importantes sobre você.\nNós sinalizamos para que você fique tranquilo, pois suas informações de pagamento online são armazenadas somente de forma mascarada pelo Mercado Pago. Assim, os dados completos de seus cartões não ficam armazenados em nossas bases e suas transações online são feitas com o mais alto padrão de segurança.\nNós mostramos como respeitamos a sua privacidade em nossa missão de proporcionar um serviço cada vez melhor! Para saber mais sobre como o Batata Top obtém, armazena, utiliza, compartilha e protege suas informações, confira a nossa Declaração de Privacidade dos Usuários.`,
+        content: `O tratamento dos dados coletados segue estritamente a nossa Declaração de Privacidade e a Lei Geral de Proteção de Dados (LGPD). Seus pagamentos online são processados de forma criptografada pelo Mercado Pago, sem retenção de cartões em nossos servidores.`,
       },
     ],
     termsAccordion: [
       {
         num: '1',
-        title: 'Como funciona o Batata Top?',
-        body: 'O Batata Top é uma plataforma mobile de intermediação de pedidos de alimentos e bebidas preparados na hora na cidade de Iacanga-SP. Você visualiza o cardápio, escolhe seus adicionais, faz o pagamento via PIX, Cartão ou Dinheiro e recebe seu pedido quentinho no conforto de casa ou retira no local.',
+        title: 'Objeto e Aceitação',
+        body: 'Estes Termos regulam o acesso e uso da plataforma mobile Batata Top para pedidos de batatas recheadas, refeições e bebidas preparadas sob demanda no município de Iacanga-SP. Ao criar uma conta ou concluir um pedido, você declara ter lido, compreendido e aceito integralmente estes Termos de Uso.',
       },
       {
         num: '2',
-        title: 'Quem pode usar o Batata Top?',
-        body: 'Qualquer pessoa física maior de 18 anos ou menor devidamente autorizado por responsáveis legais, residente ou presente na área urbana do município de Iacanga-SP.',
+        title: 'Cadastro e Requisitos',
+        body: '• Idade mínima: 18 anos completos ou menores devidamente representados por seus responsáveis legais.\n• Veracidade dos dados: O usuário é o único responsável pela veracidade do nome, e-mail, telefone e endereço informados.\n• Uso pessoal: A conta é intransferível. Não compartilhe seu código de autenticação ou credenciais de acesso com terceiros.',
       },
       {
         num: '3',
-        title: 'Como Você recebe seu Pedido?',
-        body: 'No checkout, você escolhe entre Delivery (entrega no seu endereço cadastrado) ou Retirada (busca no endereço da loja quando o status indicar Pronto).',
+        title: 'Pedidos e Modalidades de Recebimento',
+        body: '• Delivery: O entregador levará o pedido até o endereço cadastrado em Iacanga-SP. O cliente deve se atentar ao telefone e acompanhar as notificações de status para receber a refeição.\n• Retirada no Balcão: O cliente retira o pedido diretamente no endereço da loja assim que o status do aplicativo indicar "Pronto para retirada".\n• Horários e Disponibilidade: Pedidos estão sujeitos ao horário de funcionamento da cozinha e à disponibilidade diária de estoque e insumos.',
       },
       {
         num: '4',
-        title: 'Informações sobre Preços, Pagamentos, Descontos no Pagamento e Promoções',
-        body: 'Os preços dos produtos, cupons de desconto e taxas de entrega são exibidos antes da confirmação do pedido. Pagamentos via PIX ou cartão de crédito/débito são validados em ambiente seguro com o Mercado Pago.',
+        title: 'Preços, Cupons e Pagamentos',
+        body: '• Valores e taxas: O valor total do pedido, incluindo adicionais, descontos de cupons e taxa de entrega, é exibido no resumo antes da confirmação.\n• Processamento online: Pagamentos por Cartão de Crédito, Débito e PIX são intermediados com segurança pelo Mercado Pago. O Batata Top não armazena dados de cartão em seus servidores.\n• Pagamento na entrega: Quando disponível a opção de pagamento presencial (dinheiro ou maquininha), o valor ou necessidade de troco deve ser especificado no fechamento do pedido.',
       },
       {
         num: '5',
-        title: 'Informações sobre cancelamento de Pedidos e estorno',
-        body: 'O cancelamento com estorno integral pode ser feito se o pedido ainda não tiver entrado na fase de preparo pela cozinha. Após o preparo, consulte as regras da Política de Cancelamento.',
+        title: 'Cancelamentos e Reembolsos',
+        body: '• Antes do preparo: O cancelamento com reembolso integral pode ser solicitado pelo app ou suporte enquanto o pedido ainda não tiver entrado na cozinha.\n• Durante o preparo ou entrega: Por se tratar de alimento perecível feito sob encomenda, não serão aceitos cancelamentos após o início da produção, salvo falha comprovada da loja (atraso excessivo injustificado ou envio incorreto).\n• Ausência do cliente: Caso o entregador aguarde no endereço informado sem sucesso de contato com o cliente, o pedido poderá ser retornado ou descartado sem direito a estorno.',
       },
       {
         num: '6',
-        title: 'Declaração de Privacidade de Usuários',
-        body: 'Seus dados pessoais são tratados com sigilo absoluto nos termos da LGPD. Nunca compartilhamos suas informações com terceiros para fins não relacionados à entrega do seu pedido.',
+        title: 'Conduta do Usuário',
+        body: 'A Batata Top preza pelo respeito mútuo. É expressamente proibido desrespeitar, ofender ou ameaçar entregadores, atendentes ou funcionários; tentar fraudar sistemas de cupons promocionais ou efetuar pagamentos com cartões clonados/roubados; ou fornecer intencionalmente endereços ou dados falsos. O descumprimento resultará no cancelamento imediato de pedidos e na suspensão ou exclusão definitiva da conta.',
       },
       {
         num: '7',
-        title: 'Propriedade Intelectual',
-        body: 'Todos os direitos de marca, logotipo, código-fonte e design pertencem exclusivamente à plataforma Batata Top.',
+        title: 'Privacidade e Proteção de Dados',
+        body: 'O tratamento dos dados coletados segue estritamente a nossa Declaração de Privacidade e a Lei Geral de Proteção de Dados (LGPD).',
       },
       {
         num: '8',
-        title: 'O que o Batata Top não tolera?',
-        body: 'Não toleramos qualquer tipo de preconceito, ofensas a funcionários ou entregadores, uso de cartões clonados ou fraudes no sistema de cupons.',
-      },
-      {
-        num: '9',
-        title: 'O que mais Você precisa saber?',
-        body: 'Reservamo-nos o direito de atualizar estes termos periodicamente. A versão vigente sempre estará acessível nesta seção da Central de Ajuda.',
+        title: 'Atendimento e Suporte',
+        body: 'Em caso de dúvidas, atrasos ou problemas com o pedido:\n• WhatsApp oficial / Suporte no App: (14) 99736-1015\n• E-mail: enzzobaraldo2008@gmail.com\n• Localidade: Iacanga-SP',
       },
     ],
   },
@@ -375,7 +370,7 @@ Você pode solicitar o encerramento da conta e o expurgo dos seus dados pessoais
 Para esclarecer dúvidas sobre esta Declaração de Privacidade ou exercer seus direitos de titular de dados:
 
 - Encarregado pelo tratamento de dados (DPO): Equipe de Privacidade e Suporte Batata Top
-- E-mail de atendimento: suporte@batatatop.com.br
+- E-mail de atendimento: enzzobaraldo2008@gmail.com
 - Atendimento direto em Iacanga-SP: Pelo chat de ajuda no aplicativo ou WhatsApp oficial de suporte da loja.
     `,
   },
