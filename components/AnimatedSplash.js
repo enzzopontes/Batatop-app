@@ -47,7 +47,7 @@ export default function AnimatedSplash({ onFinish }) {
       <VideoView
         player={player}
         style={[StyleSheet.absoluteFillObject, { opacity: videoReady ? 1 : 0 }]}
-        contentFit="cover"
+        contentFit="contain"
         nativeControls={false}
       />
     </View>
