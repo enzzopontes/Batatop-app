@@ -1,0 +1,19 @@
+node_modules/
+.expo/
+dist/
+build/
+
+# env files
+.env
+.env*
+.env.local
+*.pem
+
+# Local tooling & IDE
+.agents/
+.idea/
+
+# Google & Firebase credentials
+*-firebase-adminsdk-*.json
+google-services.json
+credentials.json

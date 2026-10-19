@@ -1,0 +1,82 @@
+{
+  "expo": {
+    "name": "Batata Top",
+    "slug": "batata-top",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/logo.png",
+    "scheme": "batatatop",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFF7ED"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.batatatop.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/logo.png",
+        "backgroundColor": "#F97316"
+      },
+      "package": "com.batatatop.app",
+      "googleServicesFile": "./google-services.json",
+      "allowBackup": false,
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "POST_NOTIFICATIONS",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": ""
+        }
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-audio",
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#FFB800",
+          "sounds": [
+            "./assets/sounds/new_order.mp3"
+          ],
+          "defaultChannel": "new-orders"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow"
+        }
+      ],
+      "expo-video",
+      "@react-native-community/datetimepicker",
+      "expo-web-browser",
+      "@react-native-google-signin/google-signin"
+    ],
+    "experiments": {
+      "typedRoutes": false
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "353f5469-a4d4-4346-852d-79b40796a424"
+      }
+    },
+    "owner": "vkdelass-team"
+  }
+}
