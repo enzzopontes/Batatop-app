@@ -314,8 +314,7 @@ export default function AdminProdutos() {
 
       {/* Modal Produto */}
       <Modal visible={prodModalVisible} animationType="none" statusBarTranslucent navigationBarTranslucent presentationStyle="pageSheet" onRequestClose={() => setProdModalVisible(false)}>
-        <SafeAreaProvider>
-          <View style={s.modalContainer}>
+        <View style={s.modalContainer}>
           <View style={s.modalHeader}>
             <Text style={s.modalTitle}>{editingProduct ? 'Editar Produto' : 'Novo Produto'}</Text>
             <Pressable onPress={() => setProdModalVisible(false)} style={s.modalCloseBtn}>
@@ -371,13 +370,11 @@ export default function AdminProdutos() {
             </Pressable>
           </ScrollView>
         </View>
-        </SafeAreaProvider>
       </Modal>
 
       {/* Modal Adicional */}
       <Modal visible={adicModalVisible} animationType="none" statusBarTranslucent navigationBarTranslucent presentationStyle="formSheet" onRequestClose={() => setAdicModalVisible(false)}>
-        <SafeAreaProvider>
-          <View style={s.modalContainer}>
+        <View style={s.modalContainer}>
           <View style={s.modalHeader}>
             <Text style={s.modalTitle}>{editingAdic ? 'Editar Adicional' : 'Novo Adicional'}</Text>
             <Pressable onPress={() => setAdicModalVisible(false)} style={s.modalCloseBtn}>
@@ -406,7 +403,6 @@ export default function AdminProdutos() {
             </Pressable>
           </View>
         </View>
-        </SafeAreaProvider>
       </Modal>
     </View>
   );

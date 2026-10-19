@@ -525,6 +525,7 @@ export default function AdminDashboard() {
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
           style={s.feeModalOverlay}
         >
           <Pressable style={s.feeModalBackdrop} onPress={() => setFeeModalVisible(false)} />

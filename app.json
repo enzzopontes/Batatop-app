@@ -15,7 +15,18 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.batatatop.app"
+      "bundleIdentifier": "com.batatatop.app",
+      "config": {
+        "usesNonExemptEncryption": false
+      },
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Precisamos de sua localização para exibir o mapa e calcular a entrega do seu pedido.",
+        "NSPhotoLibraryUsageDescription": "Precisamos de acesso às fotos para que você possa anexar comprovantes ou foto de perfil.",
+        "UIBackgroundModes": [
+          "remote-notification"
+        ],
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {

@@ -323,8 +323,7 @@ export function ThemedAlertHost() {
       {/* ── Modal de Confirmação (Apenas para ações que exigem escolha do usuário) ── */}
       {mounted && activeConfig && (
         <Modal visible={mounted} transparent animationType="none" statusBarTranslucent navigationBarTranslucent onRequestClose={() => setModalConfig(null)}>
-          <SafeAreaProvider>
-            <View style={a.overlay}>
+          <View style={a.overlay}>
               <Animated.View style={[a.backdrop, { opacity: fadeAnim }]}>
                 <Pressable style={StyleSheet.absoluteFill} onPress={() => setModalConfig(null)} />
               </Animated.View>
@@ -362,7 +361,6 @@ export function ThemedAlertHost() {
                 </View>
               </Animated.View>
             </View>
-          </SafeAreaProvider>
         </Modal>
       )}
     </>

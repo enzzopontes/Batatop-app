@@ -12,6 +12,7 @@ import {
   Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../supabaseConfig';
 import { Ionicons } from '@expo/vector-icons';
 import { SHADOWS } from '../../constants/theme';
@@ -19,6 +20,7 @@ import { ThemedAlertHost, showThemedAlert } from '../../components/ThemedAlert';
 import { signInWithGoogle } from '../../utils/googleAuth';
 
 export default function RegisterScreen() {
+  const insets = useSafeAreaInsets();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -81,7 +83,10 @@ export default function RegisterScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
       >
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={[styles.scrollContent, { paddingTop: Math.max(insets.top + 16, 40) }]}
+          showsVerticalScrollIndicator={false}
+        >
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
             <Ionicons name="arrow-back" size={24} color="#333" />
           </TouchableOpacity>

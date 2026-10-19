@@ -1734,8 +1734,7 @@ export default function DetalhesPedido() {
           navigationBarTranslucent
           onRequestClose={() => setShowCancelModal(false)}
         >
-          <SafeAreaProvider>
-            <View style={s.cancelOverlay}>
+          <View style={s.cancelOverlay}>
               <Animated.View style={[s.cancelBackdrop, { opacity: cancelModalFade }]}>
                 <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowCancelModal(false)} />
               </Animated.View>
@@ -1771,7 +1770,6 @@ export default function DetalhesPedido() {
                 </View>
               </Animated.View>
             </View>
-          </SafeAreaProvider>
         </Modal>
       )}
 
@@ -1801,15 +1799,13 @@ export default function DetalhesPedido() {
         statusBarTranslucent
         onRequestClose={() => setIsMapModalVisible(false)}
       >
-        <SafeAreaProvider>
-          <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-            <LiveDeliveryMap
-              order={pedido}
-              isFullScreen
-              onClose={() => setIsMapModalVisible(false)}
-            />
-          </View>
-        </SafeAreaProvider>
+        <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+          <LiveDeliveryMap
+            order={pedido}
+            isFullScreen
+            onClose={() => setIsMapModalVisible(false)}
+          />
+        </View>
       </Modal>
 
       {/* Confetes leves de aprovação Pix */}

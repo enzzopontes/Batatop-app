@@ -1185,7 +1185,11 @@ export default function Addresses() {
       <ThemedAlertHost />
 
       {screen === 'form' ? (
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}
+        >
           <ScrollView style={s.scroll} showsVerticalScrollIndicator={false}
             contentContainerStyle={[s.scrollContent, { paddingTop: insets.top + SPACING[2] }]} keyboardShouldPersistTaps="handled">
 

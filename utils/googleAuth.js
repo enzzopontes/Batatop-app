@@ -64,7 +64,9 @@ async function finalizeLoginSession(session) {
 export async function signInWithNativeGoogle() {
   let idToken = null;
   try {
-    await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+    if (Platform.OS === 'android') {
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+    }
     const response = await GoogleSignin.signIn();
     if (response?.type === 'cancelled') {
       return { success: false, cancelled: true };
