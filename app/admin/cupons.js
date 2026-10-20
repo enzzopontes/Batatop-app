@@ -10,21 +10,19 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { supabase } from '../../supabaseConfig';
 import { checkIsAdmin } from '../../utils/isAdmin';
 import * as Haptics from 'expo-haptics';
-import {
-  fetchHomeCouponsConfig,
-  saveHomeCouponsConfig,
-  DEFAULT_HOME_COUPONS_CONFIG,
-} from '../../utils/homeCoupons';
+import * as Clipboard from 'expo-clipboard';
+import CouponTemplateSelectorModal from '../../components/admin/CouponTemplateSelectorModal';
 
-// ─── Helpers de geração automática ─────────────────────────────────
+// ─── Helpers de formatação e geração ────────────────────────────────
 function formatBR(value) {
   const n = Number(value);
   if (isNaN(n)) return '0';
   return n % 1 === 0 ? String(n) : String(n).replace('.', ',');
 }
 
-function buildDefaultExpiry() {
+function buildDefaultExpiry(daysAhead = 7) {
   const d = new Date();
+  d.setDate(d.getDate() + daysAhead);
   d.setHours(23, 59, 0, 0);
   return d;
 }
@@ -54,6 +52,7 @@ function generateMinOrderText(minOrderValue) {
 }
 
 function formatExpiryPTBR(date) {
+  if (!date) return 'Sem expiração';
   const dia = String(date.getDate()).padStart(2, '0');
   const mes = String(date.getMonth() + 1).padStart(2, '0');
   const ano = date.getFullYear();
@@ -68,7 +67,11 @@ function generateRulesText({ minOrderValue, expiresAt, quantityAvailable, maxUse
     linhas.push(`Válido para pedidos acima de R$ ${formatBR(minOrderValue)} (sem considerar a taxa de entrega).`);
   }
   const qtdeTexto = quantityAvailable ? ` ou até atingir ${quantityAvailable} cupons` : '';
-  linhas.push(`Data de validade: Somente até ${formatExpiryPTBR(expiresAt)} (horário de Brasília)${qtdeTexto}.`);
+  if (expiresAt) {
+    linhas.push(`Data de validade: Somente até ${formatExpiryPTBR(expiresAt)} (horário de Brasília)${qtdeTexto}.`);
+  } else {
+    linhas.push(`Cupom permanente (sem data de expiração)${qtdeTexto}.`);
+  }
   linhas.push('Forma de pagamento: pague pelo app/site ou na entrega.');
   linhas.push(
     maxUsesPerUser
@@ -83,16 +86,21 @@ const EMPTY_FORM = {
   value: '',
   type: 'fixed', // 'fixed' = R$, 'percentage' = %
   minOrderValue: '',
-  expiresAt: buildDefaultExpiry(),
+  expiresAt: buildDefaultExpiry(7),
+  isPermanent: false,
   restrictedCategories: [],
   quantityAvailable: '',
   maxUsesPerUser: '',
-  rulesText: '', // editável depois de gerado
+  rulesText: '',
   rulesEdited: false,
   customCode: '',
   showCodeInTitle: false,
   showOnHome: false,
   homePriority: '0',
+  bannerImageUrl: '',
+  badgeLabel: '',
+  isBannerHighlight: false,
+  templateOrigin: 'custom',
 };
 
 export default function AdminCupons() {
@@ -117,6 +125,7 @@ export default function AdminCupons() {
 
   const [coupons, setCoupons] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [templateModalVisible, setTemplateModalVisible] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingCoupon, setEditingCoupon] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -124,10 +133,7 @@ export default function AdminCupons() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [availableCategories, setAvailableCategories] = useState([]);
-  const [homeConfig, setHomeConfig] = useState(DEFAULT_HOME_COUPONS_CONFIG);
-  const [tempHomeConfig, setTempHomeConfig] = useState(DEFAULT_HOME_COUPONS_CONFIG);
-  const [homeConfigModalVisible, setHomeConfigModalVisible] = useState(false);
-  const [savingHomeConfig, setSavingHomeConfig] = useState(false);
+  const [copiedId, setCopiedId] = useState(null);
 
   const loadCoupons = useCallback(async () => {
     try {
@@ -142,16 +148,6 @@ export default function AdminCupons() {
       Alert.alert('Erro', 'Não foi possível carregar os cupons.');
     } finally {
       setLoading(false);
-    }
-  }, []);
-
-  const loadHomeConfig = useCallback(async () => {
-    try {
-      const cfg = await fetchHomeCouponsConfig();
-      setHomeConfig(cfg);
-      setTempHomeConfig(cfg);
-    } catch {
-      // ignore
     }
   }, []);
 
@@ -172,9 +168,62 @@ export default function AdminCupons() {
     if (!checkingAdmin) {
       loadCoupons();
       loadCategories();
-      loadHomeConfig();
     }
-  }, [checkingAdmin, loadCoupons, loadCategories, loadHomeConfig]);
+  }, [checkingAdmin, loadCoupons, loadCategories]);
+
+  const handleStartCreation = () => {
+    setTemplateModalVisible(true);
+  };
+
+  const handleSelectTemplate = (tmpl) => {
+    setTemplateModalVisible(false);
+    setEditingCoupon(null);
+    const expDate = buildDefaultExpiry(tmpl.suggestedDaysValid || 7);
+    const initialForm = {
+      ...EMPTY_FORM,
+      value: tmpl.suggestedValue,
+      type: tmpl.suggestedType,
+      customCode: tmpl.suggestedCode,
+      minOrderValue: tmpl.suggestedMinOrder,
+      expiresAt: expDate,
+      isPermanent: false,
+      maxUsesPerUser: tmpl.suggestedMaxUsesPerUser || '1',
+      quantityAvailable: tmpl.suggestedQuantity || '',
+      showOnHome: tmpl.showOnHome ?? true,
+      isBannerHighlight: tmpl.isBannerHighlight ?? true,
+      badgeLabel: tmpl.badge || '',
+      templateOrigin: tmpl.tag || 'template',
+      rulesEdited: false,
+    };
+    initialForm.rulesText = generateRulesText({
+      minOrderValue: parseFloat(tmpl.suggestedMinOrder) || 0,
+      expiresAt: expDate,
+      quantityAvailable: tmpl.suggestedQuantity,
+      maxUsesPerUser: tmpl.suggestedMaxUsesPerUser,
+    });
+    setForm(initialForm);
+    setModalVisible(true);
+  };
+
+  const handleSelectScratch = () => {
+    setTemplateModalVisible(false);
+    setEditingCoupon(null);
+    const expDate = buildDefaultExpiry(7);
+    const initialForm = {
+      ...EMPTY_FORM,
+      expiresAt: expDate,
+      isPermanent: false,
+      rulesEdited: false,
+    };
+    initialForm.rulesText = generateRulesText({
+      minOrderValue: 0,
+      expiresAt: expDate,
+      quantityAvailable: '',
+      maxUsesPerUser: '',
+    });
+    setForm(initialForm);
+    setModalVisible(true);
+  };
 
   const openModal = (coupon = null) => {
     if (coupon) {
@@ -183,32 +232,35 @@ export default function AdminCupons() {
         value: coupon.discount_value != null ? String(coupon.discount_value) : '',
         type: coupon.discount_type === 'percentage' ? 'percentage' : 'fixed',
         minOrderValue: coupon.min_order_value != null ? String(coupon.min_order_value) : '',
-        expiresAt: coupon.expires_at ? new Date(coupon.expires_at) : buildDefaultExpiry(),
+        expiresAt: coupon.expires_at ? new Date(coupon.expires_at) : buildDefaultExpiry(7),
+        isPermanent: !coupon.expires_at,
         restrictedCategories: coupon.restricted_categories || [],
         quantityAvailable: coupon.max_uses != null ? String(coupon.max_uses) : '',
         maxUsesPerUser: coupon.max_uses_per_user != null ? String(coupon.max_uses_per_user) : '',
         rulesText: coupon.rules_text || '',
-        rulesEdited: true, // não sobrescreve regras já salvas manualmente
+        rulesEdited: Boolean(coupon.rules_text),
         customCode: coupon.code || '',
         showCodeInTitle: !!coupon.show_code_in_title,
         showOnHome: !!coupon.show_on_home,
         homePriority: String(coupon.home_priority ?? 0),
+        bannerImageUrl: coupon.banner_image_url || '',
+        badgeLabel: coupon.badge_label || '',
+        isBannerHighlight: !!coupon.is_banner_highlight,
+        templateOrigin: coupon.template_origin || 'custom',
       });
+      setModalVisible(true);
     } else {
-      setEditingCoupon(null);
-      setForm(EMPTY_FORM);
+      handleStartCreation();
     }
-    setModalVisible(true);
   };
 
-  // ─── Atualiza um campo e recalcula os campos automáticos ─────────
   const updateField = (patch) => {
     setForm(prev => {
       const next = { ...prev, ...patch };
       if (!next.rulesEdited) {
         next.rulesText = generateRulesText({
           minOrderValue: parseFloat(String(next.minOrderValue).replace(',', '.')) || 0,
-          expiresAt: next.expiresAt,
+          expiresAt: next.isPermanent ? null : next.expiresAt,
           quantityAvailable: next.quantityAvailable,
           maxUsesPerUser: next.maxUsesPerUser,
         });
@@ -221,11 +273,13 @@ export default function AdminCupons() {
     const valueNum = parseFloat(String(form.value).replace(',', '.'));
     const code = form.customCode.trim().toUpperCase() || generateCode(valueNum, form.type);
     return {
+      code,
       title: generateTitle(valueNum, form.type, code, form.showCodeInTitle),
       description: generateDescription(valueNum, form.type, form.restrictedCategories),
       minOrderText: generateMinOrderText(parseFloat(String(form.minOrderValue).replace(',', '.'))),
+      badge: form.badgeLabel ? form.badgeLabel.trim() : '',
     };
-  }, [form.value, form.type, form.minOrderValue, form.restrictedCategories, form.customCode, form.showCodeInTitle]);
+  }, [form.value, form.type, form.minOrderValue, form.restrictedCategories, form.customCode, form.showCodeInTitle, form.badgeLabel]);
 
   const toggleRestrictedCategory = (cat) => {
     setForm(f => {
@@ -237,6 +291,17 @@ export default function AdminCupons() {
     });
   };
 
+  const handleCopyCode = async (code, id) => {
+    try {
+      await Clipboard.setStringAsync(code);
+      setCopiedId(id);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch {
+      // noop
+    }
+  };
+
   const handleSave = async () => {
     const valueNum = parseFloat(String(form.value).replace(',', '.'));
     if (isNaN(valueNum) || valueNum <= 0) {
@@ -244,8 +309,13 @@ export default function AdminCupons() {
       return;
     }
 
+    if (form.type === 'percentage' && (valueNum <= 0 || valueNum > 100)) {
+      Alert.alert('Atenção', 'O desconto percentual deve estar entre 1% e 100%.');
+      return;
+    }
+
     let minOrderValue = null;
-    if (form.minOrderValue.trim() !== '') {
+    if (String(form.minOrderValue).trim() !== '') {
       minOrderValue = parseFloat(String(form.minOrderValue).replace(',', '.'));
       if (isNaN(minOrderValue) || minOrderValue <= 0) {
         Alert.alert('Atenção', 'Valor mínimo do pedido deve ser maior que zero.');
@@ -253,13 +323,13 @@ export default function AdminCupons() {
       }
     }
 
-    if (form.expiresAt < new Date()) {
+    if (!form.isPermanent && form.expiresAt < new Date()) {
       Alert.alert('Atenção', 'A data de expiração não pode estar no passado.');
       return;
     }
 
     let quantityAvailable = null;
-    if (form.quantityAvailable.trim() !== '') {
+    if (String(form.quantityAvailable).trim() !== '') {
       quantityAvailable = parseInt(form.quantityAvailable, 10);
       if (isNaN(quantityAvailable) || quantityAvailable <= 0) {
         Alert.alert('Atenção', 'Quantidade disponível deve ser maior que zero.');
@@ -268,7 +338,7 @@ export default function AdminCupons() {
     }
 
     let maxUsesPerUser = null;
-    if (form.maxUsesPerUser.trim() !== '') {
+    if (String(form.maxUsesPerUser).trim() !== '') {
       maxUsesPerUser = parseInt(form.maxUsesPerUser, 10);
       if (isNaN(maxUsesPerUser) || maxUsesPerUser <= 0) {
         Alert.alert('Atenção', 'Limite por pessoa deve ser maior que zero.');
@@ -299,9 +369,14 @@ export default function AdminCupons() {
       restricted_categories: form.restrictedCategories.length ? form.restrictedCategories : null,
       max_uses: quantityAvailable,
       max_uses_per_user: maxUsesPerUser,
-      expires_at: form.expiresAt.toISOString(),
+      expires_at: form.isPermanent ? null : form.expiresAt.toISOString(),
+      show_code_in_title: form.showCodeInTitle,
       show_on_home: form.showOnHome,
       home_priority: parseInt(form.homePriority, 10) || 0,
+      banner_image_url: form.bannerImageUrl ? form.bannerImageUrl.trim() : null,
+      badge_label: form.badgeLabel ? form.badgeLabel.trim() : null,
+      is_banner_highlight: form.isBannerHighlight,
+      template_origin: form.templateOrigin || 'custom',
     };
 
     setSaving(true);
@@ -338,28 +413,14 @@ export default function AdminCupons() {
     }
   };
 
-  const handleSaveHomeConfig = async () => {
-    try {
-      setSavingHomeConfig(true);
-      await saveHomeCouponsConfig(tempHomeConfig);
-      setHomeConfig(tempHomeConfig);
-      setHomeConfigModalVisible(false);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Sucesso', 'Configuração da tela inicial atualizada!');
-    } catch {
-      Alert.alert('Erro', 'Não foi possível salvar a configuração.');
-    } finally {
-      setSavingHomeConfig(false);
-    }
-  };
-
   const handleToggleActive = async (coupon) => {
+    const nextVal = !coupon.active;
     try {
-      await supabase.from('coupons').update({ active: !coupon.active }).eq('id', coupon.id);
-      await loadCoupons();
+      await supabase.from('coupons').update({ active: nextVal }).eq('id', coupon.id);
+      setCoupons(prev => prev.map(c => c.id === coupon.id ? { ...c, active: nextVal } : c));
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch {
-      Alert.alert('Erro', 'Não foi possível alterar o status.');
+      Alert.alert('Erro', 'Não foi possível alterar o status do cupom.');
     }
   };
 
@@ -383,100 +444,86 @@ export default function AdminCupons() {
   const inactiveCoupons = coupons.filter(c => !c.active);
 
   const formatExpiry = (dateStr) => {
-    if (!dateStr) return 'Sem expiração';
+    if (!dateStr) return 'Permanente';
     return new Date(dateStr).toLocaleDateString('pt-BR');
   };
 
   if (checkingAdmin) {
     return (
       <View style={[s.container, s.center, { paddingTop: insets.top }]}>
-        <ActivityIndicator size="large" color="#A855F7" />
+        <ActivityIndicator size="large" color="#E3A008" />
       </View>
     );
   }
 
   return (
     <View style={[s.container, { paddingTop: insets.top }]}>
+      {/* Header iFood Style */}
       <View style={s.header}>
         <Pressable onPress={() => router.back()} style={s.backBtn}>
           <Ionicons name="chevron-back" size={24} color="#1A1A1A" />
         </Pressable>
         <View style={{ flex: 1 }}>
-          <Text style={s.headerTitle}>Gerenciar Cupons</Text>
+          <Text style={s.headerTitle}>Gestão de Cupons</Text>
           <Text style={s.headerSub}>{activeCoupons.length} ativo(s) · {inactiveCoupons.length} inativo(s)</Text>
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Pressable 
-            style={s.homeBtn} 
-            onPress={() => {
-              setTempHomeConfig(homeConfig);
-              setHomeConfigModalVisible(true);
-            }}
-          >
-            <Ionicons name="home-outline" size={16} color="#C1440E" />
-            <Text style={s.homeBtnText}>Home</Text>
-          </Pressable>
-          <Pressable style={s.addBtn} onPress={() => openModal()}>
-            <Ionicons name="add" size={20} color="#FFF" />
-            <Text style={s.addBtnText}>Novo</Text>
-          </Pressable>
-        </View>
+        <Pressable style={s.addBtn} onPress={() => openModal()}>
+          <Ionicons name="add" size={20} color="#FFF" />
+          <Text style={s.addBtnText}>Novo Cupom</Text>
+        </Pressable>
       </View>
 
       {loading ? (
-        <View style={s.center}><ActivityIndicator size="large" color="#A855F7" /></View>
+        <View style={s.center}><ActivityIndicator size="large" color="#E3A008" /></View>
       ) : (
         <ScrollView contentContainerStyle={s.listContent}>
-          {/* Banner indicador da configuração da Home */}
-          <Pressable 
-            style={s.homeStatusCard} 
-            onPress={() => {
-              setTempHomeConfig(homeConfig);
-              setHomeConfigModalVisible(true);
-            }}
-          >
-            <View style={s.homeStatusIconBg}>
-              <Ionicons name="sparkles" size={18} color="#C1440E" />
+          {/* Cupons Ativos */}
+          <View style={s.sectionHeaderRow}>
+            <Text style={s.sectionTitle}>Cupons Ativos</Text>
+            <View style={s.badgeCounter}>
+              <Text style={s.badgeCounterText}>{activeCoupons.length}</Text>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={s.homeStatusTitle}>
-                Exibição na Home: {homeConfig.mode === 'auto' ? 'Modo Automático' : 'Modo Manual'}
-              </Text>
-              <Text style={s.homeStatusSub}>
-                {homeConfig.mode === 'auto'
-                  ? `Critério: ${homeConfig.auto_criteria === 'recent' ? 'Mais recentes' : 'Maior desconto'} (Máx: ${homeConfig.max_items || 5})`
-                  : 'Apenas cupons marcados com "Na Home" aparecem na home'}
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color="#9CA3AF" />
-          </Pressable>
+          </View>
 
-          <Text style={s.sectionTitle}>Cupons Ativos ({activeCoupons.length})</Text>
           {activeCoupons.length === 0 ? (
-            <View style={s.emptySection}><Text style={s.emptySectionText}>Nenhum cupom ativo</Text></View>
+            <View style={s.emptySection}>
+              <Ionicons name="ticket-outline" size={32} color="#D1D5DB" />
+              <Text style={s.emptySectionText}>Nenhum cupom ativo no momento</Text>
+            </View>
           ) : activeCoupons.map(c => (
-            <CouponCard 
-              key={c.id} 
-              coupon={c} 
-              formatExpiry={formatExpiry} 
-              onEdit={() => openModal(c)} 
-              onDelete={() => handleDelete(c)} 
-              onToggle={() => handleToggleActive(c)} 
+            <TicketCard
+              key={c.id}
+              coupon={c}
+              formatExpiry={formatExpiry}
+              copiedId={copiedId}
+              onCopy={handleCopyCode}
+              onEdit={() => openModal(c)}
+              onDelete={() => handleDelete(c)}
+              onToggle={() => handleToggleActive(c)}
               onToggleHome={() => handleToggleHome(c)}
             />
           ))}
 
+          {/* Cupons Inativos */}
           {inactiveCoupons.length > 0 && (
             <>
-              <Text style={[s.sectionTitle, { marginTop: 20 }]}>Cupons Inativos ({inactiveCoupons.length})</Text>
+              <View style={[s.sectionHeaderRow, { marginTop: 24 }]}>
+                <Text style={[s.sectionTitle, { color: '#6B7280' }]}>Cupons Inativos</Text>
+                <View style={[s.badgeCounter, { backgroundColor: '#E5E7EB' }]}>
+                  <Text style={[s.badgeCounterText, { color: '#4B5563' }]}>{inactiveCoupons.length}</Text>
+                </View>
+              </View>
+
               {inactiveCoupons.map(c => (
-                <CouponCard 
-                  key={c.id} 
-                  coupon={c} 
-                  formatExpiry={formatExpiry} 
-                  onEdit={() => openModal(c)} 
-                  onDelete={() => handleDelete(c)} 
-                  onToggle={() => handleToggleActive(c)} 
+                <TicketCard
+                  key={c.id}
+                  coupon={c}
+                  formatExpiry={formatExpiry}
+                  copiedId={copiedId}
+                  onCopy={handleCopyCode}
+                  onEdit={() => openModal(c)}
+                  onDelete={() => handleDelete(c)}
+                  onToggle={() => handleToggleActive(c)}
                   onToggleHome={() => handleToggleHome(c)}
                 />
               ))}
@@ -485,374 +532,416 @@ export default function AdminCupons() {
         </ScrollView>
       )}
 
-      <Modal visible={modalVisible} animationType="none" statusBarTranslucent navigationBarTranslucent presentationStyle="pageSheet" onRequestClose={() => setModalVisible(false)}>
-        <SafeAreaProvider>
-          <View style={s.modalContainer}>
-          <View style={s.modalHeader}>
-            <Text style={s.modalTitle}>{editingCoupon ? 'Editar Cupom' : 'Novo Cupom'}</Text>
-            <Pressable onPress={() => setModalVisible(false)} style={s.modalCloseBtn}>
-              <Ionicons name="close" size={22} color="#1A1A1A" />
-            </Pressable>
-          </View>
-          <ScrollView contentContainerStyle={s.modalBody}>
+      {/* Modal Guiado de Templates */}
+      <CouponTemplateSelectorModal
+        visible={templateModalVisible}
+        onClose={() => setTemplateModalVisible(false)}
+        onSelectTemplate={handleSelectTemplate}
+        onSelectScratch={handleSelectScratch}
+      />
 
-            {/* Tipo + Valor */}
-            <View style={s.row}>
-              <View style={{ flex: 1 }}>
-                <Text style={s.fieldLabel}>Tipo *</Text>
-                <View style={s.typeRow}>
-                  {[{ key: 'fixed', label: 'R$' }, { key: 'percentage', label: '%' }].map(t => (
-                    <Pressable
-                      key={t.key}
-                      style={[s.typeBtn, form.type === t.key && s.typeBtnActive]}
-                      onPress={() => updateField({ type: t.key })}
-                    >
-                      <Text style={[s.typeBtnText, form.type === t.key && s.typeBtnTextActive]}>{t.label}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </View>
-              <View style={{ flex: 2 }}>
-                <Text style={s.fieldLabel}>Valor *</Text>
-                <TextInput
-                  style={s.input}
-                  placeholder={form.type === 'percentage' ? '10' : '5,00'}
-                  value={form.value}
-                  onChangeText={v => updateField({ value: v })}
-                  keyboardType="decimal-pad"
-                  placeholderTextColor="#9CA3AF"
-                />
-              </View>
-            </View>
-
-            {/* Código customizado (opcional) */}
-            <Text style={s.fieldLabel}>Código do cupom (opcional)</Text>
-            <TextInput
-              style={s.input}
-              placeholder="Deixe vazio pra gerar automático"
-              value={form.customCode}
-              onChangeText={v => updateField({ customCode: v.toUpperCase() })}
-              autoCapitalize="characters"
-              maxLength={20}
-              placeholderTextColor="#9CA3AF"
-            />
-
-            {/* Mostrar código no título */}
-            <View style={s.permanentRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={s.fieldLabel}>Mostrar código no título</Text>
-                <Text style={s.permanentSub}>Em vez de "10%", o título vira o código do cupom</Text>
-              </View>
-              <Switch
-                value={form.showCodeInTitle}
-                onValueChange={v => updateField({ showCodeInTitle: v })}
-                trackColor={{ false: '#E5E7EB', true: '#A855F7' }}
-                thumbColor="#FFF"
-              />
-            </View>
-
-            {/* Exibir na Tela Inicial (Home) */}
-            <View style={s.permanentRow}>
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Ionicons name="home" size={15} color="#C1440E" />
-                  <Text style={s.fieldLabel}>Exibir na Tela Inicial</Text>
-                </View>
-                <Text style={s.permanentSub}>Destaca este cupom no carrossel da home do app</Text>
-              </View>
-              <Switch
-                value={form.showOnHome}
-                onValueChange={v => updateField({ showOnHome: v })}
-                trackColor={{ false: '#E5E7EB', true: '#E3A008' }}
-                thumbColor="#FFF"
-              />
-            </View>
-
-            {/* Min order */}
-            <Text style={s.fieldLabel}>Pedido mínimo *</Text>
-            <TextInput
-              style={s.input}
-              placeholder="Ex: 15,00"
-              value={form.minOrderValue}
-              onChangeText={v => updateField({ minOrderValue: v })}
-              keyboardType="decimal-pad"
-              placeholderTextColor="#9CA3AF"
-            />
-
-            {/* Data/hora expiração */}
-            <Text style={s.fieldLabel}>Expira em *</Text>
-            <Pressable style={s.input} onPress={() => setShowDatePicker(true)}>
-              <Text style={{ color: '#1A1A1A', fontWeight: '600' }}>
-                {formatExpiryPTBR(form.expiresAt)}
-              </Text>
-            </Pressable>
-            {showDatePicker && (
-              <DateTimePicker
-                value={form.expiresAt}
-                mode="date"
-                minimumDate={new Date()}
-                onChange={(_, selected) => {
-                  setShowDatePicker(false);
-                  if (!selected) return;
-                  const merged = new Date(form.expiresAt);
-                  merged.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate());
-                  updateField({ expiresAt: merged });
-                  if (Platform.OS === 'ios') setShowTimePicker(true);
-                  else setTimeout(() => setShowTimePicker(true), 200);
-                }}
-              />
-            )}
-            {showTimePicker && (
-              <DateTimePicker
-                value={form.expiresAt}
-                mode="time"
-                onChange={(_, selected) => {
-                  setShowTimePicker(false);
-                  if (!selected) return;
-                  const merged = new Date(form.expiresAt);
-                  merged.setHours(selected.getHours(), selected.getMinutes());
-                  updateField({ expiresAt: merged });
-                }}
-              />
-            )}
-
-            {/* Qtde disponível */}
-            <Text style={s.fieldLabel}>Quantidade disponível</Text>
-            <TextInput
-              style={s.input}
-              placeholder="Deixe vazio para ilimitado"
-              value={form.quantityAvailable}
-              onChangeText={v => updateField({ quantityAvailable: v })}
-              keyboardType="number-pad"
-              placeholderTextColor="#9CA3AF"
-            />
-
-            {/* Limite de uso por pessoa */}
-            <Text style={s.fieldLabel}>Limite de uso por pessoa</Text>
-            <TextInput
-              style={s.input}
-              placeholder="Deixe vazio para ilimitado"
-              value={form.maxUsesPerUser}
-              onChangeText={v => updateField({ maxUsesPerUser: v })}
-              keyboardType="number-pad"
-              placeholderTextColor="#9CA3AF"
-            />
-
-            {/* Categorias (opcional) */}
-            {availableCategories.length > 0 && (
-              <>
-                <Text style={s.fieldLabel}>Restaurantes/Categorias (opcional)</Text>
-                <View style={s.chipsWrap}>
-                  {availableCategories.map(cat => {
-                    const selected = form.restrictedCategories.includes(cat);
-                    return (
-                      <Pressable key={cat} style={[s.chip, selected && s.chipSelected]} onPress={() => toggleRestrictedCategory(cat)}>
-                        <Text style={[s.chipText, selected && s.chipTextSelected]}>{cat}</Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </>
-            )}
-
-            {/* Regras (geradas, editáveis) */}
-            <Text style={s.fieldLabel}>Regras (geradas automaticamente, editável)</Text>
-            <TextInput
-              style={[s.input, s.textarea]}
-              value={form.rulesText}
-              onChangeText={v => setForm(f => ({ ...f, rulesText: v, rulesEdited: true }))}
-              multiline
-              numberOfLines={5}
-              textAlignVertical="top"
-              placeholderTextColor="#9CA3AF"
-            />
-
-            {/* Preview em tempo real */}
-            {form.value.trim() !== '' && (
-              <>
-                <Text style={s.fieldLabel}>Pré-visualização</Text>
-                <View style={s.previewCard}>
-                  <View style={s.previewTitleRow}>
-                    <Ionicons name="pricetag" size={16} color="#10B981" />
-                    <Text style={s.previewTitle}>{preview.title}</Text>
-                  </View>
-                  <Text style={s.previewDescription}>{preview.description}</Text>
-                  {!!preview.minOrderText && <Text style={s.previewMeta}>{preview.minOrderText}</Text>}
-                </View>
-              </>
-            )}
-
-            <Pressable style={[s.saveBtn, saving && { opacity: 0.7 }]} onPress={handleSave} disabled={saving}>
-              {saving ? <ActivityIndicator color="#FFF" /> : <Text style={s.saveBtnText}>{editingCoupon ? 'Salvar Alterações' : 'Criar Cupom'}</Text>}
-            </Pressable>
-          </ScrollView>
-        </View>
-        </SafeAreaProvider>
-      </Modal>
-
-      {/* Modal de Configuração de Cupons da Home */}
-      <Modal 
-        visible={homeConfigModalVisible} 
-        animationType="fade" 
-        transparent 
-        onRequestClose={() => setHomeConfigModalVisible(false)}
-      >
-        <View style={s.dialogOverlay}>
-          <View style={s.dialogBox}>
-            <View style={s.dialogHeader}>
+      {/* Modal de Criação / Edição */}
+      <Modal visible={modalVisible} animationType="slide" statusBarTranslucent navigationBarTranslucent presentationStyle="pageSheet" onRequestClose={() => setModalVisible(false)}>
+                  <View style={s.modalContainer}>
+            <View style={s.modalHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Ionicons name="home" size={20} color="#C1440E" />
-                <Text style={s.dialogTitle}>Cupons na Tela Inicial</Text>
+                <View style={s.modalIconBg}>
+                  <Ionicons name="ticket" size={18} color="#C1440E" />
+                </View>
+                <View>
+                  <Text style={s.modalTitle}>{editingCoupon ? 'Editar Cupom' : 'Configurar Cupom'}</Text>
+                  {form.templateOrigin !== 'custom' && (
+                    <Text style={s.modalSub}>
+                      Template: {form.badgeLabel || 'Ideia Guia'}
+                    </Text>
+                  )}
+                </View>
               </View>
-              <Pressable onPress={() => setHomeConfigModalVisible(false)} style={s.modalCloseBtn}>
-                <Ionicons name="close" size={20} color="#1A1A1A" />
+              <Pressable onPress={() => setModalVisible(false)} style={s.modalCloseBtn}>
+                <Ionicons name="close" size={22} color="#1A1A1A" />
               </Pressable>
             </View>
 
-            <ScrollView contentContainerStyle={{ padding: 16 }}>
-              <Text style={s.dialogSubtitle}>Escolha como os cupons aparecem na tela inicial do app:</Text>
-
-              {/* Seletor de Modo */}
-              <View style={s.configModeRow}>
-                <Pressable
-                  style={[s.configModeBtn, tempHomeConfig.mode === 'auto' && s.configModeBtnActive]}
-                  onPress={() => setTempHomeConfig(prev => ({ ...prev, mode: 'auto' }))}
-                >
-                  <Ionicons name="flash-outline" size={18} color={tempHomeConfig.mode === 'auto' ? '#C1440E' : '#6B7280'} />
-                  <Text style={[s.configModeText, tempHomeConfig.mode === 'auto' && s.configModeTextActive]}>
-                    Automático
-                  </Text>
-                </Pressable>
-
-                <Pressable
-                  style={[s.configModeBtn, tempHomeConfig.mode === 'manual' && s.configModeBtnActive]}
-                  onPress={() => setTempHomeConfig(prev => ({ ...prev, mode: 'manual' }))}
-                >
-                  <Ionicons name="hand-right-outline" size={18} color={tempHomeConfig.mode === 'manual' ? '#C1440E' : '#6B7280'} />
-                  <Text style={[s.configModeText, tempHomeConfig.mode === 'manual' && s.configModeTextActive]}>
-                    Manual
-                  </Text>
-                </Pressable>
-              </View>
-
-              {tempHomeConfig.mode === 'auto' ? (
-                <View style={s.configSection}>
-                  <Text style={s.configLabel}>Critério de seleção automática:</Text>
-                  <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
-                    <Pressable
-                      style={[s.criteriaBtn, tempHomeConfig.auto_criteria === 'highest_discount' && s.criteriaBtnActive]}
-                      onPress={() => setTempHomeConfig(prev => ({ ...prev, auto_criteria: 'highest_discount' }))}
-                    >
-                      <Text style={[s.criteriaText, tempHomeConfig.auto_criteria === 'highest_discount' && s.criteriaTextActive]}>
-                        Maior Desconto
-                      </Text>
-                    </Pressable>
-
-                    <Pressable
-                      style={[s.criteriaBtn, tempHomeConfig.auto_criteria === 'recent' && s.criteriaBtnActive]}
-                      onPress={() => setTempHomeConfig(prev => ({ ...prev, auto_criteria: 'recent' }))}
-                    >
-                      <Text style={[s.criteriaText, tempHomeConfig.auto_criteria === 'recent' && s.criteriaTextActive]}>
-                        Mais Recentes
-                      </Text>
-                    </Pressable>
-                  </View>
-
-                  <Text style={s.configLabel}>Quantidade máxima de cupons na home:</Text>
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    {[3, 5, 8].map(qty => (
+            <ScrollView contentContainerStyle={s.modalBody}>
+              {/* Tipo + Valor */}
+              <View style={s.row}>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.fieldLabel}>Tipo de Desconto *</Text>
+                  <View style={s.typeRow}>
+                    {[{ key: 'percentage', label: '%' }, { key: 'fixed', label: 'R$' }].map(t => (
                       <Pressable
-                        key={qty}
-                        style={[s.qtyBtn, tempHomeConfig.max_items === qty && s.qtyBtnActive]}
-                        onPress={() => setTempHomeConfig(prev => ({ ...prev, max_items: qty }))}
+                        key={t.key}
+                        style={[s.typeBtn, form.type === t.key && s.typeBtnActive]}
+                        onPress={() => updateField({ type: t.key })}
                       >
-                        <Text style={[s.qtyText, tempHomeConfig.max_items === qty && s.qtyTextActive]}>
-                          {qty} cupons
-                        </Text>
+                        <Text style={[s.typeBtnText, form.type === t.key && s.typeBtnTextActive]}>{t.label}</Text>
                       </Pressable>
                     ))}
                   </View>
                 </View>
-              ) : (
-                <View style={s.configSection}>
-                  <View style={s.manualTipBox}>
-                    <Ionicons name="information-circle-outline" size={20} color="#C1440E" />
-                    <Text style={s.manualTipText}>
-                      No modo manual, use o botão de casinha em cada cupom da lista para ativar ou desativar a exibição dele na home.
+                <View style={{ flex: 1.5 }}>
+                  <Text style={s.fieldLabel}>Valor *</Text>
+                  <TextInput
+                    style={s.input}
+                    placeholder={form.type === 'percentage' ? '10' : '5,00'}
+                    value={form.value}
+                    onChangeText={v => updateField({ value: v })}
+                    keyboardType="decimal-pad"
+                    placeholderTextColor="#9CA3AF"
+                  />
+                </View>
+              </View>
+
+              {/* Código customizado */}
+              <Text style={s.fieldLabel}>Código do Cupom (opcional)</Text>
+              <TextInput
+                style={s.input}
+                placeholder="Vazio = gera automático (ex: DESCONTO10PCT)"
+                value={form.customCode}
+                onChangeText={v => updateField({ customCode: v.toUpperCase() })}
+                autoCapitalize="characters"
+                maxLength={20}
+                placeholderTextColor="#9CA3AF"
+              />
+
+              {/* Badge / Etiqueta Promocional */}
+              <Text style={s.fieldLabel}>Badge / Etiqueta Promocional (opcional)</Text>
+              <TextInput
+                style={s.input}
+                placeholder="Ex: NOVIDADE, 1º PEDIDO, IMPERDÍVEL"
+                value={form.badgeLabel}
+                onChangeText={v => updateField({ badgeLabel: v.toUpperCase() })}
+                autoCapitalize="characters"
+                maxLength={18}
+                placeholderTextColor="#9CA3AF"
+              />
+
+              {/* Pedido mínimo */}
+              <Text style={s.fieldLabel}>Pedido Mínimo (R$)</Text>
+              <TextInput
+                style={s.input}
+                placeholder="Ex: 30,00 (deixe vazio se não houver)"
+                value={form.minOrderValue}
+                onChangeText={v => updateField({ minOrderValue: v })}
+                keyboardType="decimal-pad"
+                placeholderTextColor="#9CA3AF"
+              />
+
+              {/* Mostrar código no título */}
+              <View style={s.switchCard}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={s.switchCardLabel}>Mostrar código no título</Text>
+                  <Text style={s.switchCardSub}>Exibe o código no card em vez de "10% OFF"</Text>
+                </View>
+                <Switch
+                  value={form.showCodeInTitle}
+                  onValueChange={v => updateField({ showCodeInTitle: v })}
+                  trackColor={{ false: '#E5E7EB', true: '#E3A008' }}
+                  thumbColor="#FFF"
+                />
+              </View>
+
+              {/* Exibir na Home */}
+              <View style={s.switchCard}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={s.switchCardLabel}>Exibir na Home</Text>
+                  <Text style={s.switchCardSub}>Destaca o cupom na vitrine da tela inicial</Text>
+                </View>
+                <Switch
+                  value={form.showOnHome}
+                  onValueChange={v => updateField({ showOnHome: v })}
+                  trackColor={{ false: '#E5E7EB', true: '#E3A008' }}
+                  thumbColor="#FFF"
+                />
+              </View>
+
+              {/* Validade / Permanente */}
+              <View style={s.switchCard}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={s.switchCardLabel}>Cupom Permanente</Text>
+                  <Text style={s.switchCardSub}>Sem data de expiração</Text>
+                </View>
+                <Switch
+                  value={form.isPermanent}
+                  onValueChange={v => updateField({ isPermanent: v })}
+                  trackColor={{ false: '#E5E7EB', true: '#E3A008' }}
+                  thumbColor="#FFF"
+                />
+              </View>
+
+              {!form.isPermanent && (
+                <>
+                  <Text style={s.fieldLabel}>Data de Expiração *</Text>
+                  <Pressable style={s.inputDate} onPress={() => setShowDatePicker(true)}>
+                    <Ionicons name="calendar-outline" size={18} color="#C1440E" style={{ marginRight: 8 }} />
+                    <Text style={{ color: '#1A1A1A', fontWeight: '700', fontSize: 14 }}>
+                      {formatExpiryPTBR(form.expiresAt)}
                     </Text>
+                  </Pressable>
+                  {showDatePicker && (
+                    <DateTimePicker
+                      value={form.expiresAt}
+                      mode="date"
+                      minimumDate={new Date()}
+                      onChange={(_, selected) => {
+                        setShowDatePicker(false);
+                        if (!selected) return;
+                        const merged = new Date(form.expiresAt);
+                        merged.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate());
+                        updateField({ expiresAt: merged });
+                        if (Platform.OS === 'ios') setShowTimePicker(true);
+                        else setTimeout(() => setShowTimePicker(true), 200);
+                      }}
+                    />
+                  )}
+                  {showTimePicker && (
+                    <DateTimePicker
+                      value={form.expiresAt}
+                      mode="time"
+                      onChange={(_, selected) => {
+                        setShowTimePicker(false);
+                        if (!selected) return;
+                        const merged = new Date(form.expiresAt);
+                        merged.setHours(selected.getHours(), selected.getMinutes());
+                        updateField({ expiresAt: merged });
+                      }}
+                    />
+                  )}
+                </>
+              )}
+
+              {/* Limites de uso */}
+              <View style={s.row}>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.fieldLabel}>Limite Global</Text>
+                  <TextInput
+                    style={s.input}
+                    placeholder="Ilimitado"
+                    value={form.quantityAvailable}
+                    onChangeText={v => updateField({ quantityAvailable: v })}
+                    keyboardType="number-pad"
+                    placeholderTextColor="#9CA3AF"
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.fieldLabel}>Limite por Pessoa</Text>
+                  <TextInput
+                    style={s.input}
+                    placeholder="Ilimitado"
+                    value={form.maxUsesPerUser}
+                    onChangeText={v => updateField({ maxUsesPerUser: v })}
+                    keyboardType="number-pad"
+                    placeholderTextColor="#9CA3AF"
+                  />
+                </View>
+              </View>
+
+              {/* Categorias Restritas */}
+              {availableCategories.length > 0 && (
+                <>
+                  <Text style={s.fieldLabel}>Categorias Válidas (opcional)</Text>
+                  <View style={s.chipsWrap}>
+                    {availableCategories.map(cat => {
+                      const selected = form.restrictedCategories.includes(cat);
+                      return (
+                        <Pressable
+                          key={cat}
+                          style={[s.chip, selected && s.chipSelected]}
+                          onPress={() => toggleRestrictedCategory(cat)}
+                        >
+                          <Text style={[s.chipText, selected && s.chipTextSelected]}>{cat}</Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </>
+              )}
+
+              {/* Regras geradas */}
+              <Text style={s.fieldLabel}>Regras do Cupom (editável)</Text>
+              <TextInput
+                style={[s.input, s.textarea]}
+                value={form.rulesText}
+                onChangeText={v => setForm(f => ({ ...f, rulesText: v, rulesEdited: true }))}
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
+                placeholderTextColor="#9CA3AF"
+              />
+
+              {/* Preview em tempo real */}
+              {form.value.trim() !== '' && (
+                <View style={s.ticketPreviewWrapper}>
+                  <Text style={s.fieldLabel}>Pré-visualização do Ticket</Text>
+                  <View style={s.previewCard}>
+                    <View style={s.previewHeader}>
+                      <View style={s.previewTag}>
+                        <Ionicons name="pricetag" size={12} color="#C1440E" />
+                        <Text style={s.previewTagText}>{preview.code}</Text>
+                      </View>
+                      <Text style={s.previewBadgeValue}>{preview.title}</Text>
+                    </View>
+                    <Text style={s.previewDesc}>{preview.description}</Text>
+                    {!!preview.minOrderText && (
+                      <Text style={s.previewMinOrder}>{preview.minOrderText}</Text>
+                    )}
                   </View>
                 </View>
               )}
 
-              <Pressable 
-                style={[s.saveHomeBtn, savingHomeConfig && { opacity: 0.7 }]}
-                onPress={handleSaveHomeConfig}
-                disabled={savingHomeConfig}
+              {/* Botão de Salvar */}
+              <Pressable
+                style={[s.saveBtn, saving && { opacity: 0.7 }]}
+                onPress={handleSave}
+                disabled={saving}
               >
-                {savingHomeConfig ? (
+                {saving ? (
                   <ActivityIndicator color="#FFF" />
                 ) : (
-                  <Text style={s.saveHomeBtnText}>Salvar Configuração</Text>
+                  <Text style={s.saveBtnText}>
+                    {editingCoupon ? 'Salvar Alterações' : 'Criar Cupom'}
+                  </Text>
                 )}
               </Pressable>
             </ScrollView>
           </View>
-        </View>
-      </Modal>
+              </Modal>
     </View>
   );
 }
 
-function CouponCard({ coupon, formatExpiry, onEdit, onDelete, onToggle, onToggleHome }) {
+// ─── Componente TicketCard (Estilo iFood Portal) ──────────────────────
+function TicketCard({ coupon, formatExpiry, copiedId, onCopy, onEdit, onDelete, onToggle, onToggleHome }) {
   const isActive = coupon.active;
   const isHome = coupon.show_on_home;
   const value = coupon.discount_value;
+  const isCopied = copiedId === coupon.id;
+
   return (
-    <View style={[s.couponCard, isActive && s.couponCardActive]}>
-      <View style={s.couponLeft}>
-        <View style={[s.couponIconBg, { backgroundColor: isActive ? '#F3E8FF' : '#F3F4F6' }]}>
-          <Ionicons name="pricetag-outline" size={18} color={isActive ? '#A855F7' : '#9CA3AF'} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            <Text style={s.couponCode}>{coupon.code}</Text>
-            {isHome ? (
-              <View style={s.homeBadge}>
-                <Ionicons name="home" size={10} color="#C1440E" />
-                <Text style={s.homeBadgeText}>Na Home</Text>
+    <View style={[s.ticketCard, !isActive && s.ticketCardInactive]}>
+      {/* Top Section */}
+      <View style={s.ticketBody}>
+        <View style={s.ticketHeaderRow}>
+          <Pressable
+            style={s.couponCodeBadge}
+            onPress={() => onCopy(coupon.code, coupon.id)}
+          >
+            <Ionicons name="pricetag" size={13} color="#C1440E" />
+            <Text style={s.couponCodeText}>{coupon.code}</Text>
+            <Ionicons
+              name={isCopied ? "checkmark-circle" : "copy-outline"}
+              size={13}
+              color={isCopied ? "#059669" : "#9CA3AF"}
+            />
+          </Pressable>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            {coupon.badge_label ? (
+              <View style={[s.statusPill, { backgroundColor: '#FEF3C7' }]}>
+                <Text style={[s.statusPillText, { color: '#92400E' }]}>{coupon.badge_label}</Text>
               </View>
             ) : null}
+            {isHome ? (
+              <View style={[s.statusPill, { backgroundColor: '#FEF3C7', flexDirection: 'row', alignItems: 'center', gap: 3 }]}>
+                <Ionicons name="home" size={10} color="#D97706" />
+                <Text style={[s.statusPillText, { color: '#92400E' }]}>Home</Text>
+              </View>
+            ) : null}
+            <View style={[s.statusPill, isActive ? s.statusPillActive : s.statusPillInactive]}>
+              <Text style={[s.statusPillText, isActive ? s.statusPillTextActive : s.statusPillTextInactive]}>
+                {isActive ? 'Ativo' : 'Pausado'}
+              </Text>
+            </View>
           </View>
-          {!!coupon.title && <Text style={s.couponTitle}>{coupon.title}</Text>}
-          <Text style={s.couponValue}>
-            {coupon.discount_type === 'percentage' ? `${value}% de desconto` : `R$ ${Number(value).toFixed(2)} de desconto`}
+        </View>
+
+        {/* Valor do desconto em destaque */}
+        <View style={s.discountValueRow}>
+          <Text style={s.discountValueText}>
+            {coupon.discount_type === 'percentage'
+              ? `${value}% OFF`
+              : `R$ ${Number(value).toFixed(2)} OFF`}
           </Text>
+        </View>
+
+        {coupon.title && coupon.title !== coupon.code && (
+          <Text style={s.ticketTitleText}>{coupon.title}</Text>
+        )}
+
+        {/* Metadados resumidos */}
+        <View style={s.metaContainer}>
           {coupon.min_order_value != null && (
-            <Text style={s.couponMinOrder}>Pedido mínimo: R$ {Number(coupon.min_order_value).toFixed(2)}</Text>
+            <View style={s.metaItem}>
+              <Ionicons name="cart-outline" size={13} color="#6B7280" />
+              <Text style={s.metaItemText}>
+                Mínimo: R$ {Number(coupon.min_order_value).toFixed(2)}
+              </Text>
+            </View>
           )}
-          {!!coupon.description && <Text style={s.couponDescription}>{coupon.description}</Text>}
-          <View style={s.couponMeta}>
-            <Text style={s.couponMetaText}>Usos: {coupon.current_uses || 0}{coupon.max_uses ? `/${coupon.max_uses}` : ''}</Text>
-            <Text style={s.couponMetaDot}>·</Text>
-            <Text style={s.couponMetaText}>Válido: {formatExpiry(coupon.expires_at)}</Text>
+
+          <View style={s.metaItem}>
+            <Ionicons name="people-outline" size={13} color="#6B7280" />
+            <Text style={s.metaItemText}>
+              Usos: {coupon.current_uses || 0}{coupon.max_uses ? `/${coupon.max_uses}` : ' (ilimitado)'}
+            </Text>
+          </View>
+
+          <View style={s.metaItem}>
+            <Ionicons name="time-outline" size={13} color="#6B7280" />
+            <Text style={s.metaItemText}>
+              Validade: {formatExpiry(coupon.expires_at)}
+            </Text>
           </View>
         </View>
       </View>
-      <View style={s.couponActions}>
-        <Switch value={isActive} onValueChange={onToggle} trackColor={{ false: '#E5E7EB', true: '#A855F7' }} thumbColor="#FFF" style={{ transform: [{ scale: 0.8 }] }} />
-        <View style={s.couponBtns}>
-          <Pressable 
-            style={[s.iconBtn, isHome && s.iconBtnHomeActive]} 
-            onPress={onToggleHome}
-            hitSlop={4}
+
+      {/* Ticket Cutout Line com Picote Tracejado (iFood Standard) */}
+      <View style={s.cutoutRow}>
+        <View style={s.cutoutCircleLeft} />
+        <View style={s.cutoutDashedLine} />
+        <View style={s.cutoutCircleRight} />
+      </View>
+
+      {/* Footer com Ações */}
+      <View style={s.ticketFooter}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Pressable
+            style={s.toggleBtn}
+            onPress={onToggle}
           >
-            <Ionicons name={isHome ? "home" : "home-outline"} size={16} color={isHome ? "#C1440E" : "#6B7280"} />
+            <Ionicons
+              name={isActive ? "pause-circle-outline" : "play-circle-outline"}
+              size={16}
+              color={isActive ? "#D97706" : "#059669"}
+            />
+            <Text style={[s.toggleBtnText, { color: isActive ? "#D97706" : "#059669" }]}>
+              {isActive ? 'Pausar' : 'Ativar'}
+            </Text>
           </Pressable>
-          <Pressable style={s.iconBtn} onPress={onEdit}>
-            <Ionicons name="pencil-outline" size={16} color="#6B7280" />
+
+          <Pressable
+            style={[s.toggleBtn, isHome && { backgroundColor: '#FEF3C7' }]}
+            onPress={onToggleHome}
+          >
+            <Ionicons
+              name={isHome ? "home" : "home-outline"}
+              size={15}
+              color={isHome ? "#D97706" : "#6B7280"}
+            />
+            <Text style={[s.toggleBtnText, { color: isHome ? "#D97706" : "#6B7280" }]}>
+              {isHome ? 'Na Home' : 'Home'}
+            </Text>
           </Pressable>
-          <Pressable style={[s.iconBtn, { backgroundColor: '#FEE2E2' }]} onPress={onDelete}>
-            <Ionicons name="trash-outline" size={16} color="#DC2626" />
+        </View>
+
+        <View style={s.actionBtnsGroup}>
+          <Pressable style={s.actionBtn} onPress={onEdit}>
+            <Ionicons name="pencil" size={14} color="#374151" />
+            <Text style={s.actionBtnText}>Editar</Text>
+          </Pressable>
+          <Pressable style={[s.actionBtn, s.deleteActionBtn]} onPress={onDelete}>
+            <Ionicons name="trash-outline" size={14} color="#DC2626" />
+            <Text style={s.deleteActionBtnText}>Excluir</Text>
           </Pressable>
         </View>
       </View>
@@ -860,95 +949,308 @@ function CouponCard({ coupon, formatExpiry, onEdit, onDelete, onToggle, onToggle
   );
 }
 
+// ─── Estilos iFood Portal (Âmbar #E3A008 / Terracota #C1440E) ───────
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8F9FA' },
-  header: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', paddingHorizontal: 16, paddingBottom: 14, paddingTop: 10, borderBottomWidth: 1, borderBottomColor: '#F0F0F0', gap: 8 },
-  backBtn: { padding: 8 },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: '#1A1A1A' },
-  headerSub: { fontSize: 11, color: '#9CA3AF', marginTop: 1 },
-  homeBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A' },
-  homeBtnText: { color: '#C1440E', fontWeight: '800', fontSize: 13 },
-  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 14, backgroundColor: '#A855F7' },
-  addBtnText: { color: '#FFF', fontWeight: '800', fontSize: 13 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+    paddingTop: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+    gap: 8,
+  },
+  backBtn: { padding: 8 },
+  headerTitle: { fontSize: 18, fontWeight: '900', color: '#1A1A1A' },
+  headerSub: { fontSize: 11, color: '#6B7280', marginTop: 1, fontWeight: '500' },
+  addBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 12,
+    backgroundColor: '#C1440E',
+    shadowColor: '#C1440E',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  addBtnText: { color: '#FFF', fontWeight: '900', fontSize: 13 },
   listContent: { padding: 16, paddingBottom: 40 },
-  homeStatusCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFBEB', borderRadius: 14, padding: 12, marginBottom: 14, borderWidth: 1, borderColor: '#FDE68A', gap: 10 },
-  homeStatusIconBg: { width: 34, height: 34, borderRadius: 10, backgroundColor: '#FEF3C7', alignItems: 'center', justifyContent: 'center' },
-  homeStatusTitle: { fontSize: 13, fontWeight: '800', color: '#92400E' },
-  homeStatusSub: { fontSize: 11, color: '#B45309', marginTop: 1 },
-  sectionTitle: { fontSize: 16, fontWeight: '900', color: '#1A1A1A', marginBottom: 10 },
-  emptySection: { backgroundColor: '#FFF', borderRadius: 16, padding: 24, alignItems: 'center', marginBottom: 8 },
-  emptySectionText: { color: '#9CA3AF', fontWeight: '600', fontSize: 14 },
-  couponCard: { backgroundColor: '#FFF', borderRadius: 18, padding: 14, flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 10, borderWidth: 1.5, borderColor: '#F3F4F6', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.03, shadowRadius: 6, elevation: 1 },
-  couponCardActive: { borderColor: '#E9D5FF' },
-  couponLeft: { flex: 1, flexDirection: 'row', gap: 12 },
-  couponIconBg: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  couponCode: { fontSize: 16, fontWeight: '900', color: '#1A1A1A', letterSpacing: 0.5 },
-  homeBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#FEF3C7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  homeBadgeText: { fontSize: 10, fontWeight: '800', color: '#C1440E' },
-  couponTitle: { fontSize: 13, fontWeight: '700', color: '#1A1A1A', marginTop: 2 },
-  couponValue: { fontSize: 12, fontWeight: '700', color: '#A855F7', marginTop: 2 },
-  couponMinOrder: { fontSize: 11, fontWeight: '600', color: '#6B7280', marginTop: 2 },
-  couponDescription: { fontSize: 11, color: '#9CA3AF', marginTop: 2, fontWeight: '500' },
-  couponMeta: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
-  couponMetaText: { fontSize: 10, fontWeight: '600', color: '#9CA3AF' },
-  couponMetaDot: { fontSize: 10, color: '#D1D5DB' },
-  couponActions: { alignItems: 'flex-end', gap: 8 },
-  couponBtns: { flexDirection: 'row', gap: 6 },
-  iconBtn: { width: 32, height: 32, borderRadius: 10, backgroundColor: '#F9FAFB', alignItems: 'center', justifyContent: 'center' },
-  iconBtnHomeActive: { backgroundColor: '#FEF3C7', borderWidth: 1, borderColor: '#F59E0B' },
-  modalContainer: { flex: 1, backgroundColor: '#F8F9FA' },
-  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 18, backgroundColor: '#FFF', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
-  modalTitle: { fontSize: 20, fontWeight: '900', color: '#1A1A1A' },
-  modalCloseBtn: { padding: 4, backgroundColor: '#F3F4F6', borderRadius: 10 },
-  modalBody: { padding: 20, paddingBottom: 60 },
-  fieldLabel: { fontSize: 11, fontWeight: '800', color: '#374151', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
-  input: { backgroundColor: '#FFF', borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: '#1A1A1A', fontWeight: '600', marginBottom: 16, justifyContent: 'center' },
-  textarea: { minHeight: 100, paddingTop: 12 },
-  row: { flexDirection: 'row', gap: 12 },
-  typeRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
-  typeBtn: { flex: 1, height: 48, borderRadius: 14, borderWidth: 1.5, borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFF' },
-  typeBtnActive: { backgroundColor: '#A855F7', borderColor: '#A855F7' },
-  typeBtnText: { fontSize: 16, fontWeight: '900', color: '#6B7280' },
-  typeBtnTextActive: { color: '#FFF' },
-  chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  chip: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 14, borderWidth: 1.5, borderColor: '#E5E7EB', backgroundColor: '#FFF' },
-  chipSelected: { backgroundColor: '#F3E8FF', borderColor: '#D8B4FE' },
-  chipText: { fontSize: 12, fontWeight: '700', color: '#6B7280' },
-  chipTextSelected: { color: '#A855F7' },
-  saveBtn: { backgroundColor: '#A855F7', borderRadius: 16, height: 52, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
-  saveBtnText: { color: '#FFF', fontWeight: '900', fontSize: 16 },
-  permanentRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', borderRadius: 14, padding: 14, borderWidth: 1.5, borderColor: '#E5E7EB', marginBottom: 16 },
-  permanentSub: { fontSize: 11, color: '#9CA3AF', marginTop: 2, fontWeight: '500' },
-  previewCard: { borderRadius: 14, padding: 16, backgroundColor: '#F8F9FA', borderWidth: 1.5, borderColor: '#E5E7EB', marginBottom: 16 },
-  previewTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
-  previewTitle: { fontSize: 18, fontWeight: '900', color: '#166534' },
-  previewDescription: { fontSize: 13, color: '#374151', fontWeight: '600', marginBottom: 4 },
-  previewMeta: { fontSize: 12, color: '#9CA3AF', fontWeight: '500' },
+  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  sectionTitle: { fontSize: 16, fontWeight: '900', color: '#1A1A1A' },
+  badgeCounter: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  badgeCounterText: { fontSize: 11, fontWeight: '900', color: '#92400E' },
+  emptySection: {
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    padding: 28,
+    alignItems: 'center',
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
+  },
+  emptySectionText: { color: '#9CA3AF', fontWeight: '700', fontSize: 13, marginTop: 6 },
 
-  /* Dialog de Configuração da Home */
-  dialogOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  dialogBox: { width: '100%', maxWidth: 420, backgroundColor: '#FFF', borderRadius: 20, overflow: 'hidden', maxHeight: '85%' },
-  dialogHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
-  dialogTitle: { fontSize: 17, fontWeight: '800', color: '#1A1A1A' },
-  dialogSubtitle: { fontSize: 13, color: '#4B5563', marginBottom: 14, fontWeight: '500' },
-  configModeRow: { flexDirection: 'row', gap: 10, marginBottom: 18 },
-  configModeBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, borderColor: '#E5E7EB', backgroundColor: '#FFF' },
-  configModeBtnActive: { borderColor: '#C1440E', backgroundColor: '#FFFBEB' },
-  configModeText: { fontSize: 14, fontWeight: '700', color: '#4B5563' },
-  configModeTextActive: { color: '#C1440E' },
-  configSection: { marginBottom: 18 },
-  configLabel: { fontSize: 12, fontWeight: '800', color: '#374151', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
-  criteriaBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10, borderWidth: 1.5, borderColor: '#E5E7EB', backgroundColor: '#FFF' },
-  criteriaBtnActive: { borderColor: '#E3A008', backgroundColor: '#FEF3C7' },
-  criteriaText: { fontSize: 13, fontWeight: '700', color: '#6B7280' },
-  criteriaTextActive: { color: '#B45309' },
-  qtyBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10, borderWidth: 1.5, borderColor: '#E5E7EB', backgroundColor: '#FFF' },
-  qtyBtnActive: { borderColor: '#E3A008', backgroundColor: '#FEF3C7' },
-  qtyText: { fontSize: 13, fontWeight: '700', color: '#6B7280' },
-  qtyTextActive: { color: '#B45309' },
-  manualTipBox: { flexDirection: 'row', gap: 10, backgroundColor: '#FFFBEB', padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#FDE68A', alignItems: 'center' },
-  manualTipText: { flex: 1, fontSize: 12, color: '#92400E', lineHeight: 17, fontWeight: '500' },
-  saveHomeBtn: { backgroundColor: '#C1440E', borderRadius: 14, height: 48, alignItems: 'center', justifyContent: 'center', marginTop: 10 },
-  saveHomeBtnText: { color: '#FFF', fontWeight: '800', fontSize: 15 },
+  // Ticket Card
+  ticketCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: '#FEF3C7',
+    marginBottom: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+    overflow: 'hidden',
+  },
+  ticketCardInactive: {
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FAFAFA',
+    opacity: 0.8,
+  },
+  ticketBody: { padding: 16, paddingBottom: 12 },
+  ticketHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  couponCodeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  couponCodeText: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#92400E',
+    letterSpacing: 0.5,
+  },
+  statusPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+  },
+  statusPillActive: { backgroundColor: '#D1FAE5' },
+  statusPillInactive: { backgroundColor: '#E5E7EB' },
+  statusPillText: { fontSize: 10, fontWeight: '900', textTransform: 'uppercase' },
+  statusPillTextActive: { color: '#065F46' },
+  statusPillTextInactive: { color: '#4B5563' },
+  discountValueRow: { marginTop: 2 },
+  discountValueText: { fontSize: 22, fontWeight: '900', color: '#1A1A1A' },
+  ticketTitleText: { fontSize: 13, fontWeight: '700', color: '#4B5563', marginTop: 2 },
+  metaContainer: { marginTop: 10, gap: 5 },
+  metaItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  metaItemText: { fontSize: 11, fontWeight: '600', color: '#6B7280' },
+
+  // Picote do ticket
+  cutoutRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 18,
+    position: 'relative',
+  },
+  cutoutCircleLeft: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#F8F9FA',
+    marginLeft: -8,
+    borderRightWidth: 1.5,
+    borderRightColor: '#FEF3C7',
+  },
+  cutoutCircleRight: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#F8F9FA',
+    marginRight: -8,
+    borderLeftWidth: 1.5,
+    borderLeftColor: '#FEF3C7',
+  },
+  cutoutDashedLine: {
+    flex: 1,
+    borderBottomWidth: 1.5,
+    borderBottomColor: '#E5E7EB',
+    borderStyle: 'dashed',
+    marginHorizontal: 4,
+  },
+
+  // Footer do ticket
+  ticketFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: '#FAFAFA',
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  toggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  toggleBtnText: { fontSize: 12, fontWeight: '800' },
+  actionBtnsGroup: { flexDirection: 'row', gap: 6 },
+  actionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+  },
+  actionBtnText: { fontSize: 12, fontWeight: '700', color: '#374151' },
+  deleteActionBtn: { backgroundColor: '#FEE2E2' },
+  deleteActionBtnText: { fontSize: 12, fontWeight: '700', color: '#DC2626' },
+
+  // Modal
+  modalContainer: { flex: 1, backgroundColor: '#F8F9FA' },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: '#FFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  modalIconBg: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#FEF3C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalTitle: { fontSize: 18, fontWeight: '900', color: '#1A1A1A' },
+  modalCloseBtn: { padding: 4, backgroundColor: '#F3F4F6', borderRadius: 8 },
+  modalBody: { padding: 18, paddingBottom: 50 },
+  fieldLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#374151',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  input: {
+    backgroundColor: '#FFF',
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    fontSize: 14,
+    color: '#1A1A1A',
+    fontWeight: '700',
+    marginBottom: 14,
+  },
+  inputDate: {
+    backgroundColor: '#FFF',
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  textarea: { minHeight: 90, paddingTop: 10 },
+  row: { flexDirection: 'row', gap: 10 },
+  typeRow: { flexDirection: 'row', gap: 6, marginBottom: 14 },
+  typeBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFF',
+  },
+  typeBtnActive: { backgroundColor: '#C1440E', borderColor: '#C1440E' },
+  typeBtnText: { fontSize: 14, fontWeight: '900', color: '#6B7280' },
+  typeBtnTextActive: { color: '#FFF' },
+  switchCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    marginBottom: 14,
+  },
+  switchCardLabel: { fontSize: 13, fontWeight: '800', color: '#1A1A1A' },
+  switchCardSub: { fontSize: 11, color: '#6B7280', marginTop: 1, fontWeight: '500' },
+  chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 },
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFF',
+  },
+  chipSelected: { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' },
+  chipText: { fontSize: 12, fontWeight: '700', color: '#6B7280' },
+  chipTextSelected: { color: '#92400E' },
+  ticketPreviewWrapper: { marginBottom: 14 },
+  previewCard: {
+    borderRadius: 14,
+    padding: 14,
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1.5,
+    borderColor: '#FDE68A',
+    borderStyle: 'dashed',
+  },
+  previewHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  previewTag: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  previewTagText: { fontSize: 13, fontWeight: '900', color: '#C1440E', letterSpacing: 0.5 },
+  previewBadgeValue: { fontSize: 14, fontWeight: '900', color: '#92400E' },
+  previewDesc: { fontSize: 12, color: '#4B5563', fontWeight: '700', marginTop: 2 },
+  previewMinOrder: { fontSize: 11, color: '#78350F', fontWeight: '500', marginTop: 2 },
+  saveBtn: {
+    backgroundColor: '#C1440E',
+    borderRadius: 14,
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 6,
+    shadowColor: '#C1440E',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  saveBtnText: { color: '#FFF', fontWeight: '900', fontSize: 15 },
 });

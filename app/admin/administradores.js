@@ -3,11 +3,13 @@ import {
   ActivityIndicator, Alert, TextInput, RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../supabaseConfig';
 import { isAdminUser, checkIsAdmin } from '../../utils/isAdmin';
+
+const OWNER_EMAILS = ['enzzobaraldo2008@gmail.com', 'maraysis9010@gmail.com'];
 
 const ERROR_MESSAGES_ADD = {
   forbidden: 'Você não tem permissão para adicionar administradores.',
@@ -24,6 +26,16 @@ const ERROR_MESSAGES_REMOVE = {
   self: 'Você não pode remover o seu próprio acesso.',
 };
 
+function getInitials(email) {
+  if (!email) return 'AD';
+  const prefix = email.split('@')[0].replace(/[._-]/g, ' ');
+  const parts = prefix.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return email.slice(0, 2).toUpperCase();
+}
+
 export default function AdminAdministradores() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -33,6 +45,7 @@ export default function AdminAdministradores() {
   const [admins, setAdmins] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
 
   const [newEmail, setNewEmail] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -139,12 +152,12 @@ export default function AdminAdministradores() {
   const handleConfirmRemove = (adm) => {
     const targetEmail = adm.email;
     Alert.alert(
-      'Remover Administrador',
+      'Revogar Acesso',
       `Tem certeza que deseja remover o acesso administrativo de ${targetEmail}?`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
-          text: 'Remover',
+          text: 'Revogar',
           style: 'destructive',
           onPress: () => executeRemoveAdmin(targetEmail),
         },
@@ -178,34 +191,53 @@ export default function AdminAdministradores() {
     }
   };
 
+  const isCurrentUserOwner = Boolean(
+    currentEmail &&
+      (OWNER_EMAILS.includes(currentEmail) ||
+        admins.some((adm) => adm.is_owner === true && adm.email?.toLowerCase() === currentEmail) ||
+        (admins.length > 0 && admins[0]?.email?.toLowerCase() === currentEmail))
+  );
+
+  const filteredAdmins = useMemo(() => {
+    if (!searchTerm.trim()) return admins;
+    const term = searchTerm.toLowerCase().trim();
+    return admins.filter(
+      (adm) =>
+        adm.email?.toLowerCase().includes(term) ||
+        adm.user_id?.toLowerCase().includes(term)
+    );
+  }, [admins, searchTerm]);
+
+  const ownersCount = useMemo(() => admins.filter((a) => a.is_owner || OWNER_EMAILS.includes(a.email?.toLowerCase())).length, [admins]);
+  const teamCount = admins.length - ownersCount;
+
   if (checkingAdmin) {
     return (
       <View style={[s.loadingContainer, { paddingTop: insets.top }]}>
-        <ActivityIndicator size="large" color="#4F46E5" />
+        <ActivityIndicator size="large" color="#C1440E" />
       </View>
     );
   }
 
-  const isCurrentUserOwner = Boolean(
-    currentEmail &&
-      (admins.some((adm) => adm.is_owner === true && adm.email?.toLowerCase() === currentEmail?.toLowerCase()) ||
-        (admins.length > 0 && admins[0]?.email?.toLowerCase() === currentEmail?.toLowerCase()))
-  );
-
   return (
     <View style={s.container}>
-      {/* Header — padrão app/admin/cupons.js:348-360 */}
+      {/* Header — padrão iFood Partner com paleta Batata Top */}
       <View style={[s.header, { paddingTop: insets.top + 8 }]}>
-        <Pressable onPress={() => router.back()} style={s.backBtn}>
+        <Pressable onPress={() => router.back()} style={s.backBtn} hitSlop={10}>
           <Ionicons name="chevron-back" size={24} color="#1A1A1A" />
         </Pressable>
         <View style={s.headerTitleContainer}>
           <View style={s.headerIconBg}>
-            <Ionicons name="shield-checkmark" size={20} color="#4F46E5" />
+            <Ionicons name="shield-checkmark" size={20} color="#C1440E" />
           </View>
-          <View>
-            <Text style={s.headerTitle}>Administradores</Text>
-            <Text style={s.headerSubtitle}>{admins.length} administrador(es) cadastrado(s)</Text>
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={s.headerTitle}>Gestão de Acessos</Text>
+              <View style={s.partnerBadge}>
+                <Text style={s.partnerBadgeText}>Parceiro</Text>
+              </View>
+            </View>
+            <Text style={s.headerSubtitle}>{admins.length} membro(s) cadastrado(s)</Text>
           </View>
         </View>
       </View>
@@ -213,13 +245,36 @@ export default function AdminAdministradores() {
       <ScrollView
         contentContainerStyle={s.scrollContent}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#4F46E5']} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#C1440E', '#E3A008']} />}
       >
+        {/* Quick Stats Bar */}
+        <View style={s.statsRow}>
+          <View style={s.statCard}>
+            <Text style={s.statLabel}>TOTAL</Text>
+            <Text style={s.statValue}>{admins.length}</Text>
+          </View>
+          <View style={[s.statCard, s.statCardHighlight]}>
+            <Text style={[s.statLabel, { color: '#92400E' }]}>DONOS</Text>
+            <Text style={[s.statValue, { color: '#78350F' }]}>{ownersCount}</Text>
+          </View>
+          <View style={s.statCard}>
+            <Text style={s.statLabel}>ADMINS</Text>
+            <Text style={s.statValue}>{teamCount < 0 ? 0 : teamCount}</Text>
+          </View>
+        </View>
+
         {/* Card: Adicionar Administrador (Apenas Donos) */}
         {isCurrentUserOwner ? (
           <View style={s.sectionCard}>
-            <Text style={s.sectionTitle}>Adicionar Novo Administrador</Text>
-            <Text style={s.sectionDesc}>Digite o e-mail da pessoa para conceder permissões administrativas.</Text>
+            <View style={s.sectionHeaderRow}>
+              <View style={s.sectionIconCircle}>
+                <Ionicons name="person-add" size={16} color="#C1440E" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.sectionTitle}>Convidar Administrador</Text>
+                <Text style={s.sectionDesc}>Conceda privilégios de gestão para a equipe da loja.</Text>
+              </View>
+            </View>
 
             <View style={s.inputContainer}>
               <Ionicons name="mail-outline" size={18} color="#9CA3AF" style={s.inputIcon} />
@@ -245,59 +300,85 @@ export default function AdminAdministradores() {
                 <ActivityIndicator color="#FFFFFF" size="small" />
               ) : (
                 <>
-                  <Ionicons name="person-add" size={16} color="#FFFFFF" />
-                  <Text style={s.addBtnText}>Adicionar Administrador</Text>
+                  <Ionicons name="key-outline" size={16} color="#FFFFFF" />
+                  <Text style={s.addBtnText}>Conceder Acesso</Text>
                 </>
               )}
             </Pressable>
           </View>
         ) : (
-          <View style={[s.sectionCard, { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <View style={[s.sectionCard, s.ownerWarningCard]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <Ionicons name="ribbon" size={20} color="#D97706" />
-              <Text style={{ fontSize: 13, fontWeight: '700', color: '#92400E', flex: 1 }}>
-                Apenas os proprietários principais podem adicionar ou remover administradores.
+              <Text style={s.ownerWarningText}>
+                Visualização protegida: apenas proprietários principais podem delegar ou revogar permissões.
               </Text>
             </View>
           </View>
         )}
 
-        {/* Lista de Administradores */}
+        {/* Search & List Header */}
         <View style={s.listHeaderRow}>
-          <Text style={s.listSectionTitle}>Administradores Atuais</Text>
+          <Text style={s.listSectionTitle}>Membros com Acesso</Text>
           <Pressable style={s.refreshBtn} onPress={loadAdmins} disabled={loading}>
-            <Ionicons name="refresh" size={16} color="#4F46E5" />
+            <Ionicons name="refresh" size={14} color="#C1440E" />
             <Text style={s.refreshBtnText}>Atualizar</Text>
           </Pressable>
         </View>
 
+        {/* Search Input */}
+        <View style={s.searchContainer}>
+          <Ionicons name="search" size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
+          <TextInput
+            style={s.searchInput}
+            value={searchTerm}
+            onChangeText={setSearchTerm}
+            placeholder="Filtrar por e-mail..."
+            placeholderTextColor="#9CA3AF"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          {searchTerm.length > 0 && (
+            <Pressable onPress={() => setSearchTerm('')} hitSlop={8}>
+              <Ionicons name="close-circle" size={16} color="#9CA3AF" />
+            </Pressable>
+          )}
+        </View>
+
+        {/* Admin List */}
         {loading ? (
           <View style={s.emptyContainer}>
-            <ActivityIndicator size="small" color="#4F46E5" />
-            <Text style={s.emptySub}>Carregando administradores...</Text>
+            <ActivityIndicator size="small" color="#C1440E" />
+            <Text style={s.emptySub}>Sincronizando administradores...</Text>
           </View>
-        ) : admins.length === 0 ? (
+        ) : filteredAdmins.length === 0 ? (
           <View style={s.emptyContainer}>
-            <Ionicons name="shield-outline" size={42} color="#D1D5DB" />
-            <Text style={s.emptyTitle}>Nenhum administrador encontrado</Text>
-            <Text style={s.emptySub}>A lista está vazia ou a função no banco ainda não foi configurada.</Text>
+            <Ionicons name="shield-outline" size={38} color="#D1D5DB" />
+            <Text style={s.emptyTitle}>
+              {searchTerm ? 'Nenhum resultado para a busca' : 'Nenhum administrador encontrado'}
+            </Text>
+            <Text style={s.emptySub}>
+              {searchTerm
+                ? 'Verifique se digitou o e-mail corretamente.'
+                : 'A lista está vazia ou a tabela ainda não possui registros.'}
+            </Text>
           </View>
         ) : (
           <View style={s.adminList}>
-            {admins.map((adm) => {
+            {filteredAdmins.map((adm) => {
               const isSelf = currentEmail && adm.email?.toLowerCase() === currentEmail;
-              const isOwner = adm.is_owner === true;
+              const isOwner = adm.is_owner === true || OWNER_EMAILS.includes(adm.email?.toLowerCase());
               const isRemoving = removingEmail === adm.email;
+              const initials = getInitials(adm.email);
 
               return (
                 <View key={adm.user_id || adm.email} style={s.adminCard}>
                   <View style={s.adminInfoRow}>
+                    {/* Avatar Initials Badge */}
                     <View style={[s.avatarBg, isOwner ? s.avatarOwner : s.avatarAdmin]}>
-                      <Ionicons
-                        name={isOwner ? 'ribbon' : 'person'}
-                        size={18}
-                        color={isOwner ? '#D97706' : '#4F46E5'}
-                      />
+                      <Text style={[s.avatarInitials, isOwner ? s.avatarInitialsOwner : s.avatarInitialsAdmin]}>
+                        {initials}
+                      </Text>
                     </View>
 
                     <View style={s.adminTextCol}>
@@ -307,35 +388,53 @@ export default function AdminAdministradores() {
                         </Text>
                       </View>
 
+                      {/* Status and Roles Badges */}
                       <View style={s.badgesRow}>
-                        {isOwner && (
+                        {isOwner ? (
                           <View style={s.ownerBadge}>
                             <Ionicons name="ribbon" size={10} color="#92400E" />
-                            <Text style={s.ownerBadgeText}>Dono</Text>
+                            <Text style={s.ownerBadgeText}>Proprietário</Text>
+                          </View>
+                        ) : (
+                          <View style={s.adminBadge}>
+                            <Text style={s.adminBadgeText}>Administrador</Text>
                           </View>
                         )}
+
                         {isSelf && (
                           <View style={s.selfBadge}>
                             <Text style={s.selfBadgeText}>Você</Text>
                           </View>
                         )}
+
+                        <View style={s.activeBadge}>
+                          <View style={s.activeDot} />
+                          <Text style={s.activeBadgeText}>Ativo</Text>
+                        </View>
+                      </View>
+
+                      {/* Access Pills standard */}
+                      <View style={s.permissionsRow}>
+                        <View style={s.permChip}>
+                          <Text style={s.permChipText}>
+                            {isOwner ? 'Acesso Total' : 'Operação & Cardápio'}
+                          </Text>
+                        </View>
                       </View>
                     </View>
 
-                    {/* Botão Remover (oculto para não-donos, para o próprio dono e para si mesmo) */}
+                    {/* Botão Revogar Acesso */}
                     {isCurrentUserOwner && !isOwner && !isSelf && (
                       <Pressable
                         style={[s.removeBtn, isRemoving && s.btnDisabled]}
                         onPress={() => handleConfirmRemove(adm)}
                         disabled={isRemoving}
+                        hitSlop={6}
                       >
                         {isRemoving ? (
                           <ActivityIndicator size="small" color="#DC2626" />
                         ) : (
-                          <>
-                            <Ionicons name="trash-outline" size={16} color="#DC2626" />
-                            <Text style={s.removeBtnText}>Remover</Text>
-                          </>
+                          <Ionicons name="trash-outline" size={16} color="#DC2626" />
                         )}
                       </Pressable>
                     )}
@@ -350,7 +449,6 @@ export default function AdminAdministradores() {
   );
 }
 
-// Estilos baseados em app/admin/index.js:438-677 e app/admin/cupons.js:573-610
 const s = StyleSheet.create({
   container: {
     flex: 1,
@@ -372,7 +470,7 @@ const s = StyleSheet.create({
     borderBottomColor: '#F0F0F0',
   },
   backBtn: {
-    padding: 8,
+    padding: 6,
     marginRight: 8,
   },
   headerTitleContainer: {
@@ -384,81 +482,152 @@ const s = StyleSheet.create({
   headerIconBg: {
     width: 40,
     height: 40,
-    borderRadius: 12,
-    backgroundColor: '#EEF2FF',
+    borderRadius: 14,
+    backgroundColor: '#FEF3C7',
     alignItems: 'center',
     justifyContent: 'center',
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '800',
     color: '#1A1A1A',
   },
+  partnerBadge: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  partnerBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#92400E',
+  },
   headerSubtitle: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#666666',
-    marginTop: 2,
+    marginTop: 1,
   },
   scrollContent: {
     padding: 16,
     paddingBottom: 40,
   },
 
-  // Card Adicionar
+  // Stats Counters Row
+  statsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
+  },
+  statCardHighlight: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
+  },
+  statLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#6B7280',
+    letterSpacing: 0.5,
+  },
+  statValue: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#1A1A1A',
+    marginTop: 2,
+  },
+
+  // Section Card
   sectionCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 18,
-    marginBottom: 20,
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 18,
     borderWidth: 1,
     borderColor: '#F0F0F0',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.02,
-    shadowRadius: 10,
-    elevation: 2,
+    shadowRadius: 8,
+    elevation: 1,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 12,
+  },
+  sectionIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#FFEDD5',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '800',
     color: '#1A1A1A',
-    marginBottom: 4,
   },
   sectionDesc: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#6B7280',
-    marginBottom: 14,
+    marginTop: 1,
+  },
+  ownerWarningCard: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
+    padding: 14,
+  },
+  ownerWarningText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#92400E',
+    flex: 1,
+    lineHeight: 16,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: '#E5E7EB',
-    borderRadius: 14,
-    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    backgroundColor: '#FAFAFA',
     paddingHorizontal: 12,
-    marginBottom: 12,
+    marginBottom: 10,
   },
   inputIcon: {
     marginRight: 8,
   },
   input: {
     flex: 1,
-    height: 44,
-    fontSize: 14,
+    height: 42,
+    fontSize: 13,
     color: '#1A1A1A',
   },
   addBtn: {
-    height: 44,
-    backgroundColor: '#4F46E5',
-    borderRadius: 14,
+    height: 42,
+    backgroundColor: '#C1440E',
+    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    shadowColor: '#4F46E5',
+    gap: 6,
+    shadowColor: '#C1440E',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.15,
     shadowRadius: 4,
     elevation: 2,
   },
@@ -467,22 +636,21 @@ const s = StyleSheet.create({
   },
   addBtnText: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '800',
   },
 
-  // Lista
+  // Search and List Headers
   listHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   listSectionTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '800',
     color: '#1A1A1A',
-    flex: 1,
   },
   refreshBtn: {
     flexDirection: 'row',
@@ -491,40 +659,72 @@ const s = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 8,
     borderRadius: 8,
-    backgroundColor: '#EEF2FF',
+    backgroundColor: '#FEF3C7',
   },
   refreshBtnText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
-    color: '#4F46E5',
+    color: '#C1440E',
   },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingHorizontal: 10,
+    height: 38,
+    marginBottom: 12,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 12,
+    color: '#1A1A1A',
+  },
+
+  // Admin Cards
   adminList: {
-    gap: 10,
+    gap: 8,
   },
   adminCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 14,
+    borderRadius: 16,
+    padding: 12,
     borderWidth: 1,
     borderColor: '#F0F0F0',
   },
   adminInfoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
   },
   avatarBg: {
-    width: 38,
-    height: 38,
+    width: 40,
+    height: 40,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarAdmin: {
-    backgroundColor: '#EEF2FF',
-  },
   avatarOwner: {
     backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  avatarAdmin: {
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  avatarInitials: {
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  avatarInitialsOwner: {
+    color: '#92400E',
+  },
+  avatarInitialsAdmin: {
+    color: '#4B5563',
   },
   adminTextCol: {
     flex: 1,
@@ -532,10 +732,9 @@ const s = StyleSheet.create({
   emailBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
   },
   adminEmail: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
     color: '#1A1A1A',
   },
@@ -544,6 +743,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     marginTop: 3,
+    flexWrap: 'wrap',
   },
   ownerBadge: {
     flexDirection: 'row',
@@ -551,7 +751,7 @@ const s = StyleSheet.create({
     gap: 3,
     backgroundColor: '#FEF3C7',
     paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingVertical: 1.5,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#FDE68A',
@@ -561,10 +761,23 @@ const s = StyleSheet.create({
     fontWeight: '800',
     color: '#92400E',
   },
+  adminBadge: {
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  adminBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#4B5563',
+  },
   selfBadge: {
     backgroundColor: '#F3F4F6',
     paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingVertical: 1.5,
     borderRadius: 6,
   },
   selfBadgeText: {
@@ -572,24 +785,57 @@ const s = StyleSheet.create({
     fontWeight: '700',
     color: '#4B5563',
   },
-  removeBtn: {
+  activeBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-    backgroundColor: '#FEE2E2',
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
   },
-  removeBtnText: {
-    fontSize: 12,
+  activeDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+  },
+  activeBadgeText: {
+    fontSize: 10,
     fontWeight: '700',
-    color: '#DC2626',
+    color: '#065F46',
+  },
+  permissionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  permChip: {
+    backgroundColor: '#F9FAFB',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  permChipText: {
+    fontSize: 9,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  removeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyContainer: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 30,
+    borderRadius: 18,
+    padding: 24,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
@@ -597,15 +843,15 @@ const s = StyleSheet.create({
     marginVertical: 10,
   },
   emptyTitle: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
     color: '#374151',
-    marginTop: 8,
+    marginTop: 6,
   },
   emptySub: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#9CA3AF',
     textAlign: 'center',
-    marginTop: 4,
+    marginTop: 3,
   },
 });
