@@ -1,9 +1,9 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { View, StyleSheet, BackHandler, StatusBar } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { COLORS } from '../constants/theme';
-import { ThemedAlertHost } from '../components/ThemedAlert';
+import { ThemedAlertHost, showErrorAlert } from '../components/ThemedAlert';
 import { useCheckoutFlow } from '../components/cart/useCheckoutFlow';
 import CartHeader from '../components/cart/CartHeader';
 import CartFooter from '../components/cart/CartFooter';
@@ -20,6 +20,31 @@ export default function CartScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const flow = useCheckoutFlow();
+
+  // Monitora se o usuário tinha itens na sacola e removeu o último item manualmente na 1ª etapa ('itens')
+  // NUNCA redireciona para home quando o pedido estiver sendo submetido ou finalizado com sucesso
+  const hadItemsRef = useRef(flow.items.length > 0);
+  const isRedirectingRef = useRef(false);
+
+  useEffect(() => {
+    if (flow.orderCompleted || flow.submitting || flow.isOrderFinishingRef.current) return;
+
+    if (flow.items.length > 0) {
+      hadItemsRef.current = true;
+    } else if (
+      hadItemsRef.current &&
+      flow.items.length === 0 &&
+      flow.step === 'itens' &&
+      !flow.isOrderFinishingRef.current &&
+      !isRedirectingRef.current
+    ) {
+      isRedirectingRef.current = true;
+      router.replace('/');
+      setTimeout(() => {
+        showErrorAlert('Sua sacola ficou vazia.', 'Sem itens no pedido');
+      }, 250);
+    }
+  }, [flow.items.length, flow.step, flow.submitting, flow.orderCompleted, flow.isOrderFinishingRef, router]);
 
   // Android hardware back handler sincronizado com o fluxo de 3 passos
   useEffect(() => {
@@ -86,6 +111,8 @@ export default function CartScreen() {
                 setDeliveryType={flow.setDeliveryType}
                 selectedAddress={flow.selectedAddress}
                 loadingAddress={flow.loadingAddress}
+                deliveryFee={flow.deliveryFee}
+                isDeliveryFeeEnabled={flow.isDeliveryFeeEnabled}
               />
             )}
 
@@ -103,6 +130,13 @@ export default function CartScreen() {
                 onOpenPaymentSelector={() => flow.setShowPaymentSelector(true)}
                 onOpenInstallments={flow.openInstallments}
                 installmentText={flow.installmentLabel}
+                wantsCutlery={flow.wantsCutlery}
+                onSelectCutlery={flow.setWantsCutlery}
+                cashChange={flow.cashChange}
+                onChangeCashChange={flow.setCashChange}
+                hasSavedPhone={flow.hasSavedPhone}
+                phone={flow.phone}
+                onChangePhone={flow.setPhone}
               />
             )}
           </View>
@@ -130,6 +164,8 @@ export default function CartScreen() {
             selectedSavedCard={flow.selectedSavedCard}
             savedCardCvv={flow.savedCardCvv}
             setSavedCardCvv={flow.setSavedCardCvv}
+            cardCpf={flow.cardCpf}
+            setCardCpf={flow.setCardCpf}
             wantsCutlery={flow.wantsCutlery}
             setWantsCutlery={flow.setWantsCutlery}
             submitting={flow.submitting}

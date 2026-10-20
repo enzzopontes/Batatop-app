@@ -780,6 +780,7 @@ const rootScrollY = new Animated.Value(0);
 const rootHeaderAnim = new Animated.Value(0);
 const rootHeaderSpacerAnim = new Animated.Value(0);
 const rootHeaderAnimCtxValue = { headerAnim: rootHeaderAnim, headerSpacerAnim: rootHeaderSpacerAnim };
+let splashAlreadyShown = false;
 
 export default function RootLayout() {
   const router = useRouter();
@@ -790,7 +791,7 @@ export default function RootLayout() {
   const [lastRoute, setLastRoute]       = useState('/');
   const [headerHidden, setHeaderHiddenState] = useState(false);
   const [authSheetVisible, setAuthSheetVisible] = useState(false);
-  const [showSplash, setShowSplash] = useState(true);
+  const [showSplash, setShowSplash] = useState(() => !splashAlreadyShown);
   const resetHeaderRef = useRef(() => {});
 
   // Permite que qualquer tela (ex: produto/[id].js, no gate de login do
@@ -843,7 +844,7 @@ export default function RootLayout() {
         // Enquanto a splash roda, NADA do resto do app é montado.
         // Isso evita que o carregamento do Header/Stack/Supabase etc.
         // concorra com a thread de JS e engasgue os primeiros frames do vídeo.
-        <AnimatedSplash onFinish={() => setShowSplash(false)} />
+        <AnimatedSplash onFinish={() => { splashAlreadyShown = true; setShowSplash(false); }} />
       ) : (
         <>
           <AdminPushRegistration />
@@ -863,7 +864,9 @@ export default function RootLayout() {
                 }}
               />
             </View>
-            {!pathname.includes('addresses') && <CartBar tabBarHeight={tabBarHeight} />}
+            {!pathname.includes('addresses') && !pathname.includes('auth') && !authSheetVisible && (
+              <CartBar tabBarHeight={tabBarHeight} isAuthVisible={authSheetVisible} />
+            )}
             <BottomTabBar onHeightChange={setTabBarHeight} />
             {!pathname.includes('welcome') && !pathname.includes('location') && !pathname.includes('cart') && !pathname.includes('checkout') && (
               <EntrarBanner onPress={() => setAuthSheetVisible(true)} tabBarHeight={tabBarHeight} />

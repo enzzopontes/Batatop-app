@@ -10,7 +10,12 @@ import { supabase } from '../../supabaseConfig';
 import * as Haptics from 'expo-haptics';
 import { startMaraTracking, stopMaraTracking, subscribeTrackingStatus } from '../../utils/maraTrackingEngine';
 import { playNewOrderSound } from '../../utils/notificationSound';
-import { syncAdminPushRegistration } from '../../utils/pushNotifications';
+import {
+  syncAdminPushRegistration,
+  safeGetNotificationPermissions,
+  safeRequestNotificationPermissions,
+  isAdminPushAvailable,
+} from '../../utils/pushNotifications';
 import { showThemedAlert } from '../../components/ThemedAlert';
 
 // ─── Configurações ─────────────────────────────────────────────────
@@ -100,9 +105,12 @@ export default function AdminPedidos() {
   const [hasNotificationPermission, setHasNotificationPermission] = useState(true);
 
   const checkNotificationPermission = useCallback(async () => {
+    if (!isAdminPushAvailable) {
+      setHasNotificationPermission(true);
+      return;
+    }
     try {
-      const Notifications = await import('expo-notifications');
-      const { status } = await Notifications.getPermissionsAsync();
+      const { status } = await safeGetNotificationPermissions();
       setHasNotificationPermission(status === 'granted');
     } catch {
       setHasNotificationPermission(true);
@@ -110,9 +118,15 @@ export default function AdminPedidos() {
   }, []);
 
   const requestNotificationPermission = async () => {
+    if (!isAdminPushAvailable) {
+      showThemedAlert(
+        'Modo Expo Go',
+        'Push notifications remotas no Android exigem Development Build (removido do Expo Go no SDK 53+).'
+      );
+      return;
+    }
     try {
-      const Notifications = await import('expo-notifications');
-      const { status, canAskAgain } = await Notifications.requestPermissionsAsync();
+      const { status, canAskAgain } = await safeRequestNotificationPermissions();
       if (status === 'granted') {
         setHasNotificationPermission(true);
         const { data: { session } } = await supabase.auth.getSession();
@@ -186,6 +200,18 @@ export default function AdminPedidos() {
       const mapped = (data || []).map(mapOrderData);
       lastCountRef.current = mapped.length;
       setOrders(mapped);
+
+      // Auto-Start do GPS da Mara se houver pedido de delivery ativo (pending, preparing, ready, out_for_delivery)
+      const hasActiveDelivery = mapped.some(
+        (o) =>
+          o.deliveryType === 'delivery' &&
+          ['pending', 'preparing', 'preparo', 'ready', 'out_for_delivery'].includes(o.status)
+      );
+      if (hasActiveDelivery && !trackingStateRef.current?.isRunning) {
+        startMaraTracking().catch((err) =>
+          console.warn('[AdminPedidos] Auto-start GPS silencioso:', err?.message)
+        );
+      }
     } catch (e) {
       console.error('Erro ao carregar pedidos:', e);
     } finally {
@@ -193,6 +219,11 @@ export default function AdminPedidos() {
       setRefreshing(false);
     }
   }, []);
+
+  const trackingStateRef = useRef(trackingState);
+  useEffect(() => {
+    trackingStateRef.current = trackingState;
+  }, [trackingState]);
 
   useEffect(() => {
     loadOrders(true);
@@ -210,6 +241,12 @@ export default function AdminPedidos() {
             if (newRow?.status === 'awaiting_payment') return;
             playNewOrderSound(3);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            if (
+              newRow?.delivery_type === 'delivery' &&
+              !trackingStateRef.current?.isRunning
+            ) {
+              startMaraTracking().catch(() => {});
+            }
             loadOrders();
           } else if (eventType === 'UPDATE') {
             if (newRow?.status === 'awaiting_payment') {
@@ -219,6 +256,13 @@ export default function AdminPedidos() {
             if (oldRow?.status === 'awaiting_payment' && newRow?.status !== 'awaiting_payment' && newRow?.status !== 'cancelled') {
               playNewOrderSound(3);
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            }
+            if (
+              newRow?.delivery_type === 'delivery' &&
+              ['pending', 'preparing', 'ready', 'out_for_delivery'].includes(newRow?.status) &&
+              !trackingStateRef.current?.isRunning
+            ) {
+              startMaraTracking().catch(() => {});
             }
             loadOrders();
           } else if (eventType === 'DELETE') {
@@ -432,6 +476,27 @@ export default function AdminPedidos() {
   );
 }
 
+// ─── WhatsApp Helper ────────────────────────────────────────────────
+function openCustomerWhatsApp(rawPhone) {
+  if (!rawPhone || typeof rawPhone !== 'string' || !rawPhone.trim()) {
+    showThemedAlert('Sem WhatsApp', 'Este cliente não possui número de WhatsApp informado.');
+    return;
+  }
+  let clean = rawPhone.replace(/\D/g, '');
+  if (clean.startsWith('55') && clean.length > 11) {
+    clean = clean.slice(2);
+  }
+  if (clean.length < 10) {
+    showThemedAlert('Telefone inválido', 'O número de WhatsApp cadastrado é inválido.');
+    return;
+  }
+  // Abre conversa direta no WhatsApp sem mensagem prévia
+  const url = `https://wa.me/55${clean}`;
+  Linking.openURL(url).catch(() => {
+    showThemedAlert('Erro', 'Não foi possível abrir o WhatsApp no seu dispositivo.');
+  });
+}
+
 // ─── Card de Pedido ────────────────────────────────────────────────
 function OrderCard({ order, cfg, updatingId, onStatusChange, onPress, onDelete }) {
   const c = cfg(order.status);
@@ -466,9 +531,24 @@ function OrderCard({ order, cfg, updatingId, onStatusChange, onPress, onDelete }
         </View>
         <View style={s.cardHeaderRight}>
           <Text style={s.cardTotal}>R$ {order.total.toFixed(2).replace('.', ',')}</Text>
-          <Pressable onPress={onDelete} style={s.deleteBtn} hitSlop={8}>
-            <Ionicons name="trash-outline" size={16} color="#DC2626" />
-          </Pressable>
+          <View style={s.cardHeaderButtons}>
+            {order.customerPhone ? (
+              <Pressable
+                onPress={(e) => {
+                  e.stopPropagation();
+                  openCustomerWhatsApp(order.customerPhone);
+                }}
+                style={s.whatsappCardBtn}
+                hitSlop={8}
+                accessibilityLabel="Chamar no WhatsApp"
+              >
+                <Ionicons name="logo-whatsapp" size={17} color="#25D366" />
+              </Pressable>
+            ) : null}
+            <Pressable onPress={onDelete} style={s.deleteBtn} hitSlop={8}>
+              <Ionicons name="trash-outline" size={16} color="#DC2626" />
+            </Pressable>
+          </View>
         </View>
       </View>
 
@@ -498,6 +578,19 @@ function OrderCard({ order, cfg, updatingId, onStatusChange, onPress, onDelete }
             <Ionicons name="wallet-outline" size={11} color="#6B7280" />
             <Text style={s.metaPillText}>{(order.paymentMethod || '').toUpperCase()}</Text>
           </View>
+          {order.customerPhone ? (
+            <Pressable
+              style={s.whatsappMetaPill}
+              onPress={(e) => {
+                e.stopPropagation();
+                openCustomerWhatsApp(order.customerPhone);
+              }}
+              hitSlop={6}
+            >
+              <Ionicons name="logo-whatsapp" size={12} color="#25D366" />
+              <Text style={s.whatsappMetaPillText}>{order.customerPhone}</Text>
+            </Pressable>
+          ) : null}
           {order.wantsCutlery && (
             <View style={[s.metaPill, { backgroundColor: '#FFF7ED', borderColor: '#FFEDD5' }]}>
               <Ionicons name="restaurant-outline" size={11} color="#EA580C" />
@@ -559,9 +652,7 @@ function OrderModal({ visible, order, cfg, updatingId, onClose, onStatusChange, 
 
   // Abrir WhatsApp do cliente
   const handleWhatsApp = () => {
-    const cleanPhone = order.customerPhone.replace(/\D/g, '');
-    const url = `https://wa.me/55${cleanPhone}`;
-    Linking.openURL(url).catch(() => showThemedAlert('Erro', 'Não foi possível abrir o WhatsApp.'));
+    openCustomerWhatsApp(order.customerPhone);
   };
 
   return (
@@ -587,15 +678,23 @@ function OrderModal({ visible, order, cfg, updatingId, onClose, onStatusChange, 
           {/* Ações Rápidas no Modal */}
           <View style={s.modalQuickActions}>
             <Pressable style={s.whatsappBtn} onPress={handleWhatsApp}>
-              <Ionicons name="logo-whatsapp" size={16} color="#FFF" />
-              <Text style={s.whatsappBtnText}>WhatsApp do Cliente</Text>
+              <Ionicons name="logo-whatsapp" size={18} color="#FFF" />
+              <Text style={s.whatsappBtnText}>
+                Chamar {order.customerName ? order.customerName.trim().split(' ')[0] : 'Cliente'} no WhatsApp
+              </Text>
             </Pressable>
           </View>
 
           {/* Cliente */}
           <SectionLabel icon="person-outline" label="Dados do Cliente" />
-          <InfoRow icon="person-outline" label="Nome" value={order.customerName} />
-          <InfoRow icon="call-outline" label="Telefone" value={order.customerPhone} />
+          <InfoRow icon="person-outline" label="Nome" value={order.customerName || 'Cliente'} />
+          <Pressable onPress={handleWhatsApp} disabled={!order.customerPhone}>
+            <InfoRow 
+              icon="call-outline" 
+              label="Telefone / WhatsApp" 
+              value={order.customerPhone ? `${order.customerPhone} (Toque para abrir)` : 'Não informado'} 
+            />
+          </Pressable>
           <InfoRow 
             icon="location-outline" 
             label="Endereço de Entrega" 
@@ -797,6 +896,8 @@ const s = StyleSheet.create({
   orderNum: { fontSize: 16, fontWeight: '900', color: '#1A1A1A' },
   orderTime: { fontSize: 11, color: '#6B7280', fontWeight: '600', marginTop: 2 },
   cardTotal: { fontSize: 16, fontWeight: '900', color: '#1A1A1A' },
+  cardHeaderButtons: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  whatsappCardBtn: { padding: 5, backgroundColor: '#E8F5E9', borderRadius: 8 },
   deleteBtn: { padding: 4 },
 
   cardBody: { paddingHorizontal: 14, paddingBottom: 14, gap: 8 },
@@ -812,6 +913,8 @@ const s = StyleSheet.create({
   metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   metaPill: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderColor: '#E5E7EB', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: '#F9FAFB' },
   metaPillText: { fontSize: 10, fontWeight: '700', color: '#4B5563' },
+  whatsappMetaPill: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderColor: '#C8E6C9', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: '#E8F5E9' },
+  whatsappMetaPillText: { fontSize: 10, fontWeight: '700', color: '#1B5E20' },
 
   cardActions: { flexDirection: 'row', gap: 8, paddingHorizontal: 14, paddingBottom: 14, flexWrap: 'wrap' },
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12, minWidth: 90 },

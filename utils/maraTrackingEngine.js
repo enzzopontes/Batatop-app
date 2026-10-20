@@ -11,7 +11,7 @@
  *    - Transmite driver_lat, driver_lng, heading a cada 5s para delivery_tracking.
  *
  * 2. Chegada no Cliente:
- *    - Distância Haversine <= 50m por pelo menos 30s consecutivos (Trava Anti-Passagem).
+ *    - Distância Haversine <= 40m por pelo menos 30s consecutivos (Trava Anti-Passagem).
  *    - Seta metadata.arrived_at = ISO string no pedido.
  *    - 2 minutos após arrived_at (checados a cada tick), altera automaticamente para 'delivered'.
  *
@@ -43,16 +43,20 @@ export function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
 const STORE_BASE_LAT = STORE_ADDRESS.latitude ?? -21.8402;
 const STORE_BASE_LNG = STORE_ADDRESS.longitude ?? -49.0058;
 
-const DEPARTURE_DISTANCE_THRESHOLD_METERS = 40;
-const ARRIVAL_DISTANCE_THRESHOLD_METERS = 50;
-const ARRIVAL_TIME_REQUIRED_MS = 30 * 1000; // 30 segundos
+const DEPARTURE_DISTANCE_THRESHOLD_METERS = 25;
+const ARRIVAL_DISTANCE_THRESHOLD_METERS = 40;
+const ARRIVAL_TIME_REQUIRED_MS = 25 * 1000; // 25 segundos (entre 20s e 30s dentro dos 40m)
 const AUTO_DELIVERY_DELAY_MS = 2 * 60 * 1000; // 2 minutos
 
 let locationSubscription = null;
+let heartbeatInterval = null;
+let isTickRunning = false;
 let isEngineRunning = false;
 
 // Estado em memória do rastreio
 let consecutiveDepartureCount = 0;
+// Começa desarmado (false). Só arma quando o GPS confirmar presença DENTRO da base (<= 40m).
+let canDispatchFromBase = false;
 let lastKnownLocation = null;
 // arrivalTracking: { [orderId]: firstSeenTimestamp }
 const arrivalTracking = new Map();
@@ -90,6 +94,10 @@ export function getTrackingEngineState() {
  * Limpa coordenadas e desativa rastreamento no banco para nunca expor a posição da Mara.
  */
 export async function killSwitchTracking() {
+  if (!isEngineRunning && heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
+  }
   try {
     await supabase.from('delivery_tracking').upsert({
       id: 'live',
@@ -130,22 +138,43 @@ async function syncLocationToSupabase(coords, activeOrderIds = [], publicStops =
   }
 }
 
+const ORDERS_CACHE_TTL_MS = 4000;
+let cachedOrders = [];
+let lastOrdersFetchTime = 0;
+
+function invalidateOrdersCache() {
+  lastOrdersFetchTime = 0;
+}
+
+function cloneCachedOrders(list) {
+  return (list || []).map((o) => ({
+    ...o,
+    metadata: o.metadata ? { ...o.metadata } : {},
+  }));
+}
+
 /**
- * Busca pedidos de delivery ativos no Supabase
+ * Busca pedidos de delivery ativos no Supabase (com cache de 4s para manter o tick de GPS leve)
  */
 async function fetchActiveDeliveryOrders() {
+  const now = Date.now();
+  if (now - lastOrdersFetchTime < ORDERS_CACHE_TTL_MS && cachedOrders.length > 0) {
+    return cloneCachedOrders(cachedOrders);
+  }
   try {
     const { data, error } = await supabase
       .from('orders')
       .select('id, status, delivery_type, delivery_lat, delivery_lng, metadata, customer_name')
       .eq('delivery_type', 'delivery')
-      .in('status', ['preparing', 'ready', 'out_for_delivery']);
+      .in('status', ['pending', 'preparing', 'ready', 'out_for_delivery']);
 
     if (error) throw error;
-    return data || [];
+    cachedOrders = data || [];
+    lastOrdersFetchTime = now;
+    return cloneCachedOrders(cachedOrders);
   } catch (err) {
     console.warn('[MaraTrackingEngine] Erro ao buscar pedidos ativos:', err);
-    return [];
+    return cloneCachedOrders(cachedOrders);
   }
 }
 
@@ -153,147 +182,189 @@ async function fetchActiveDeliveryOrders() {
  * Checa regras de saída e chegada a cada posição do GPS
  */
 async function processLocationTick(location) {
-  lastKnownLocation = location.coords;
-  const { latitude, longitude } = location.coords;
+  if (isTickRunning || !location?.coords) return;
+  isTickRunning = true;
 
-  const orders = await fetchActiveDeliveryOrders();
-  const now = Date.now();
+  try {
+    lastKnownLocation = location.coords;
+    const { latitude, longitude } = location.coords;
 
-  // 1. Verificar Saída da Base
-  const distFromBase = calculateDistanceMeters(latitude, longitude, STORE_BASE_LAT, STORE_BASE_LNG);
-  if (distFromBase > DEPARTURE_DISTANCE_THRESHOLD_METERS) {
-    consecutiveDepartureCount += 1;
-  } else {
-    consecutiveDepartureCount = 0;
-  }
+    const orders = await fetchActiveDeliveryOrders();
+    const now = Date.now();
 
-  // 2 leituras consecutivas > 40m longe da base -> Saiu para entrega
-  if (consecutiveDepartureCount >= 2) {
-    const ordersToDispatch = orders.filter(
-      (o) => o.status === 'preparing' || o.status === 'ready'
-    );
-
-    for (const order of ordersToDispatch) {
-      try {
-        await supabase
-          .from('orders')
-          .update({
-            status: 'out_for_delivery',
-            updated_at: new Date().toISOString(),
-            metadata: {
-              ...(order.metadata || {}),
-              dispatched_at: new Date().toISOString(),
-            },
-          })
-          .eq('id', order.id);
-        order.status = 'out_for_delivery';
-      } catch (err) {
-        console.warn(`[MaraTrackingEngine] Erro ao despachar pedido #${order.id}:`, err);
-      }
+    // 1. Verificar Saída da Base
+    const distFromBase = calculateDistanceMeters(latitude, longitude, STORE_BASE_LAT, STORE_BASE_LNG);
+    // Histerese da base: dentro de 40m confirma presença na loja e arma o gatilho
+    if (distFromBase <= 40) {
+      consecutiveDepartureCount = 0;
+      canDispatchFromBase = true;
+    } else if (distFromBase > DEPARTURE_DISTANCE_THRESHOLD_METERS) {
+      consecutiveDepartureCount += 1;
     }
-  }
 
-  // 2. Checagem em cada tick dos 5 minutos após arrived_at (Imune a reload / perda de memória)
-  let outForDeliveryOrders = orders.filter((o) => o.status === 'out_for_delivery');
+    // 2 leituras consecutivas > 25m longe da base e gatilho armado após estar na base
+    if (consecutiveDepartureCount >= 2 && canDispatchFromBase) {
+      const ordersToDispatch = orders.filter((o) => {
+        // Pedido pronto para sair sempre despacha
+        if (o.status === 'ready') return true;
 
-  for (const order of outForDeliveryOrders) {
-    if (order.metadata?.arrived_at) {
-      const arrivedTime = new Date(order.metadata.arrived_at).getTime();
-      if (now - arrivedTime >= AUTO_DELIVERY_DELAY_MS) {
-        await markOrderDelivered(order.id);
-        order.status = 'delivered';
-      }
-    }
-  }
+        // Pedido em preparo: se a Mara estava na base e saiu, despacha qualquer pedido
+        // que já estava em preparo antes da saída (mesmo que feito rápido em 2 ou 3 minutos).
+        if (o.status === 'preparing') return true;
 
-  // Recalcula pedidos em rota após eventuais baixas automáticas
-  outForDeliveryOrders = orders.filter((o) => o.status === 'out_for_delivery');
-  const activeOrdersRemaining = orders.filter((o) =>
-    ['preparing', 'ready', 'out_for_delivery'].includes(o.status)
-  );
+        return false;
+      });
 
-  // Se não houver nenhum pedido em rota ou preparo, dispara o Kill-Switch de Privacidade
-  if (activeOrdersRemaining.length === 0) {
-    await killSwitchTracking();
-    notifyListeners(getTrackingEngineState());
-    return;
-  }
-
-  // Sanitiza as paradas públicas para a tabela delivery_tracking (toFixed(3), sem dados privados)
-  const publicStops = outForDeliveryOrders
-    .map((o, idx) => {
-      const clientLat = o.delivery_lat ?? o.metadata?.delivery_lat;
-      const clientLng = o.delivery_lng ?? o.metadata?.delivery_lng;
-      if (clientLat == null || clientLng == null) return null;
-      return {
-        id: idx + 1,
-        latitude: Number(Number(clientLat).toFixed(3)),
-        longitude: Number(Number(clientLng).toFixed(3)),
-      };
-    })
-    .filter(Boolean);
-
-  const activeOrderIds = orders.map((o) => o.id);
-
-  // 3. Transmitir coordenadas ao vivo e paradas sanitizadas
-  await syncLocationToSupabase(location.coords, activeOrderIds, publicStops);
-
-  // 4. Checar Chegada no Cliente para pedidos 'out_for_delivery'
-  for (const order of outForDeliveryOrders) {
-    const clientLat = order.delivery_lat ?? order.metadata?.delivery_lat;
-    const clientLng = order.delivery_lng ?? order.metadata?.delivery_lng;
-
-    if (clientLat == null || clientLng == null) continue;
-
-    const distToClient = calculateDistanceMeters(latitude, longitude, clientLat, clientLng);
-
-    // Se estiver a <= 50 metros do cliente
-    if (distToClient <= ARRIVAL_DISTANCE_THRESHOLD_METERS) {
-      if (!arrivalTracking.has(order.id)) {
-        // Primeira leitura perto do cliente
-        arrivalTracking.set(order.id, now);
-      } else {
-        const firstSeen = arrivalTracking.get(order.id);
-        const durationNearClient = now - firstSeen;
-
-        // Se permaneceu por pelo menos 30 segundos (Trava Anti-Passagem)
-        if (durationNearClient >= ARRIVAL_TIME_REQUIRED_MS) {
-          const alreadyArrived = !!order.metadata?.arrived_at;
-
-          if (!alreadyArrived) {
-            const arrivedIso = new Date().toISOString();
+      if (ordersToDispatch.length > 0) {
+        let dispatchedAny = false;
+        for (const order of ordersToDispatch) {
+          try {
+            const dispatchedIso = new Date().toISOString();
             await supabase
               .from('orders')
               .update({
+                status: 'out_for_delivery',
+                updated_at: dispatchedIso,
                 metadata: {
                   ...(order.metadata || {}),
-                  arrived_at: arrivedIso,
+                  dispatched_at: dispatchedIso,
                 },
-                updated_at: new Date().toISOString(),
               })
               .eq('id', order.id);
+            order.status = 'out_for_delivery';
+            dispatchedAny = true;
+            invalidateOrdersCache();
+          } catch (err) {
+            console.warn(`[MaraTrackingEngine] Erro ao despachar pedido #${order.id}:`, err);
+          }
+        }
+        if (dispatchedAny) {
+          canDispatchFromBase = false;
+        }
+      }
+    }
 
-            order.metadata = { ...(order.metadata || {}), arrived_at: arrivedIso };
+    // 2. Checagem em cada tick dos 2 minutos após arrived_at (Imune a reload / perda de memória)
+    let outForDeliveryOrders = orders.filter((o) => o.status === 'out_for_delivery');
 
-            // Timer de backup em memória
-            if (!deliveryTimers.has(order.id)) {
-              const timer = setTimeout(async () => {
-                await markOrderDelivered(order.id);
-              }, AUTO_DELIVERY_DELAY_MS);
-              deliveryTimers.set(order.id, timer);
+    for (const order of outForDeliveryOrders) {
+      if (order.metadata?.arrived_at) {
+        const arrivedTime = new Date(order.metadata.arrived_at).getTime();
+        if (now - arrivedTime >= AUTO_DELIVERY_DELAY_MS) {
+          await markOrderDelivered(order.id);
+          order.status = 'delivered';
+          invalidateOrdersCache();
+        }
+      }
+    }
+
+    // Recalcula pedidos em rota após eventuais baixas automáticas
+    outForDeliveryOrders = orders.filter((o) => o.status === 'out_for_delivery');
+    const activeOrdersRemaining = orders.filter((o) =>
+      ['pending', 'preparing', 'ready', 'out_for_delivery'].includes(o.status)
+    );
+
+    // Se não houver nenhum pedido pendente, em preparo ou em rota, limpa tracking e desliga
+    if (activeOrdersRemaining.length === 0) {
+      await killSwitchTracking();
+      stopMaraTracking();
+      notifyListeners(getTrackingEngineState());
+      return;
+    }
+
+    // Enquanto ainda estiver na loja sem pedidos despachados, mantém is_active = false no banco
+    // para não vazar a posição residencial da Mara para o cliente
+    if (outForDeliveryOrders.length === 0) {
+      await killSwitchTracking();
+      notifyListeners(getTrackingEngineState());
+      return;
+    }
+
+    // Sanitiza as paradas públicas para a tabela delivery_tracking (toFixed(3), sem dados privados)
+    const publicStops = outForDeliveryOrders
+      .map((o, idx) => {
+        const clientLat = o.delivery_lat ?? o.metadata?.delivery_lat;
+        const clientLng = o.delivery_lng ?? o.metadata?.delivery_lng;
+        if (clientLat == null || clientLng == null) return null;
+        return {
+          id: idx + 1,
+          latitude: Number(Number(clientLat).toFixed(3)),
+          longitude: Number(Number(clientLng).toFixed(3)),
+        };
+      })
+      .filter(Boolean);
+
+    const activeOrderIds = outForDeliveryOrders.map((o) => o.id);
+
+    // 3. Transmitir coordenadas ao vivo e paradas sanitizadas
+    await syncLocationToSupabase(location.coords, activeOrderIds, publicStops);
+
+    // 4. Checar Chegada no Cliente para pedidos 'out_for_delivery'
+    for (const order of outForDeliveryOrders) {
+      const clientLat = order.delivery_lat ?? order.metadata?.delivery_lat;
+      const clientLng = order.delivery_lng ?? order.metadata?.delivery_lng;
+
+      if (clientLat == null || clientLng == null) continue;
+
+      const distToClient = calculateDistanceMeters(latitude, longitude, clientLat, clientLng);
+
+      // Se estiver a <= 40 metros do cliente
+      if (distToClient <= ARRIVAL_DISTANCE_THRESHOLD_METERS) {
+        if (!arrivalTracking.has(order.id)) {
+          // Primeira leitura perto do cliente
+          arrivalTracking.set(order.id, now);
+        } else {
+          const firstSeen = arrivalTracking.get(order.id);
+          const durationNearClient = now - firstSeen;
+
+          // Se permaneceu por pelo menos 25 segundos (Trava Anti-Passagem)
+          if (durationNearClient >= ARRIVAL_TIME_REQUIRED_MS) {
+            const alreadyArrived = !!order.metadata?.arrived_at;
+
+            if (!alreadyArrived) {
+              const arrivedIso = new Date().toISOString();
+              const autoDeliverIso = new Date(Date.now() + AUTO_DELIVERY_DELAY_MS).toISOString();
+              await supabase
+                .from('orders')
+                .update({
+                  metadata: {
+                    ...(order.metadata || {}),
+                    arrived_at: arrivedIso,
+                    auto_deliver_at: autoDeliverIso,
+                  },
+                  updated_at: new Date().toISOString(),
+                })
+                .eq('id', order.id);
+
+              order.metadata = {
+                ...(order.metadata || {}),
+                arrived_at: arrivedIso,
+                auto_deliver_at: autoDeliverIso,
+              };
+              invalidateOrdersCache();
+
+              // Timer de backup em memória
+              if (!deliveryTimers.has(order.id)) {
+                const timer = setTimeout(async () => {
+                  await markOrderDelivered(order.id);
+                }, AUTO_DELIVERY_DELAY_MS);
+                deliveryTimers.set(order.id, timer);
+              }
             }
           }
         }
-      }
-    } else {
-      // Se saiu de perto antes de completar 30 segundos, cancela a trava
-      if (arrivalTracking.has(order.id) && !order.metadata?.arrived_at) {
-        arrivalTracking.delete(order.id);
+      } else if (distToClient > 60) {
+        // Se saiu de perto (> 60m histerese) antes de completar 25 segundos, cancela a trava
+        if (arrivalTracking.has(order.id) && !order.metadata?.arrived_at) {
+          arrivalTracking.delete(order.id);
+        }
       }
     }
-  }
 
-  notifyListeners(getTrackingEngineState());
+    notifyListeners(getTrackingEngineState());
+  } finally {
+    isTickRunning = false;
+  }
 }
 
 async function markOrderDelivered(orderId) {
@@ -315,8 +386,10 @@ async function markOrderDelivered(orderId) {
           delivered_at: new Date().toISOString(),
         },
       })
-      .eq('id', orderId);
+      .eq('id', orderId)
+      .eq('status', 'out_for_delivery');
 
+    invalidateOrdersCache();
     arrivalTracking.delete(orderId);
     if (deliveryTimers.has(orderId)) {
       clearTimeout(deliveryTimers.get(orderId));
@@ -341,28 +414,51 @@ export async function startMaraTracking() {
 
     isEngineRunning = true;
     consecutiveDepartureCount = 0;
+    // Não força true ao ligar o GPS. Apenas confirma se a primeira leitura ou leituras seguintes estiverem na base.
+    canDispatchFromBase = false;
+    invalidateOrdersCache();
 
     // Obter primeira posição imediata
     const initialLocation = await Location.getCurrentPositionAsync({
       accuracy: Location.Accuracy.High,
     });
+    if (!isEngineRunning) return false;
     await processLocationTick(initialLocation);
+    if (!isEngineRunning) return false;
 
-    // Assistir posição continuamente a cada 5 segundos
-    locationSubscription = await Location.watchPositionAsync(
+    // Assistir posição continuamente a cada 2 segundos (distanceInterval: 0 para continuar mesmo parado)
+    const sub = await Location.watchPositionAsync(
       {
         accuracy: Location.Accuracy.High,
-        timeInterval: 5000,
-        distanceInterval: 5,
+        timeInterval: 2000,
+        distanceInterval: 0,
       },
       (loc) => {
         processLocationTick(loc);
       }
     );
+    if (!isEngineRunning) {
+      sub.remove();
+      return false;
+    }
+    locationSubscription = sub;
+
+    if (heartbeatInterval) {
+      clearInterval(heartbeatInterval);
+    }
+    heartbeatInterval = setInterval(() => {
+      if (isEngineRunning && lastKnownLocation) {
+        processLocationTick({ coords: lastKnownLocation });
+      }
+    }, 10000);
 
     notifyListeners(getTrackingEngineState());
     return true;
   } catch (err) {
+    if (heartbeatInterval) {
+      clearInterval(heartbeatInterval);
+      heartbeatInterval = null;
+    }
     isEngineRunning = false;
     notifyListeners(getTrackingEngineState());
     throw err;
@@ -377,8 +473,12 @@ export function stopMaraTracking() {
     locationSubscription.remove();
     locationSubscription = null;
   }
-  deliveryTimers.forEach((timer) => clearTimeout(timer));
-  deliveryTimers.clear();
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
+  }
+  // deliveryTimers para pedidos que já atingiram a trava de chegada (25s dentro dos 40m)
+  // são irreversíveis e continuam rodando em memória mesmo ao parar o GPS.
   arrivalTracking.clear();
 
   isEngineRunning = false;

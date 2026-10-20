@@ -14,6 +14,7 @@ import { PaymentMethod } from './useCheckoutFlow';
 import { SavedCard } from '../../utils/usePaymentCards';
 import RipplePressable from './RipplePressable';
 import SwipeableBottomSheetModal from '../SwipeableBottomSheetModal';
+import CardBrandBadge from './CardBrandBadge';
 
 const LOGO_ESTENDIDA = require('../../assets/batatatopestendida.png');
 
@@ -67,8 +68,17 @@ export default function PaymentModal({
     );
   };
 
-  const creditCards = savedCards.filter((c) => c.card_type === 'cartão de crédito');
-  const debitCards = savedCards.filter((c) => c.card_type === 'cartão de débito');
+  const creditCards = savedCards.filter(
+    (c) =>
+      c.card_type === 'cartão de crédito' ||
+      (c.card_type as string) === 'credit_card' ||
+      !c.card_type
+  );
+  const debitCards = savedCards.filter(
+    (c) =>
+      c.card_type === 'cartão de débito' ||
+      (c.card_type as string) === 'debit_card'
+  );
 
   return (
     <SwipeableBottomSheetModal
@@ -138,9 +148,7 @@ export default function PaymentModal({
                   rippleColor="rgba(0, 0, 0, 0.08)"
                 >
                   <View style={styles.cardItemLeft}>
-                    <View style={styles.brandIconBox}>
-                      <Ionicons name="card" size={20} color="#2563EB" />
-                    </View>
+                    <CardBrandBadge brand={card.payment_method_id} size="md" />
                     <View style={styles.cardInfo}>
                       <Text style={styles.cardTitle}>
                         Crédito • {card.cardholder_name || 'Cartão'}
@@ -172,9 +180,7 @@ export default function PaymentModal({
                   rippleColor="rgba(0, 0, 0, 0.08)"
                 >
                   <View style={styles.cardItemLeft}>
-                    <View style={styles.brandIconBox}>
-                      <Ionicons name="card" size={20} color="#16A34A" />
-                    </View>
+                    <CardBrandBadge brand={card.payment_method_id} size="md" />
                     <View style={styles.cardInfo}>
                       <Text style={styles.cardTitle}>
                         Débito • {card.cardholder_name || 'Cartão'}

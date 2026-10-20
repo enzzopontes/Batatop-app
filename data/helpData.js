@@ -264,7 +264,7 @@ As avaliações no Batata Top têm como objetivo coletar a opinião sincera dos 
       {
         num: '3',
         title: 'Pedidos e Modalidades de Recebimento',
-        body: '• Delivery: O entregador levará o pedido até o endereço cadastrado em Iacanga-SP. O cliente deve se atentar ao telefone e acompanhar as notificações de status para receber a refeição.\n• Retirada no Balcão: O cliente retira o pedido diretamente no endereço da loja assim que o status do aplicativo indicar "Pronto para retirada".\n• Horários e Disponibilidade: Pedidos estão sujeitos ao horário de funcionamento da cozinha e à disponibilidade diária de estoque e insumos.',
+        body: '• Delivery: O entregador levará o pedido até o endereço cadastrado em Iacanga-SP. O cliente deve se atentar ao telefone e acompanhar as notificações de status para receber a refeição.\n• Retirada no Portão de Ferro Preto: O cliente retira o pedido diretamente no endereço da loja (portão de ferro preto) assim que o status do aplicativo indicar "Pronto para retirada".\n• Horários e Disponibilidade: Pedidos estão sujeitos ao horário de funcionamento da cozinha e à disponibilidade diária de estoque e insumos.',
       },
       {
         num: '4',

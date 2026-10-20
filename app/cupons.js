@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, Image } from 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useCoupons } from './hooks/useCoupons';
+import { useCoupons } from '../hooks/useCoupons';
 import { useCart } from '../utils/cartStore';
 import CouponCard, { SelectorCircle } from '../components/CouponCard';
 import FreeCouponCard from '../components/FreeCouponCard';

@@ -12,21 +12,22 @@ import {
   Dimensions,
   StatusBar,
   Platform,
+  AppState,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../../constants/theme';
-import { usePedidos } from '../hooks/usePedidos';
+import { usePedidos } from '../../hooks/usePedidos';
 import { supabase } from '../../supabaseConfig';
 import { checkPixStatus, createPixPayment } from '../../utils/mercadoPago';
 import HelpModal from '../../components/HelpModal';
 import LiveDeliveryMap from '../../components/orders/LiveDeliveryMap';
 import OrderFeedbackModal from '../../components/orders/OrderFeedbackModal';
 import { ThemedAlertHost, showThemedAlert } from '../../components/ThemedAlert';
-import { useModalFade } from '../hooks/useModalFade';
+import { useModalFade } from '../../hooks/useModalFade';
 import { useSafeAreaInsets, SafeAreaProvider } from 'react-native-safe-area-context';
 import { notifyAdminNewOrder } from '../../utils/notifyNewOrder';
 import { STORE_ADDRESS } from '../../constants/store';
@@ -35,7 +36,9 @@ import AnimatedReanimated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
+  withSpring,
   withDelay,
+  runOnJS,
   Easing,
   interpolate,
   Extrapolation,
@@ -43,16 +46,75 @@ import AnimatedReanimated, {
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// ─── Efeito de Confete Leve Estilo Infinitipay ──────────────────────────────
-const CONFETTI_COLORS = ['#FFB800', '#16A34A', '#FFFFFF', '#F59E0B', '#22C55E'];
-const CONFETTI_PIECES = Array.from({ length: 24 }).map((_, i) => ({
-  id: i,
-  startX: ((SCREEN_WIDTH - 32) / 24) * i + 16,
-  targetY: -(260 + Math.random() * 240),
-  color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
-  size: 7 + Math.floor(Math.random() * 5),
-  delay: Math.floor(Math.random() * 320),
-}));
+// ─── Efeito de Confete Estilo InfinitePay (Explosão do Centro pros Lados) ─────
+const CONFETTI_COLORS = [
+  '#FFB800', // Dourado Batata Top
+  '#16A34A', // Verde Aprovação
+  '#E11D48', // Vermelho Vibrante
+  '#F59E0B', // Âmbar Claro
+  '#2563EB', // Azul Royal
+  '#9333EA', // Roxo Celebração
+  '#06B6D4', // Ciano Festivo
+  '#FFFFFF', // Branco Brilhante
+  '#84CC16', // Verde Limão
+  '#F43F5E', // Rosa Vivo
+];
+
+const CONFETTI_COUNT = 72;
+
+function generateConfettiPieces(width, height) {
+  const originX = width * 0.5;
+  const originY = height * 0.44;
+
+  return Array.from({ length: CONFETTI_COUNT }).map((_, i) => {
+    // Metade espalha para o lado esquerdo e metade para o lado direito
+    const isLeft = i % 2 === 0;
+    const sideSign = isLeft ? -1 : 1;
+
+    // Distribui uniformemente pelo leque do centro para as bordas
+    const band = Math.floor(i / 2) / (CONFETTI_COUNT / 2);
+    const spreadFactor = 0.06 + Math.pow(band, 0.85) * 0.40 + (Math.random() - 0.5) * 0.05;
+    const spreadX = sideSign * width * spreadFactor;
+
+    // Peças internas sobem mais alto formando um arco/domo
+    const archBoost = 1 - Math.min(1, Math.abs(spreadFactor) * 1.15);
+    const peakLift = height * (0.20 + archBoost * 0.13 + Math.random() * 0.06);
+    const fallTotal = height * (0.36 + Math.random() * 0.16);
+
+    const duration = 2150 + Math.floor(Math.random() * 450);
+    const delay = Math.floor(Math.random() * 90);
+    const snakeAmp = 36 + Math.random() * 30;
+    const snakeCycles = 1.7 + Math.random() * 0.9;
+    const swingPhase = Math.random() * Math.PI * 2;
+
+    const color = CONFETTI_COLORS[i % CONFETTI_COLORS.length];
+    const shape = i % 3 === 0 ? 'rect' : i % 3 === 1 ? 'square' : 'circle';
+    const size = 8 + Math.floor(Math.random() * 5);
+    const spinZ = (Math.random() > 0.5 ? 1 : -1) * (180 + Math.random() * 240);
+    const spinX = (Math.random() > 0.5 ? 1 : -1) * (360 + Math.random() * 360);
+    const spinY = (Math.random() > 0.5 ? 1 : -1) * (360 + Math.random() * 360);
+
+    return {
+      id: i,
+      startX: originX,
+      startY: originY,
+      spreadX,
+      peakLift,
+      fallTotal,
+      duration,
+      color,
+      shape,
+      size,
+      delay,
+      spinZ,
+      spinX,
+      spinY,
+      snakeAmp,
+      snakeCycles,
+      swingPhase,
+    };
+  });
+}
 
 function ConfettiPiece({ piece, active }) {
   const progress = useSharedValue(0);
@@ -62,25 +124,69 @@ function ConfettiPiece({ piece, active }) {
       progress.value = 0;
       progress.value = withDelay(
         piece.delay,
-        withTiming(1, { duration: 1900, easing: Easing.out(Easing.cubic) })
+        withTiming(1, { duration: piece.duration, easing: Easing.linear })
       );
     } else {
       progress.value = 0;
     }
-  }, [active, piece.delay, progress]);
+  }, [active, piece.delay, piece.duration, progress]);
 
   const animatedStyle = useAnimatedStyle(() => {
-    const translateY = interpolate(progress.value, [0, 1], [0, piece.targetY], Extrapolation.CLAMP);
-    const opacity = interpolate(progress.value, [0, 0.7, 1], [1, 1, 0], Extrapolation.CLAMP);
-    const scale = interpolate(progress.value, [0, 0.15, 1], [0, 1.25, 0.7], Extrapolation.CLAMP);
+    const p = progress.value;
+    // 1. Explosão inicial do centro para cima e abertura pros lados (~0.45s)
+    const riseProgress = 1 - Math.pow(1 - Math.min(p / 0.21, 1), 2.2);
+    const spreadProgress = 1 - Math.pow(1 - Math.min(p / 0.26, 1), 1.9);
+
+    // 2. Descida suave escorregando de um lado pro outro que nem cobra (~1.6s a 2.0s)
+    const fallP = Math.max(0, (p - 0.16) / 0.84);
+    const snakeEnvelope = Math.min(1, fallP * 3.2);
+    const snakeAngle = fallP * piece.snakeCycles * Math.PI * 2 + piece.swingPhase;
+    const snakeSlideX = Math.sin(snakeAngle) * piece.snakeAmp * snakeEnvelope;
+
+    // Leve sustentação nas curvas laterais para dar sensação de escorregar no ar
+    const glideStepY = Math.sin(snakeAngle * 2) * 8 * snakeEnvelope;
+    const fallDistance = piece.fallTotal * Math.pow(fallP, 1.18) + glideStepY;
+
+    const currentX = piece.startX + piece.spreadX * spreadProgress + snakeSlideX;
+    const currentY = piece.startY - piece.peakLift * riseProgress + fallDistance;
+
+    // Inclinação lateral acompanhando a curva da cobrinha escorregando
+    const snakeTiltDeg = Math.cos(snakeAngle) * 28 * snakeEnvelope;
+
+    // 3. Se desfaz suavemente no ar após ~1.5s-2s na tela
+    const opacity = interpolate(
+      p,
+      [0, 0.05, 0.70, 0.88, 1],
+      [0, 1, 1, 0.45, 0],
+      Extrapolation.CLAMP
+    );
+    const scale = interpolate(
+      p,
+      [0, 0.08, 0.72, 1],
+      [0.25, 1.12, 1.0, 0.45],
+      Extrapolation.CLAMP
+    );
+    const rotateZ = `${p * piece.spinZ + snakeTiltDeg}deg`;
+    const rotateX = `${p * piece.spinX}deg`;
+    const rotateY = `${p * piece.spinY}deg`;
 
     return {
-      transform: [{ translateY }, { scale }],
+      transform: [
+        { translateX: currentX },
+        { translateY: currentY },
+        { rotateZ },
+        { rotateX },
+        { rotateY },
+        { scale },
+      ],
       opacity,
     };
   });
 
   if (!active) return null;
+
+  const isRect = piece.shape === 'rect';
+  const isCircle = piece.shape === 'circle';
 
   return (
     <AnimatedReanimated.View
@@ -88,13 +194,13 @@ function ConfettiPiece({ piece, active }) {
       style={[
         {
           position: 'absolute',
-          bottom: 120,
-          left: piece.startX,
+          top: 0,
+          left: 0,
           width: piece.size,
-          height: piece.size * 1.5,
+          height: isRect ? piece.size * 2 : piece.size,
           backgroundColor: piece.color,
-          borderRadius: 2,
-          zIndex: 9999,
+          borderRadius: isCircle ? piece.size / 2 : 2,
+          zIndex: 99998,
         },
         animatedStyle,
       ]}
@@ -103,10 +209,16 @@ function ConfettiPiece({ piece, active }) {
 }
 
 function ConfettiExplosion({ active }) {
+  const pieces = useMemo(
+    () => generateConfettiPieces(SCREEN_WIDTH, SCREEN_HEIGHT),
+    []
+  );
+
   if (!active) return null;
+
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      {CONFETTI_PIECES.map((p) => (
+      {pieces.map((p) => (
         <ConfettiPiece key={p.id} piece={p} active={active} />
       ))}
     </View>
@@ -155,30 +267,185 @@ function PulsingRadarDot({ color = '#FFB800' }) {
   );
 }
 
+function AnimatedStatusBadge({ iconName, color, bgColor, status }) {
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    let loop = null;
+    // Animação sutil de respiro apenas no preparo
+    if (status === 'preparing' || status === 'preparo') {
+      loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.07,
+            duration: 1200,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1.0,
+            duration: 1200,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      loop.start();
+    }
+    return () => {
+      if (loop) loop.stop();
+    };
+  }, [status, pulseAnim]);
+
+  return (
+    <View style={[s.statusIconBox, { backgroundColor: bgColor }]}>
+      <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+        <Ionicons name={iconName} size={24} color={color} />
+      </Animated.View>
+    </View>
+  );
+}
+
 // ─── Constantes de status ─────────────────────────────────────────────────────
 
 const STATUS_LABELS = {
   awaiting_payment: 'Aguardando pagamento',
   pending: 'Pedido confirmado',
-  preparing: 'Em preparo',
+  preparing: 'Seu pedido está sendo preparado',
+  preparo: 'Seu pedido está sendo preparado',
   ready: 'Pronto para entrega',
   out_for_delivery: 'Saiu para entrega',
   delivered: 'Pedido entregue',
   cancelled: 'Cancelado',
 };
 
+// ─── Banner de Alerta Superior Fluido (Slide-down / Slide-up) ────────────────
+const ssb = StyleSheet.create({
+  floatingBannerWrap: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    zIndex: 99999,
+  },
+  floatingBannerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#15803D',
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderWidth: 1.5,
+    borderColor: '#86EFAC',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+    elevation: 12,
+  },
+  floatingBannerIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  floatingBannerTextWrap: {
+    flex: 1,
+  },
+  floatingBannerTitle: {
+    color: '#FFFFFF',
+    fontSize: 14.5,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  floatingBannerSub: {
+    color: 'rgba(255, 255, 255, 0.92)',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 1,
+  },
+});
+
+const celebratedOrderIds = new Set();
+
+function SlideDownPaymentSuccessBanner({ visible, insets, onDismiss }) {
+  const translateY = useSharedValue(-260);
+  const opacity = useSharedValue(0);
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
+
+  useEffect(() => {
+    if (!visible) {
+      translateY.value = -260;
+      opacity.value = 0;
+      return;
+    }
+
+    translateY.value = -260;
+    opacity.value = 0;
+
+    // 1. Desce com mola fluida e fade-in suave
+    translateY.value = withSpring(0, { damping: 15, stiffness: 110, mass: 0.9 });
+    opacity.value = withTiming(1, { duration: 220 });
+
+    // 2. Permanece exibido e recolhe suavemente ao concluir
+    const hideTimer = setTimeout(() => {
+      opacity.value = withTiming(0, { duration: 280 });
+      translateY.value = withTiming(-260, { duration: 320 }, (finished) => {
+        if (finished && onDismissRef.current) {
+          runOnJS(onDismissRef.current)();
+        }
+      });
+    }, 3800);
+
+    return () => clearTimeout(hideTimer);
+  }, [visible, translateY, opacity]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }],
+    opacity: opacity.value,
+  }));
+
+  if (!visible) return null;
+
+  return (
+    <AnimatedReanimated.View
+      pointerEvents="box-none"
+      style={[
+        ssb.floatingBannerWrap,
+        {
+          top: Math.max(insets?.top || 0, 12) + 6,
+        },
+        animatedStyle,
+      ]}
+    >
+      <View style={ssb.floatingBannerCard}>
+        <View style={ssb.floatingBannerIconBox}>
+          <Ionicons name="checkmark-circle" size={24} color="#FFF" />
+        </View>
+        <View style={ssb.floatingBannerTextWrap}>
+          <Text style={ssb.floatingBannerTitle}>Pagamento confirmado!</Text>
+          <Text style={ssb.floatingBannerSub}>
+            Seu pedido já está sendo preparado.
+          </Text>
+        </View>
+      </View>
+    </AnimatedReanimated.View>
+  );
+}
+
 const STATUS_ICONS = {
-  awaiting_payment: 'time-outline',
-  pending: 'receipt-outline',
-  preparing: 'flame-outline',
-  ready: 'checkmark-circle-outline',
-  out_for_delivery: 'car-outline',
-  delivered: 'checkmark-done-circle-outline',
-  cancelled: 'close-circle-outline',
+  awaiting_payment: 'time',
+  pending: 'shield-checkmark',
+  preparing: 'flame',
+  ready: 'bag-check',
+  out_for_delivery: 'bicycle',
+  delivered: 'checkmark-done-circle',
+  cancelled: 'close-circle',
 };
 
 const STATUS_COLORS = {
-  awaiting_payment: '#E61E2A',
+  awaiting_payment: '#D97706',
   pending: '#D97706',
   preparing: '#EA580C',
   ready: '#2563EB',
@@ -188,7 +455,7 @@ const STATUS_COLORS = {
 };
 
 const STATUS_BG = {
-  awaiting_payment: '#FEE2E2',
+  awaiting_payment: '#FEF3C7',
   pending: '#FEF3C7',
   preparing: '#FFF7ED',
   ready: '#EFF6FF',
@@ -346,7 +613,14 @@ function extractPixData(pedido) {
     metadata.pix?.order_id ||
     metadata.payment_id;
 
+  const isPaid =
+    pedido.metadata?.mp_payment_status === 'approved' ||
+    pedido.metadata?.pix?.status === 'approved' ||
+    Boolean(pedido.metadata?.paid_at) ||
+    ['preparing', 'preparo', 'ready', 'out_for_delivery', 'delivered'].includes(pedido.status);
+
   const isPixAwaiting =
+    !isPaid &&
     (pedido.status === 'awaiting_payment' || (pedido.status === 'pending' && isPixMethod)) &&
     (isPixMethod || !!qrCodeText);
 
@@ -374,7 +648,6 @@ export default function DetalhesPedido() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [erro, setErro] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [copiedLink, setCopiedLink] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const { mounted: cancelModalMounted, fadeAnim: cancelModalFade } = useModalFade(showCancelModal);
@@ -386,10 +659,18 @@ export default function DetalhesPedido() {
   const pixFadeAnim = useRef(new Animated.Value(1)).current;
   const [showConfetti, setShowConfetti] = useState(false);
   const [showSuccessBanner, setShowSuccessBanner] = useState(false);
-  const bannerFadeAnim = useRef(new Animated.Value(0)).current;
   const hasTriggeredSuccessRef = useRef(false);
+  const isCelebrationPendingRef = useRef(false);
+  const pendingPaidOrderRef = useRef(null);
+  const appStateRef = useRef(AppState.currentState);
+  const lastBecameActiveAtRef = useRef(Date.now());
+  const celebrationTimeoutRef = useRef(null);
+  const confettiTimeoutRef = useRef(null);
+  const confettiEndTimeoutRef = useRef(null);
+  const appStateSubRef = useRef(null);
   const scrollViewRef = useRef(null);
   const [isTrackingActive, setIsTrackingActive] = useState(false);
+  const [isMapModalVisible, setIsMapModalVisible] = useState(false);
 
   const {
     isPixMethod,
@@ -466,92 +747,201 @@ export default function DetalhesPedido() {
     requestPixQrCode(pedido.id);
   }, [pedido?.id, isPixAwaiting, qrCodeText, qrCodeBase64, requestPixQrCode]);
 
-  // Monitora se o rastreio em tempo real está ativo com coordenadas válidas
+  // Monitora se o rastreio em tempo real está ativo com coordenadas válidas e ping recente (<= 150s)
   useEffect(() => {
     if (pedido?.status !== 'out_for_delivery') {
       setIsTrackingActive(false);
+      setIsMapModalVisible(false);
       return;
     }
 
-    let channel = null;
+    let isMounted = true;
+    let lastUpdatedAt = null;
+
+    const isFreshPing = (updatedAt) => {
+      if (!updatedAt) return false;
+      return Date.now() - new Date(updatedAt).getTime() <= 2.5 * 60 * 1000;
+    };
+
+    const evaluateRow = (row) => {
+      const active = Boolean(
+        pedido?.status === 'out_for_delivery' &&
+          row?.is_active &&
+          row?.driver_lat != null &&
+          row?.driver_lng != null &&
+          isFreshPing(row?.updated_at)
+      );
+      lastUpdatedAt = active ? (row?.updated_at || new Date().toISOString()) : (row?.updated_at || null);
+      setIsTrackingActive(active);
+      if (!active) {
+        setIsMapModalVisible(false);
+      }
+    };
+
+    const channel = supabase
+      .channel(`delivery-active-${pedido.id}-${Date.now()}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'delivery_tracking',
+          filter: 'id=eq.live',
+        },
+        (payload) => {
+          if (!isMounted) return;
+          evaluateRow(payload.new);
+        }
+      )
+      .subscribe();
 
     async function checkLiveTracking() {
       try {
         const { data } = await supabase
           .from('delivery_tracking')
-          .select('is_active, driver_lat, driver_lng')
+          .select('is_active, driver_lat, driver_lng, updated_at')
           .eq('id', 'live')
           .single();
 
-        const active = Boolean(data?.is_active && data?.driver_lat && data?.driver_lng);
-        setIsTrackingActive(active);
-
-        channel = supabase
-          .channel(`delivery-active-${Date.now()}`)
-          .on(
-            'postgres_changes',
-            {
-              event: '*',
-              schema: 'public',
-              table: 'delivery_tracking',
-              filter: 'id=eq.live',
-            },
-            (payload) => {
-              const row = payload.new;
-              setIsTrackingActive(Boolean(row?.is_active && row?.driver_lat && row?.driver_lng));
-            }
-          )
-          .subscribe();
+        if (!isMounted) return;
+        evaluateRow(data);
       } catch {
-        const metaLat = pedido?.deliveryLat ?? pedido?.metadata?.driver_lat;
-        const metaLng = pedido?.deliveryLng ?? pedido?.metadata?.driver_lng;
-        setIsTrackingActive(Boolean(metaLat && metaLng));
+        if (!isMounted) return;
+        setIsTrackingActive(false);
+        setIsMapModalVisible(false);
       }
     }
 
     checkLiveTracking();
 
+    const stalenessTimer = setInterval(() => {
+      if (!isMounted) return;
+      if (lastUpdatedAt && !isFreshPing(lastUpdatedAt)) {
+        setIsTrackingActive(false);
+        setIsMapModalVisible(false);
+      }
+    }, 30000);
+
     return () => {
-      if (channel) supabase.removeChannel(channel);
+      isMounted = false;
+      clearInterval(stalenessTimer);
+      supabase.removeChannel(channel);
     };
-  }, [pedido?.status, pedido?.deliveryLat, pedido?.deliveryLng, pedido?.metadata?.driver_lat, pedido?.metadata?.driver_lng]);
+  }, [pedido?.id, pedido?.status]);
 
-  const triggerPaymentSuccess = useCallback(() => {
-    if (hasTriggeredSuccessRef.current) return;
+  const triggerPaymentSuccess = useCallback((latestOrder = null) => {
+    if (latestOrder) {
+      pendingPaidOrderRef.current = latestOrder;
+    }
+    const orderKey = String(pedidoRef.current?.id || id || '');
+    if (hasTriggeredSuccessRef.current || (orderKey && celebratedOrderIds.has(orderKey))) return;
     hasTriggeredSuccessRef.current = true;
-    setShowConfetti(true);
-    setShowSuccessBanner(true);
-    Animated.timing(bannerFadeAnim, {
-      toValue: 1,
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
+    if (orderKey) celebratedOrderIds.add(orderKey);
+    isCelebrationPendingRef.current = true;
 
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    notifyAdminNewOrder(pedido?.id || id).catch(() => {});
+    const executePaymentConfirmation = () => {
+      isCelebrationPendingRef.current = false;
 
-    Animated.timing(pixFadeAnim, {
-      toValue: 0,
-      duration: 350,
-      useNativeDriver: true,
-    }).start(() => {
-      setPedido((prev) => (prev ? { ...prev, status: 'preparing' } : prev));
-    });
+      // 1. Primeiro exibe o banner deslizante e dispara vibração tátil de sucesso
+      setShowSuccessBanner(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
 
-    setTimeout(() => {
-      setShowConfetti(false);
-    }, 2500);
+      // 2. Após 420ms (banner já posicionado visivelmente), dispara a explosão de confetes
+      if (confettiTimeoutRef.current) clearTimeout(confettiTimeoutRef.current);
+      confettiTimeoutRef.current = setTimeout(() => {
+        setShowConfetti(true);
+      }, 420);
 
-    setTimeout(() => {
-      Animated.timing(bannerFadeAnim, {
+      // 3. Desliga os confetes após 420 + 2600ms (3020ms)
+      if (confettiEndTimeoutRef.current) clearTimeout(confettiEndTimeoutRef.current);
+      confettiEndTimeoutRef.current = setTimeout(() => {
+        setShowConfetti(false);
+      }, 3020);
+
+      // 4. Notifica o painel administrativo de novo pedido aprovado
+      notifyAdminNewOrder(pedidoRef.current?.id || id).catch(() => {});
+
+      // 5. Esconde o bloco do Pix e transiciona o status do pedido para 'preparing'
+      Animated.timing(pixFadeAnim, {
         toValue: 0,
-        duration: 400,
+        duration: 320,
         useNativeDriver: true,
       }).start(() => {
-        setShowSuccessBanner(false);
+        setPedido((prev) => {
+          const paidOrder = pendingPaidOrderRef.current;
+          if (paidOrder && paidOrder.status !== 'awaiting_payment') {
+            return {
+              ...paidOrder,
+              metadata: {
+                ...(paidOrder.metadata || {}),
+                mp_payment_status: 'approved',
+                paid_at: paidOrder.metadata?.paid_at || new Date().toISOString(),
+              },
+            };
+          }
+          return prev
+            ? {
+                ...prev,
+                status: 'preparing',
+                metadata: {
+                  ...(prev.metadata || {}),
+                  mp_payment_status: 'approved',
+                  paid_at: prev.metadata?.paid_at || new Date().toISOString(),
+                },
+              }
+            : prev;
+        });
+        carregarPedidoRef.current({ silent: true });
       });
-    }, 4500);
-  }, [bannerFadeAnim, pixFadeAnim, pedido?.id, id]);
+    };
+
+    if (celebrationTimeoutRef.current) {
+      clearTimeout(celebrationTimeoutRef.current);
+    }
+    if (appStateSubRef.current) {
+      appStateSubRef.current.remove();
+      appStateSubRef.current = null;
+    }
+
+    if (AppState.currentState === 'active') {
+      const msSinceActive = Date.now() - lastBecameActiveAtRef.current;
+      // Se o cliente acabou de voltar do app do banco (< 700ms), aguarda o fim da transição do SO
+      const waitMs = msSinceActive < 700 ? Math.max(400, 650 - msSinceActive) : 250;
+      celebrationTimeoutRef.current = setTimeout(() => {
+        executePaymentConfirmation();
+      }, waitMs);
+    } else {
+      // Cliente ainda está no app do banco: aguarda voltar para 'active' + 500ms de transição
+      appStateSubRef.current = AppState.addEventListener('change', (nextAppState) => {
+        if (nextAppState === 'active') {
+          if (appStateSubRef.current) {
+            appStateSubRef.current.remove();
+            appStateSubRef.current = null;
+          }
+          celebrationTimeoutRef.current = setTimeout(() => {
+            executePaymentConfirmation();
+          }, 500);
+        }
+      });
+    }
+  }, [pixFadeAnim, id]);
+
+  useEffect(() => {
+    return () => {
+      if (celebrationTimeoutRef.current) {
+        clearTimeout(celebrationTimeoutRef.current);
+      }
+      if (confettiTimeoutRef.current) {
+        clearTimeout(confettiTimeoutRef.current);
+      }
+      if (confettiEndTimeoutRef.current) {
+        clearTimeout(confettiEndTimeoutRef.current);
+      }
+      if (appStateSubRef.current) {
+        appStateSubRef.current.remove();
+      }
+    };
+  }, []);
 
   const handleConfirmDelivered = async () => {
     if (!pedido) return;
@@ -584,9 +974,26 @@ export default function DetalhesPedido() {
     if (!silent) setInitialLoading(true);
     try {
       const resultado = await buscarPedidoPorId(id);
-      if (resultado.success) {
-        setPedido(resultado.data);
-        return resultado.data;
+      if (resultado.success && resultado.data) {
+        const fetched = resultado.data;
+        const fetchedIsPaid =
+          fetched.status !== 'awaiting_payment' && fetched.status !== 'cancelled';
+
+        if (isPixAwaitingRef.current && fetchedIsPaid) {
+          pendingPaidOrderRef.current = fetched;
+          if (!hasTriggeredSuccessRef.current) {
+            triggerPaymentSuccess(fetched);
+            return fetched;
+          }
+        }
+
+        if (isCelebrationPendingRef.current) {
+          pendingPaidOrderRef.current = fetched;
+          return fetched;
+        }
+
+        setPedido(fetched);
+        return fetched;
       } else if (!silent) {
         setErro(true);
       }
@@ -596,10 +1003,39 @@ export default function DetalhesPedido() {
       if (!silent) setInitialLoading(false);
     }
     return null;
-  }, [id, buscarPedidoPorId]);
+  }, [id, buscarPedidoPorId, triggerPaymentSuccess]);
 
   const carregarPedidoRef = useRef(carregarPedido);
   carregarPedidoRef.current = carregarPedido;
+
+  // Monitora retorno do app (ex: voltando do app do banco) para checar o Pix imediatamente
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextAppState) => {
+      appStateRef.current = nextAppState;
+      if (nextAppState === 'active') {
+        lastBecameActiveAtRef.current = Date.now();
+        if (isPixAwaitingRef.current && !hasTriggeredSuccessRef.current) {
+          if (mpPaymentId) {
+            checkPixStatus(mpPaymentId)
+              .then((res) => {
+                if (!res?.success) return;
+                const isPaid =
+                  res.statusDetail === 'accredited' ||
+                  res.paymentStatus === 'approved' ||
+                  res.status === 'approved' ||
+                  res.status === 'processed';
+                if (isPaid) {
+                  triggerPaymentSuccess();
+                }
+              })
+              .catch(() => {});
+          }
+          carregarPedidoRef.current({ silent: true });
+        }
+      }
+    });
+    return () => sub.remove();
+  }, [mpPaymentId, triggerPaymentSuccess]);
 
   // a) Assinar Realtime UPDATE na linha do pedido de forma estável (sem loops)
   useEffect(() => {
@@ -634,8 +1070,8 @@ export default function DetalhesPedido() {
     };
   }, [id, triggerPaymentSuccess]);
 
-  // ── Contagem regressiva do PIX (15 minutos = 900 segundos) ──────────────────
-  const PIX_TOTAL_SECONDS = 15 * 60; // 900s
+  // ── Contagem regressiva do PIX (30 minutos = 1800 segundos) ──────────────────
+  const PIX_TOTAL_SECONDS = 30 * 60; // 1800s
 
   useEffect(() => {
     if (!pedido?.id || !isPixAwaiting) {
@@ -660,11 +1096,14 @@ export default function DetalhesPedido() {
           hasTriggeredExpiryFetchRef.current = true;
           setPedido((prev) => (prev ? { ...prev, status: 'cancelled' } : prev));
           try {
-            await supabase.rpc('cancel_order_user', { p_order_id: pedido.id });
+            await supabase.rpc('cancel_order_user', {
+              p_order_id: pedido.id,
+              p_cancel_reason: 'pix_expirado_30min',
+            });
           } catch {}
           showThemedAlert(
             'Pix Expirado',
-            'O tempo limite de 15 minutos para pagamento via Pix expirou. Faça um novo pedido se desejar.'
+            'O tempo limite de 30 minutos para pagamento via Pix expirou. Faça um novo pedido se desejar.'
           );
           carregarPedidoRef.current({ silent: true });
         }
@@ -836,9 +1275,9 @@ export default function DetalhesPedido() {
   const hasArrived = !!pedido.metadata?.arrived_at;
 
   const isUrgentTimer = remainingSeconds !== null && remainingSeconds <= 300;
-  const timerColor = isUrgentTimer ? '#E61E2A' : '#B45309';
-  const timerBarColor = isUrgentTimer ? '#E61E2A' : '#FFB800';
-  const timerTrackBg = isUrgentTimer ? '#FEE2E2' : '#FEF3C7';
+  const timerColor = isUrgentTimer ? '#D97706' : '#B45309';
+  const timerBarColor = isUrgentTimer ? '#E3A008' : '#FFB800';
+  const timerTrackBg = isUrgentTimer ? '#FEF3C7' : '#FEF3C7';
 
   const itemsSubtotal = (pedido.items || []).reduce(
     (sum, i) => sum + Number(i.price || 0) * (Number(i.quantity || 1) || 1),
@@ -872,22 +1311,12 @@ export default function DetalhesPedido() {
         </View>
       </View>
 
-      {/* Banner Festivo de Aprovação Pix */}
-      {showSuccessBanner && (
-        <Animated.View style={[s.festiveBanner, { opacity: bannerFadeAnim }]}>
-          <Ionicons name="sparkles" size={18} color="#FFF" />
-          <Text style={s.festiveBannerText}>
-            🎉 Pagamento aprovado com sucesso! Sua batata já está sendo preparada.
-          </Text>
-        </Animated.View>
-      )}
-
-      {/* Mapa da Batata Top (LiveDeliveryMap) EXCLUSIVO quando rastreio ativo e em rota */}
-      {shouldShowMap && (
-        <View style={s.mapWrapper}>
-          <LiveDeliveryMap order={pedido} height={240} />
-        </View>
-      )}
+      {/* Banner de Alerta Superior Fluido (Slide-down e Slide-up sem empurrar o layout) */}
+      <SlideDownPaymentSuccessBanner
+        visible={showSuccessBanner}
+        insets={insets}
+        onDismiss={() => setShowSuccessBanner(false)}
+      />
 
       <ScrollView
         ref={scrollViewRef}
@@ -917,9 +1346,12 @@ export default function DetalhesPedido() {
         {/* CARD 1 — Status & Linha do Tempo */}
         <View style={s.card}>
           <View style={s.statusRow}>
-            <View style={[s.statusIconBox, { backgroundColor: statusBg }]}>
-              <Ionicons name={statusIcon} size={24} color={statusColor} />
-            </View>
+            <AnimatedStatusBadge
+              iconName={statusIcon}
+              color={statusColor}
+              bgColor={statusBg}
+              status={pedido.status}
+            />
             <View style={s.statusInfo}>
               <Text style={[s.statusLabel, { color: statusColor }]}>{statusLabel}</Text>
               {timeStr ? <Text style={s.statusTime}>Realizado às {timeStr}</Text> : null}
@@ -931,6 +1363,30 @@ export default function DetalhesPedido() {
 
           <ProgressBar status={pedido.status} isPixAwaiting={isPixAwaiting} />
 
+          {/* Mini-Preview do Mapa de Entrega em Tempo Real (Exclusivo se GPS ativo) */}
+          {shouldShowMap && (
+            <Pressable
+              style={s.mapPreviewCard}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                setIsMapModalVisible(true);
+              }}
+            >
+              <View style={s.mapPreviewViewport} pointerEvents="none">
+                <LiveDeliveryMap order={pedido} height={140} isPreview={true} />
+              </View>
+              <View style={s.mapPreviewFooterBar}>
+                <View style={s.mapPreviewFooterLeft}>
+                  <View style={s.mapPreviewLiveDot} />
+                  <Text style={s.mapPreviewFooterText}>Acompanhar no mapa</Text>
+                </View>
+                <View style={s.mapPreviewExpandBadge}>
+                  <Ionicons name="expand-outline" size={16} color={COLORS.primary} />
+                </View>
+              </View>
+            </Pressable>
+          )}
+
           {/* Botão Secundário: Já recebi meu pedido */}
           {(isOutForDelivery || hasArrived) && (
             <Pressable
@@ -939,27 +1395,13 @@ export default function DetalhesPedido() {
               disabled={confirmingDelivered}
             >
               {confirmingDelivered ? (
-                <ActivityIndicator size="small" color="#1F1B16" />
+                <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
                 <>
-                  <Ionicons name="checkmark-done" size={18} color="#1F1B16" />
+                  <Ionicons name="checkmark-done" size={18} color="#FFFFFF" />
                   <Text style={s.confirmReceivedText}>Já recebi meu pedido</Text>
                 </>
               )}
-            </Pressable>
-          )}
-
-          {/* Botão de Avaliação quando Entregue */}
-          {pedido.status === 'delivered' && (
-            <Pressable
-              style={s.feedbackCardBtn}
-              onPress={() => setFeedbackModalVisible(true)}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Ionicons name="star" size={20} color="#FFB800" />
-                <Text style={s.feedbackCardBtnTitle}>Avaliar este pedido</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color="#FFB800" />
             </Pressable>
           )}
         </View>
@@ -999,7 +1441,7 @@ export default function DetalhesPedido() {
                   s.countdownFill,
                   {
                     backgroundColor: timerBarColor,
-                    width: `${remainingSeconds !== null ? Math.min(100, Math.max(0, (remainingSeconds / 900) * 100)) : 100}%`,
+                    width: `${remainingSeconds !== null ? Math.min(100, Math.max(0, (remainingSeconds / PIX_TOTAL_SECONDS) * 100)) : 100}%`,
                   },
                 ]}
               />
@@ -1050,50 +1492,29 @@ export default function DetalhesPedido() {
               </View>
             ) : null}
 
-            {/* 5. Botões de Ação Animados (Copiar Pix e Copiar Link) */}
+            {/* 5. Botão de Ação (Copiar Pix) */}
             <View style={s.pixActionsCol}>
-              {qrCodeText ? (
-                <Pressable
-                  style={[s.copyBtn, copied && s.copyBtnActive]}
-                  onPress={async () => {
-                    await Clipboard.setStringAsync(qrCodeText);
+              <Pressable
+                style={[s.copyBtn, copied && s.copyBtnActive]}
+                onPress={async () => {
+                  const pixTarget = qrCodeText || ticketUrl;
+                  if (pixTarget) {
+                    await Clipboard.setStringAsync(pixTarget);
                     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                     setCopied(true);
                     setTimeout(() => setCopied(false), 2500);
-                  }}
-                >
-                  <Ionicons
-                    name={copied ? 'checkmark-circle' : 'copy-outline'}
-                    size={18}
-                    color={copied ? '#FFFFFF' : '#1F1B16'}
-                  />
-                  <Text style={[s.copyBtnText, copied && s.copyBtnTextActive]}>
-                    {copied ? 'Código copiado! Cole no app do seu banco' : 'Copiar código Pix'}
-                  </Text>
-                </Pressable>
-              ) : null}
-
-              <Pressable
-                style={[s.copyLinkBtn, copiedLink && s.copyBtnActive]}
-                onPress={async () => {
-                  const payTarget = ticketUrl || qrCodeText;
-                  if (payTarget) {
-                    await Clipboard.setStringAsync(payTarget);
-                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                    setCopiedLink(true);
-                    setTimeout(() => setCopiedLink(false), 2500);
                   } else if (pedido?.id) {
                     await requestPixQrCode(pedido.id);
                   }
                 }}
               >
                 <Ionicons
-                  name={copiedLink ? 'checkmark-circle' : 'link-outline'}
+                  name={copied ? 'checkmark-circle' : 'copy-outline'}
                   size={18}
-                  color={copiedLink ? '#FFFFFF' : '#1F1B16'}
+                  color={copied ? '#FFFFFF' : '#1F1B16'}
                 />
-                <Text style={[s.copyLinkBtnText, copiedLink && s.copyBtnTextActive]}>
-                  {copiedLink ? 'Link copiado com sucesso!' : 'Copiar link para pagar'}
+                <Text style={[s.copyBtnText, copied && s.copyBtnTextActive]}>
+                  {copied ? 'Código copiado! Cole no app do seu banco' : 'Copiar código Pix'}
                 </Text>
               </Pressable>
             </View>
@@ -1106,7 +1527,7 @@ export default function DetalhesPedido() {
             <Ionicons
               name={pedido.deliveryType === 'retirada' ? 'storefront-outline' : 'location-sharp'}
               size={20}
-              color="#EA580C"
+              color={COLORS.primary ?? '#E3A008'}
             />
             <Text style={s.sectionTitle}>
               {pedido.deliveryType === 'retirada' ? 'Retirada na Loja' : 'Endereço de Entrega'}
@@ -1116,9 +1537,9 @@ export default function DetalhesPedido() {
 
           {pedido.deliveryType === 'retirada' ? (
             <View style={s.addressDetailsCol}>
-              <Text style={s.addressMainText}>Batata Top — Balcão Principal</Text>
+              <Text style={s.addressMainText}>Batata Top — Portão de Ferro Preto</Text>
               <Text style={s.addressSubText}>{STORE_ADDRESS.full}</Text>
-              <Text style={s.addressHintText}>Apresente o número do pedido #{num} ao chegar.</Text>
+              <Text style={s.addressHintText}>Apresente o número do pedido #{num} ao chegar no portão de ferro preto.</Text>
             </View>
           ) : (
             <View style={s.addressDetailsCol}>
@@ -1133,7 +1554,7 @@ export default function DetalhesPedido() {
         {/* CARD 3 — Itens do Pedido */}
         <View style={s.card}>
           <View style={s.sectionHeader}>
-            <Ionicons name="receipt-outline" size={20} color="#EA580C" />
+            <Ionicons name="receipt-outline" size={20} color={COLORS.primary ?? '#E3A008'} />
             <Text style={s.sectionTitle}>Itens do Pedido ({pedido.items?.length || 0})</Text>
           </View>
           <View style={s.divider} />
@@ -1185,7 +1606,7 @@ export default function DetalhesPedido() {
         {/* CARD 4 — Resumo de Valores & Pagamento */}
         <View style={s.card}>
           <View style={s.sectionHeader}>
-            <Ionicons name="wallet-outline" size={20} color="#EA580C" />
+            <Ionicons name="wallet-outline" size={20} color={COLORS.primary ?? '#E3A008'} />
             <Text style={s.sectionTitle}>Resumo de Valores</Text>
           </View>
           <View style={s.divider} />
@@ -1253,6 +1674,18 @@ export default function DetalhesPedido() {
 
         {/* Rodapé Estilo iFood Duplo com Botão Cancelar */}
         <View style={s.footerContainer}>
+          {/* Botão de Avaliação quando Entregue no Rodapé */}
+          {pedido.status === 'delivered' && (
+            <Pressable
+              style={s.footerFeedbackBtn}
+              onPress={() => setFeedbackModalVisible(true)}
+            >
+              <Ionicons name="star" size={19} color="#FFB800" />
+              <Text style={s.footerFeedbackBtnText}>Avaliar este pedido</Text>
+              <Ionicons name="chevron-forward" size={17} color="#B45309" />
+            </Pressable>
+          )}
+
           <View style={s.footerDoubleRow}>
             <Pressable
               style={s.footerSecondaryBtn}
@@ -1360,27 +1793,24 @@ export default function DetalhesPedido() {
         }}
       />
 
-      {/* Botão Flutuante de Atalho para o Mapa */}
-      {shouldShowMap && (
-        <View
-          style={[
-            s.floatingMapBtnWrap,
-            { bottom: Math.max(insets.bottom, 16) + 14 },
-          ]}
-          pointerEvents="box-none"
-        >
-          <Pressable
-            style={s.floatingMapBtn}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              scrollViewRef.current?.scrollTo({ y: 0, animated: true });
-            }}
-          >
-            <Ionicons name="map-outline" size={17} color="#FFB800" />
-            <Text style={s.floatingMapBtnText}>Ver entrega no mapa 🗺️</Text>
-          </Pressable>
-        </View>
-      )}
+      {/* Modal de Mapa em Tela Cheia estilo iFood */}
+      <Modal
+        visible={isMapModalVisible && shouldShowMap}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        statusBarTranslucent
+        onRequestClose={() => setIsMapModalVisible(false)}
+      >
+        <SafeAreaProvider>
+          <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+            <LiveDeliveryMap
+              order={pedido}
+              isFullScreen
+              onClose={() => setIsMapModalVisible(false)}
+            />
+          </View>
+        </SafeAreaProvider>
+      </Modal>
 
       {/* Confetes leves de aprovação Pix */}
       <ConfettiExplosion active={showConfetti} />
@@ -1831,25 +2261,25 @@ const s = StyleSheet.create({
   timerUrgentLabel: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#E61E2A',
+    color: '#D97706',
   },
   timerUrgentCountdown: {
     fontSize: 14,
     fontWeight: '900',
-    color: '#E61E2A',
+    color: '#D97706',
     fontVariant: ['tabular-nums'],
   },
   countdownTrack: {
     width: '100%',
     height: 6,
-    backgroundColor: '#FEE2E2',
+    backgroundColor: '#FEF3C7',
     borderRadius: 3,
     overflow: 'hidden',
     marginBottom: 12,
   },
   countdownFill: {
     height: '100%',
-    backgroundColor: '#E61E2A',
+    backgroundColor: '#E3A008',
     borderRadius: 3,
   },
   qrFallbackContainer: {
@@ -2296,8 +2726,9 @@ const s = StyleSheet.create({
     gap: 8,
     backgroundColor: '#FFB800',
     borderRadius: 12,
-    height: 46,
-    marginBottom: 12,
+    height: 48,
+    marginTop: 18,
+    marginBottom: 4,
     shadowColor: '#FFB800',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
@@ -2307,7 +2738,7 @@ const s = StyleSheet.create({
   confirmReceivedText: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#1F1B16',
+    color: '#FFFFFF',
   },
   paidBadgeBox: {
     flexDirection: 'row',
@@ -2325,71 +2756,81 @@ const s = StyleSheet.create({
     fontWeight: '700',
     color: '#16A34A',
   },
-  feedbackCardBtn: {
+  footerFeedbackBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1.5,
+    borderColor: '#FDE68A',
+    shadowColor: '#F59E0B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  footerFeedbackBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#92400E',
+  },
+  mapPreviewCard: {
+    height: 140,
+    borderRadius: RADIUS.lg,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginTop: SPACING[3],
+    marginBottom: SPACING[3],
+    backgroundColor: COLORS.backgroundElevated,
+    position: 'relative',
+    ...SHADOWS.sm,
+  },
+  mapPreviewViewport: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  mapPreviewFooterBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#FFF9E6',
+    paddingHorizontal: SPACING[3],
+    paddingVertical: SPACING[2],
+    backgroundColor: COLORS.background,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  mapPreviewFooterLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING[2],
+  },
+  mapPreviewLiveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.success,
+  },
+  mapPreviewFooterText: {
+    fontSize: TYPOGRAPHY.sizes.xs,
+    fontWeight: TYPOGRAPHY.weights.extrabold,
+    color: COLORS.text,
+  },
+  mapPreviewExpandBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.warningBg,
     borderWidth: 1,
-    borderColor: '#FCE8C3',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 12,
-  },
-  feedbackCardBtnTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#B45309',
-  },
-  festiveBanner: {
-    flexDirection: 'row',
+    borderColor: COLORS.warningBorder,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#16A34A',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    marginHorizontal: 16,
-    marginTop: 10,
-    marginBottom: 4,
-    borderRadius: 14,
-    shadowColor: '#16A34A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  festiveBannerText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '800',
-    textAlign: 'center',
-    flex: 1,
-  },
-  floatingMapBtnWrap: {
-    position: 'absolute',
-    alignSelf: 'center',
-    zIndex: 99,
-  },
-  floatingMapBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#1F1B16',
-    paddingVertical: 11,
-    paddingHorizontal: 18,
-    borderRadius: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 6,
-  },
-  floatingMapBtnText: {
-    color: '#FFFFFF',
-    fontSize: 13.5,
-    fontWeight: '800',
   },
 });
 

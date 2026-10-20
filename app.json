@@ -23,12 +23,9 @@
         "backgroundColor": "#F97316"
       },
       "package": "com.batatatop.app",
+      "googleServicesFile": "./google-services.json",
       "allowBackup": false,
       "edgeToEdgeEnabled": true,
-      "androidNavigationBar": {
-        "barStyle": "dark-content",
-        "backgroundColor": "#FFFFFF"
-      },
       "permissions": [
         "POST_NOTIFICATIONS",
         "ACCESS_FINE_LOCATION",
@@ -52,8 +49,8 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/logo.png",
-          "color": "#1A1A1A",
+          "icon": "./assets/notification-icon.png",
+          "color": "#FFB800",
           "sounds": [
             "./assets/sounds/new_order.mp3"
           ],
@@ -68,10 +65,18 @@
       ],
       "expo-video",
       "@react-native-community/datetimepicker",
-      "expo-web-browser"
+      "expo-web-browser",
+      "@react-native-google-signin/google-signin"
     ],
     "experiments": {
       "typedRoutes": false
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "353f5469-a4d4-4346-852d-79b40796a424"
+      }
+    },
+    "owner": "vkdelass-team"
   }
 }

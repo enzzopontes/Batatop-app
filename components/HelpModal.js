@@ -18,8 +18,8 @@ import usePressScale from '../hooks/usePressScale';
 import useChevronRotation from '../hooks/useChevronRotation';
 import useStaggerEntrance from '../hooks/useStaggerEntrance';
 
-// Habilita animação de layout suave no accordion (Android)
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+// Habilita animação de layout suave no accordion (Android antigo / sem New Architecture)
+if (Platform.OS === 'android' && !global?.nativeFabricUIManager && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 

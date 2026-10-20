@@ -24,11 +24,25 @@ import { supabase } from '../supabaseConfig';
 export const isUserPushAvailable = !(isRunningInExpoGo() && Platform.OS === 'android');
 
 let notificationsModule = null;
+let handlerConfigured = false;
 
 async function getNotifications() {
   if (!isUserPushAvailable) return null;
   if (!notificationsModule) {
     notificationsModule = await import('expo-notifications');
+
+    if (!handlerConfigured) {
+      notificationsModule.setNotificationHandler({
+        handleNotification: async () => ({
+          shouldShowAlert: true,
+          shouldShowBanner: true,
+          shouldShowList: true,
+          shouldPlaySound: true,
+          shouldSetBadge: true,
+        }),
+      });
+      handlerConfigured = true;
+    }
   }
   return notificationsModule;
 }

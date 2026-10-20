@@ -15,6 +15,7 @@ import RipplePressable from './RipplePressable';
 
 const LOGO = require('../../assets/logo.png');
 const CUPOM_ICON = require('../../assets/cuponpretobranco.png');
+const PEDIDOS_EMPTY = require('../../assets/pedidos.png');
 
 interface StepItensProps {
   items: any[];
@@ -61,9 +62,11 @@ export default function StepItens({
   if (items.length === 0) {
     return (
       <View style={styles.emptyContainer}>
-        <View style={styles.emptyIconCircle}>
-          <Ionicons name="bag-handle-outline" size={48} color={COLORS.primary} />
-        </View>
+        <Image
+          source={PEDIDOS_EMPTY}
+          style={styles.emptyImage}
+          resizeMode="contain"
+        />
         <Text style={styles.emptyTitle}>Sua sacola está vazia</Text>
         <Text style={styles.emptySubtitle}>
           Que tal adicionar algumas deliciosas batatas recheadas para começar?
@@ -309,13 +312,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: SPACING[6],
   },
-  emptyIconCircle: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: COLORS.backgroundElevated,
-    alignItems: 'center',
-    justifyContent: 'center',
+  emptyImage: {
+    width: 200,
+    height: 200,
     marginBottom: SPACING[4],
   },
   emptyTitle: {

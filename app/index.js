@@ -25,10 +25,12 @@ import { ALREADY_SEEN_WELCOME_KEY } from './welcome';
 import { ALREADY_SEEN_LOCATION_KEY } from './location';
 import * as Location from 'expo-location';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../constants/theme';
-import { useProductRanking } from './hooks/useProductRanking';
+import { useProductRanking } from '../hooks/useProductRanking';
 import BannerCarousel from '../components/BannerCarousel';
 import CategoriasFlutuantes from '../components/CategoriasFlutuantes';
 import { CATEGORIAS, handleCategoriaPress } from '../constants/categorias';
+import { fetchHomeCoupons } from '../utils/homeCoupons';
+import HomeCouponCard, { HOME_COUPON_CARD_WIDTH, HOME_COUPON_GAP } from '../components/HomeCouponCard';
 import {
   useScrollHandler,
   useHeaderHeight,
@@ -38,26 +40,14 @@ import {
   HEADER_EASING,
 } from './_layout';
 
-// ─── Cupom (dimensões do card-ticket) ─────────────────────────────────────────
-const CUPOM_CARD_WIDTH = 304;
-const CUPOM_CARD_HEIGHT = 168;
-const CUPOM_GAP = 14;
-const CUPOM_LEFT_WIDTH = 162; // painel laranja um pouco maior que o creme
-const CUPOM_RIGHT_WIDTH = CUPOM_CARD_WIDTH - CUPOM_LEFT_WIDTH;
-const CUPOM_SEAM_WIDTH = 22; // largura só da faixa dos furinhos/tracejado (fica por cima, não ocupa espaço no layout)
+// ─── Cupons (dimensões e compatibilidade de bundle Metro) ────────────────────
+const CUPOM_GAP = HOME_COUPON_GAP;
+const CUPOM_CARD_WIDTH = HOME_COUPON_CARD_WIDTH;
 
 // ─── Grid "Batatas mais pedidas" (2 colunas, largura fixa calculada) ──────────
 const PROD_GRID_GAP = 14;
 const PROD_CARD_WIDTH = (Dimensions.get('window').width - SPACING[6] * 2 - PROD_GRID_GAP) / 2;
 const PROD_IMG_HEIGHT = PROD_CARD_WIDTH * 0.9;
-
-// cores fixas do "ticket" — não vêm do theme pq o cupom tem identidade própria
-// (laranja + creme), igual ao cartão de cupom do iFood
-const CUPOM_LARANJA = '#FFA412';
-const CUPOM_LARANJA_ESCURO = '#E08900';
-const CUPOM_CREME = '#FFF3DC';
-const CUPOM_MARROM = '#5C3D0A';
-const CUPOM_MARROM_CLARO = '#8A6A3B';
 
 // ─── Pressable com scale ───────────────────────────────────────────────────────
 function PressableScale({ children, onPress, style }) {
@@ -71,129 +61,6 @@ function PressableScale({ children, onPress, style }) {
     <Pressable onPress={onPress} onPressIn={handlePressIn} onPressOut={handlePressOut} style={style}>
       <Animated.View style={{ transform: [{ scale }] }}>{children}</Animated.View>
     </Pressable>
-  );
-}
-
-// ─── Cupom Card (ticket laranja/creme, com "furos" no meio e código copiável) ─
-// Array só pra desenhar a linha pontilhada vertical do meio do ticket "na mão"
-// (mais confiável entre plataformas do que confiar no borderStyle:'dashed'
-// do RN, que no Android às vezes ignora o tracejado).
-const CUPOM_DASHES = Array.from({ length: 9 });
-
-function CupomCard({ codigo, valor, unidade, descricaoDesconto, validade, usoLabel, mensagem }) {
-  const [copiado, setCopiado] = useState(false);
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-  const corAnim = useRef(new Animated.Value(0)).current; // 0 = creme normal, 1 = verde copiado
-
-  const copiarCodigo = () => {
-    Clipboard.setStringAsync(codigo);
-    Animated.sequence([
-      Animated.timing(scaleAnim, { toValue: 0.95, duration: 80, useNativeDriver: true }),
-      Animated.spring(scaleAnim, { toValue: 1, friction: 4, useNativeDriver: true }),
-    ]).start();
-    Animated.timing(corAnim, { toValue: 1, duration: 200, useNativeDriver: false }).start();
-    setCopiado(true);
-    if (Platform.OS === 'android') ToastAndroid.show('Cupom copiado!', ToastAndroid.SHORT);
-    setTimeout(() => {
-      Animated.timing(corAnim, { toValue: 0, duration: 250, useNativeDriver: false }).start();
-      setCopiado(false);
-    }, 2000);
-  };
-
-  const boxBg = corAnim.interpolate({ inputRange: [0, 1], outputRange: ['#FFFFFF', '#22C55E'] });
-  const boxBorda = corAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [CUPOM_LARANJA, '#22C55E'],
-  });
-  const boxTexto = corAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [CUPOM_LARANJA_ESCURO, '#FFFFFF'],
-  });
-
-  const ehPercentual = unidade === '%';
-
-  return (
-    <View style={s.cupomCardShadow}>
-      <View style={s.cupomCard}>
-        {/* ── Metade esquerda: laranja, com o valor do desconto em destaque ── */}
-        <View style={s.cupomLeftPanel}>
-          {/* decoração de fundo — só uns ícones bem apagados espalhados, sem
-              atrapalhar a leitura */}
-          <Ionicons name="fast-food" size={46} color="#FFFFFF" style={s.cupomDecorA} />
-          <Ionicons name="pricetag" size={30} color="#FFFFFF" style={s.cupomDecorB} />
-          <Ionicons name="sparkles" size={22} color="#FFFFFF" style={s.cupomDecorC} />
-
-          <View style={s.cupomBadge}>
-            <Ionicons name="pricetag" size={11} color={CUPOM_LARANJA_ESCURO} />
-            <Text style={s.cupomBadgeText}>CUPOM DE{'\n'}DESCONTO</Text>
-          </View>
-
-          <View style={s.cupomValorRow}>
-            {!ehPercentual && <Text style={s.cupomValorPrefixo}>{unidade}</Text>}
-            <Text style={s.cupomValorNum}>{valor}</Text>
-            {ehPercentual && <Text style={s.cupomValorSimbolo}>%</Text>}
-          </View>
-          <Text style={s.cupomOff}>OFF</Text>
-
-          <View style={s.cupomLeftDivider} />
-          <Text style={s.cupomLeftDesc}>{descricaoDesconto}</Text>
-        </View>
-
-        {/* ── Metade direita: creme, com código, validade e uso ── */}
-        <View style={s.cupomRightPanel}>
-          <Ionicons name="star" size={20} color={CUPOM_LARANJA} style={s.cupomDecorD} />
-
-          <View style={s.cupomCodigoLabelRow}>
-            <Ionicons name="caret-back" size={9} color={CUPOM_MARROM_CLARO} />
-            <Text style={s.cupomCodigoLabel}>USE O CÓDIGO</Text>
-            <Ionicons name="caret-forward" size={9} color={CUPOM_MARROM_CLARO} />
-          </View>
-
-          <Pressable onPress={copiarCodigo} hitSlop={6}>
-            <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-              <Animated.View style={[s.cupomCodigoBox, { backgroundColor: boxBg, borderColor: boxBorda }]}>
-                {copiado ? (
-                  <Ionicons name="checkmark" size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
-                ) : null}
-                <Animated.Text style={[s.cupomCodigoTexto, { color: boxTexto }]} numberOfLines={1}>
-                  {copiado ? 'COPIADO!' : codigo}
-                </Animated.Text>
-              </Animated.View>
-            </Animated.View>
-          </Pressable>
-
-          <View style={s.cupomInfoLine} />
-          <View style={s.cupomInfoRow}>
-            <Text style={s.cupomInfoLabel}>VÁLIDO ATÉ</Text>
-            <Text style={s.cupomInfoValor}>{validade}</Text>
-          </View>
-
-          <View style={s.cupomInfoLine} />
-          <View style={s.cupomInfoRow}>
-            <Text style={s.cupomInfoLabel}>{usoLabel}</Text>
-            <Text style={s.cupomInfoValorForte}>Aproveite!</Text>
-          </View>
-
-          <View style={s.cupomMensagemPill}>
-            <Ionicons name="heart" size={12} color={CUPOM_LARANJA} />
-            <Text style={s.cupomMensagemText} numberOfLines={1}>{mensagem}</Text>
-          </View>
-        </View>
-
-        {/* ── Costura: fica por CIMA (absolute), centrada exatamente na fronteira
-             entre o laranja e o creme — assim o tracejado nunca fica deslocado
-             em relação à cor, independente da largura dos painéis ── */}
-        <View style={s.cupomSeam} pointerEvents="none">
-          <View style={s.cupomNotchTop} />
-          <View style={s.cupomDashedCol}>
-            {CUPOM_DASHES.map((_, i) => (
-              <View key={i} style={s.cupomDash} />
-            ))}
-          </View>
-          <View style={s.cupomNotchBottom} />
-        </View>
-      </View>
-    </View>
   );
 }
 
@@ -317,6 +184,17 @@ export default function Home() {
   const headerHidden = useHeaderHidden();
   const scrollRef = useRef(null);
   const [categoriasBottomY, setCategoriasBottomY] = useState(null);
+  const [homeCoupons, setHomeCoupons] = useState([]);
+
+  useEffect(() => {
+    let active = true;
+    fetchHomeCoupons().then((list) => {
+      if (active && Array.isArray(list) && list.length > 0) {
+        setHomeCoupons(list);
+      }
+    }).catch(console.warn);
+    return () => { active = false; };
+  }, []);
 
   // ── Onboarding: mostra /welcome e depois /location, cada um só na
   // primeira vez ──────────────────────────────────────────────────────────
@@ -341,20 +219,12 @@ export default function Home() {
     }
 
     (async () => {
-      // 1) Etapa /welcome (notificações) — mesma regra de sempre.
-      const { status: notifStatus } = await safeGetNotificationPermissions();
-      let welcomeNeeded;
-      if (notifStatus === 'granted') {
-        welcomeNeeded = false;
-      } else {
-        const seenWelcome = await AsyncStorage.getItem(ALREADY_SEEN_WELCOME_KEY);
-        welcomeNeeded = seenWelcome !== 'true';
-      }
+      // 1) Etapa /welcome (notificações): só pula se o usuário já passou pela tela (flag salva)
+      const seenWelcome = await AsyncStorage.getItem(ALREADY_SEEN_WELCOME_KEY);
+      const welcomeNeeded = seenWelcome !== 'true';
       setNeedsWelcome(welcomeNeeded);
 
-      // Se ainda falta mostrar /welcome, /location fica pra depois — o
-      // usuário volta pro index.js (Home) ao concluir o /welcome, e essa
-      // checagem roda de novo nesse próximo mount.
+      // Se ainda falta mostrar /welcome, o fluxo leva para /welcome e em seguida /location
       if (welcomeNeeded) return;
 
       // 2) Etapa /location — só chega aqui se /welcome já foi visto.
@@ -380,6 +250,11 @@ export default function Home() {
       setTimeout(() => {
         scrollRef.current?.scrollTo({ y: 0, animated: false });
       }, 50);
+      fetchHomeCoupons().then((list) => {
+        if (Array.isArray(list) && list.length > 0) {
+          setHomeCoupons(list);
+        }
+      }).catch(console.warn);
     }, [resetHeader])
   );
 
@@ -427,26 +302,7 @@ export default function Home() {
     return resultado;
   })();
 
-  const CUPONS = [
-    {
-      codigo: 'BATATA5',
-      valor: '5',
-      unidade: 'R$',
-      descricaoDesconto: 'em qualquer batata',
-      validade: '31/07/2026',
-      usoLabel: 'USO LIMITADO',
-      mensagem: 'Vem de batata!',
-    },
-    {
-      codigo: 'PRIMEIRA20',
-      valor: '20',
-      unidade: '%',
-      descricaoDesconto: 'na primeira compra',
-      validade: '31/07/2026',
-      usoLabel: 'USO ILIMITADO',
-      mensagem: 'Só na 1ª compra!',
-    },
-  ];
+  const displayCoupons = homeCoupons;
 
   // Precisa vir DEPOIS de todos os hooks (regra do React) e ANTES do JSX
   // pesado da Home — assim não desenha nada da Home à toa se for redirecionar.
@@ -529,32 +385,39 @@ export default function Home() {
           )}
         </View>
 
-        {/* ══════════════════ CUPONS ══════════════════ */}
-        <View style={s.section}>
-          <View style={s.sectionRow}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <View style={s.cupomSectionIcon}>
-                <Ionicons name="pricetag" size={13} color="#FFD54F" />
+        {/* ══════════════════ CUPONS (estilo idêntico à página de cupons) ══════════════════ */}
+        {displayCoupons && displayCoupons.length > 0 ? (
+          <View style={s.section}>
+            <View style={s.sectionRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View style={s.cupomSectionIcon}>
+                  <Ionicons name="pricetag" size={13} color="#FFD54F" />
+                </View>
+                <Text style={s.sectionTitle}>Cupons disponíveis</Text>
               </View>
-              <Text style={s.sectionTitle}>Cupons disponíveis</Text>
+              <Pressable onPress={() => router.push('/cupons')} style={s.verTodos}>
+                <Text style={s.verTodosText}>Ver todos ({displayCoupons.length})</Text>
+                <Ionicons name="chevron-forward" size={13} color={COLORS.primary} />
+              </Pressable>
             </View>
-            <View style={s.cupomQtd}>
-              <Text style={s.cupomQtdText}>{CUPONS.length} disponíveis</Text>
-            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={s.cupomRow}
+              decelerationRate="fast"
+              snapToInterval={HOME_COUPON_CARD_WIDTH + HOME_COUPON_GAP}
+              snapToAlignment="start"
+            >
+              {displayCoupons.map((c) => (
+                <HomeCouponCard
+                  key={c.id || c.codigo}
+                  coupon={c}
+                  onCardPress={() => router.push('/cupons')}
+                />
+              ))}
+            </ScrollView>
           </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={s.cupomRow}
-            decelerationRate="fast"
-            snapToInterval={CUPOM_CARD_WIDTH + CUPOM_GAP}
-            snapToAlignment="start"
-          >
-            {CUPONS.map((c) => (
-              <CupomCard key={c.codigo} {...c} />
-            ))}
-          </ScrollView>
-        </View>
+        ) : null}
 
         <View style={s.section}>
           <View style={s.cardapioHeaderWrap}>
@@ -822,7 +685,7 @@ const s = StyleSheet.create({
   },
   cupomRow: {
     paddingHorizontal: SPACING[6],
-    gap: CUPOM_GAP,
+    gap: HOME_COUPON_GAP,
     paddingVertical: 4,
   },
   cupomQtd: {
@@ -837,245 +700,6 @@ const s = StyleSheet.create({
     color: '#B8860B',
     fontSize: 11,
     fontWeight: '700',
-  },
-  cupomCardShadow: {
-    borderRadius: 18,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  cupomCard: {
-    width: CUPOM_CARD_WIDTH,
-    height: CUPOM_CARD_HEIGHT,
-    borderRadius: 18,
-    backgroundColor: CUPOM_CREME,
-    flexDirection: 'row',
-    overflow: 'hidden',
-    position: 'relative',
-  },
-
-  // ── metade esquerda (laranja) ──
-  cupomLeftPanel: {
-    width: CUPOM_LEFT_WIDTH,
-    backgroundColor: CUPOM_LARANJA,
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
-  },
-  cupomBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    marginBottom: 8,
-  },
-  cupomBadgeText: {
-    color: CUPOM_LARANJA_ESCURO,
-    fontSize: 8,
-    fontWeight: '800',
-    lineHeight: 9,
-    textAlign: 'center',
-  },
-  cupomValorRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'center',
-  },
-  cupomValorPrefixo: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-    fontSize: 20,
-    marginBottom: 4,
-    marginRight: 2,
-  },
-  cupomValorNum: {
-    color: '#FFFFFF',
-    fontWeight: '900',
-    fontSize: 40,
-    lineHeight: 40,
-    letterSpacing: -1,
-  },
-  cupomValorSimbolo: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-    fontSize: 20,
-    marginBottom: 4,
-    marginLeft: 1,
-  },
-  cupomOff: {
-    color: '#FFFFFF',
-    fontWeight: '900',
-    fontSize: 15,
-    letterSpacing: 1,
-    marginTop: -4,
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  cupomLeftDivider: {
-    alignSelf: 'stretch',
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.4)',
-    marginBottom: 8,
-  },
-  cupomLeftDesc: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '600',
-    lineHeight: 13,
-    textAlign: 'center',
-  },
-
-  // ── costura central: overlay absoluto centrado exatamente na fronteira
-  // entre o painel laranja e o creme (não ocupa espaço no layout dos painéis,
-  // então o tracejado nunca fica deslocado em relação à cor) ──
-  cupomSeam: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: CUPOM_LEFT_WIDTH - CUPOM_SEAM_WIDTH / 2,
-    width: CUPOM_SEAM_WIDTH,
-    alignItems: 'center',
-  },
-  cupomNotchTop: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: COLORS.background,
-    marginTop: -10,
-  },
-  cupomNotchBottom: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: COLORS.background,
-    marginBottom: -10,
-  },
-  cupomDashedCol: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'space-evenly',
-    paddingVertical: 4,
-  },
-  cupomDash: {
-    width: 2,
-    height: 5,
-    borderRadius: 1,
-    backgroundColor: CUPOM_LARANJA,
-    opacity: 0.35,
-  },
-
-  // ── metade direita (creme) ──
-  cupomRightPanel: {
-    width: CUPOM_RIGHT_WIDTH,
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    justifyContent: 'space-between',
-    overflow: 'hidden',
-  },
-  cupomCodigoLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 3,
-  },
-  cupomCodigoLabel: {
-    color: CUPOM_MARROM,
-    fontSize: 8,
-    fontWeight: '800',
-    letterSpacing: 0.2,
-  },
-  cupomCodigoBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-    borderColor: CUPOM_LARANJA,
-    borderRadius: 7,
-    paddingVertical: 5,
-    marginTop: 4,
-  },
-  cupomCodigoTexto: {
-    color: CUPOM_LARANJA_ESCURO,
-    fontWeight: '900',
-    fontSize: 13,
-    letterSpacing: 0.4,
-  },
-  cupomInfoLine: {
-    height: 1,
-    backgroundColor: 'rgba(92,61,10,0.12)',
-  },
-  cupomInfoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  cupomInfoLabel: {
-    color: CUPOM_MARROM_CLARO,
-    fontSize: 7.5,
-    fontWeight: '700',
-    letterSpacing: 0.1,
-  },
-  cupomInfoValor: {
-    color: CUPOM_MARROM,
-    fontSize: 9,
-    fontWeight: '800',
-  },
-  cupomInfoValorForte: {
-    color: CUPOM_MARROM,
-    fontSize: 9,
-    fontWeight: '900',
-  },
-  cupomMensagemPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 999,
-    paddingHorizontal: 7,
-    paddingVertical: 4,
-  },
-  cupomMensagemText: {
-    flex: 1,
-    color: CUPOM_MARROM,
-    fontSize: 7.5,
-    fontWeight: '700',
-  },
-
-  // ── decoração de fundo (ícones bem apagados, só textura) ──
-  cupomDecorA: {
-    position: 'absolute',
-    top: -12,
-    right: -14,
-    opacity: 0.13,
-    transform: [{ rotate: '20deg' }],
-  },
-  cupomDecorB: {
-    position: 'absolute',
-    bottom: 6,
-    left: -10,
-    opacity: 0.12,
-    transform: [{ rotate: '-18deg' }],
-  },
-  cupomDecorC: {
-    position: 'absolute',
-    top: 34,
-    right: 8,
-    opacity: 0.14,
-  },
-  cupomDecorD: {
-    position: 'absolute',
-    top: -6,
-    right: -6,
-    opacity: 0.1,
-    transform: [{ rotate: '15deg' }],
   },
 
   // ── GRID "Batatas mais pedidas" (2 colunas, largura fixa) ─────────────────

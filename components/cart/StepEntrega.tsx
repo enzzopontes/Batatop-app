@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { COLORS, SPACING, RADIUS } from '../../constants/theme';
-import { DELIVERY_FEE, DELIVERY_ETA_TEXT, STORE_ADDRESS } from '../../constants/store';
+import { DELIVERY_ETA_TEXT, STORE_ADDRESS } from '../../constants/store';
 import { Address, DeliveryType } from './useCheckoutFlow';
 
 interface StepEntregaProps {
@@ -12,6 +12,8 @@ interface StepEntregaProps {
   setDeliveryType: (type: DeliveryType) => void;
   selectedAddress: Address | null;
   loadingAddress: boolean;
+  deliveryFee: number;
+  isDeliveryFeeEnabled?: boolean;
 }
 
 export default function StepEntrega({
@@ -19,6 +21,8 @@ export default function StepEntrega({
   setDeliveryType,
   selectedAddress,
   loadingAddress,
+  deliveryFee,
+  isDeliveryFeeEnabled,
 }: StepEntregaProps) {
   const router = useRouter();
 
@@ -106,8 +110,8 @@ export default function StepEntrega({
               </View>
 
               <View style={styles.optionRight}>
-                <Text style={styles.optionFee}>
-                  R$ {DELIVERY_FEE.toFixed(2).replace('.', ',')}
+                <Text style={deliveryFee === 0 ? styles.optionFeeFree : styles.optionFee}>
+                  {deliveryFee === 0 ? 'Grátis' : `R$ ${deliveryFee.toFixed(2).replace('.', ',')}`}
                 </Text>
                 <View style={styles.radioOuterActive}>
                   <View style={styles.radioInnerActive} />
@@ -119,10 +123,22 @@ export default function StepEntrega({
             <Pressable
               style={styles.retiradaBanner}
               onPress={handleToggleRetirada}
-              accessibilityLabel="Mudar para retirada no local com taxa grátis"
+              accessibilityLabel={
+                deliveryFee === 0
+                  ? 'Mudar para retirada no local'
+                  : 'Mudar para retirada no local com taxa grátis'
+              }
             >
               <Text style={styles.retiradaBannerText}>
-                <Text style={styles.boldText}>Taxa grátis</Text> retirando o seu pedido no local ›
+                {deliveryFee === 0 ? (
+                  <>
+                    Quer pegar mais rápido? <Text style={styles.boldText}>Retire seu pedido no local</Text> ›
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.boldText}>Taxa grátis</Text> retirando o seu pedido no local ›
+                  </>
+                )}
               </Text>
             </Pressable>
           </View>

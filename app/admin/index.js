@@ -1,4 +1,16 @@
-import { View, Text, ScrollView, StyleSheet, Pressable, ActivityIndicator, Alert } from 'react-native';
+import {
+  View,
+  Text,
+  ScrollView,
+  StyleSheet,
+  Pressable,
+  ActivityIndicator,
+  Alert,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { useState, useEffect } from 'react';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,6 +25,9 @@ export default function AdminDashboard() {
 
   const [loading, setLoading] = useState(true);
   const [storeStatus, setStoreStatus] = useState(null);
+  const [feeModalVisible, setFeeModalVisible] = useState(false);
+  const [feeInput, setFeeInput] = useState('');
+  const [savingFee, setSavingFee] = useState(false);
   const [stats, setStats] = useState({
     total: 0,
     pending: 0,
@@ -54,6 +69,15 @@ export default function AdminDashboard() {
             (payload) => {
               if (payload.eventType === 'INSERT' && payload.new?.status === 'awaiting_payment') return;
               loadDashboard();
+            }
+          )
+          .on(
+            'postgres_changes',
+            { event: 'UPDATE', schema: 'public', table: 'store_settings', filter: 'setting_key=eq.store_status' },
+            (payload) => {
+              if (payload.new) {
+                setStoreStatus(payload.new);
+              }
             }
           )
           .subscribe();
@@ -180,6 +204,42 @@ export default function AdminDashboard() {
     setLoading(false);
   };
 
+  const openEditFeeModal = () => {
+    const current = Number(storeStatus?.setting_value?.deliveryFee ?? 3).toFixed(2).replace('.', ',');
+    setFeeInput(current);
+    setFeeModalVisible(true);
+  };
+
+  const handleSaveFee = async (targetValue) => {
+    if (!storeStatus) return;
+    const rawVal = targetValue !== undefined ? targetValue : feeInput;
+    const cleanNum = parseFloat(String(rawVal).replace('R$', '').replace(/\s/g, '').replace(',', '.'));
+    if (isNaN(cleanNum) || cleanNum < 0) {
+      Alert.alert('Valor inválido', 'Digite um valor numérico válido (ex: 3,50).');
+      return;
+    }
+
+    setSavingFee(true);
+    const currentVal = storeStatus?.setting_value || {};
+    const newVal = {
+      ...currentVal,
+      deliveryFee: cleanNum,
+    };
+
+    const { error } = await supabase
+      .from('store_settings')
+      .update({ setting_value: newVal })
+      .eq('id', storeStatus.id);
+
+    setSavingFee(false);
+    if (error) {
+      Alert.alert('Erro', 'Não foi possível alterar o valor da taxa de entrega.');
+    } else {
+      setStoreStatus({ ...storeStatus, setting_value: newVal });
+      setFeeModalVisible(false);
+    }
+  };
+
   if (loading && !storeStatus) {
     return (
       <View style={s.loadingContainer}>
@@ -263,9 +323,17 @@ export default function AdminDashboard() {
             >
               <Ionicons name="cash-outline" size={16} color={val.isDeliveryFeeEnabled ? '#D97706' : '#6B7280'} />
               <Text style={[s.actionBtnText, { color: val.isDeliveryFeeEnabled ? '#D97706' : '#6B7280' }]}>
-                {val.isDeliveryFeeEnabled
-                  ? `Taxa Ativa (R$ ${Number(val.deliveryFee ?? 3).toFixed(2).replace('.', ',')})`
-                  : 'Taxa Desativada'}
+                {val.isDeliveryFeeEnabled ? 'Taxa Ativa' : 'Taxa Desativada'}
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={[s.actionBtn, s.btnFee]}
+              onPress={openEditFeeModal}
+            >
+              <Ionicons name="pencil-outline" size={15} color="#4B5563" />
+              <Text style={[s.actionBtnText, { color: '#374151' }]}>
+                R$ {Number(val.deliveryFee ?? 3).toFixed(2).replace('.', ',')}
               </Text>
             </Pressable>
           </View>
@@ -447,6 +515,81 @@ export default function AdminDashboard() {
           </View>
         </View>
       </ScrollView>
+      {/* Modal Editar Taxa de Entrega */}
+      <Modal
+        visible={feeModalVisible}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setFeeModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={s.feeModalOverlay}
+        >
+          <Pressable style={s.feeModalBackdrop} onPress={() => setFeeModalVisible(false)} />
+          <View style={s.feeModalCard}>
+            <View style={s.feeModalHeader}>
+              <View>
+                <Text style={s.feeModalTitle}>Taxa de Entrega</Text>
+                <Text style={s.feeModalSubtitle}>Defina o valor cobrado para entregas</Text>
+              </View>
+              <Pressable onPress={() => setFeeModalVisible(false)} style={s.feeModalCloseBtn}>
+                <Ionicons name="close" size={20} color="#666" />
+              </Pressable>
+            </View>
+
+            <View style={s.feeInputWrapper}>
+              <Text style={s.feeCurrencyPrefix}>R$</Text>
+              <TextInput
+                style={s.feeTextInput}
+                value={feeInput}
+                onChangeText={setFeeInput}
+                keyboardType="decimal-pad"
+                placeholder="0,00"
+                placeholderTextColor="#9CA3AF"
+                selectTextOnFocus
+              />
+            </View>
+
+            {/* Sugestões rápidas */}
+            <View style={s.feePresetsRow}>
+              {['3,00', '4,00', '5,00', '6,00'].map((preset) => (
+                <Pressable
+                  key={preset}
+                  style={[s.feePresetPill, feeInput === preset && s.feePresetPillActive]}
+                  onPress={() => setFeeInput(preset)}
+                >
+                  <Text style={[s.feePresetText, feeInput === preset && s.feePresetTextActive]}>
+                    R$ {preset}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <View style={s.feeModalActions}>
+              <Pressable
+                style={s.feeCancelBtn}
+                onPress={() => setFeeModalVisible(false)}
+                disabled={savingFee}
+              >
+                <Text style={s.feeCancelBtnText}>Cancelar</Text>
+              </Pressable>
+              <Pressable
+                style={s.feeSaveBtn}
+                onPress={() => handleSaveFee()}
+                disabled={savingFee}
+              >
+                {savingFee ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <Text style={s.feeSaveBtnText}>Salvar Valor</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -689,5 +832,128 @@ const s = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '800',
     fontSize: 13,
+  },
+
+  // Modal Taxa de Entrega
+  feeModalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    padding: 20,
+  },
+  feeModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  feeModalCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  feeModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  feeModalTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#1A1A1A',
+  },
+  feeModalSubtitle: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  feeModalCloseBtn: {
+    padding: 4,
+  },
+  feeInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    paddingHorizontal: 16,
+    height: 52,
+    marginBottom: 14,
+  },
+  feeCurrencyPrefix: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#1A1A1A',
+    marginRight: 8,
+  },
+  feeTextInput: {
+    flex: 1,
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#1A1A1A',
+  },
+  feePresetsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 20,
+  },
+  feePresetPill: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  feePresetPillActive: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#FCD34D',
+  },
+  feePresetText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#4B5563',
+  },
+  feePresetTextActive: {
+    color: '#B45309',
+  },
+  feeModalActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  feeCancelBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  feeCancelBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#4B5563',
+  },
+  feeSaveBtn: {
+    flex: 1.3,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#D97706',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  feeSaveBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
 });

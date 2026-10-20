@@ -21,8 +21,8 @@
 
 import { useRef, useCallback } from 'react';
 import * as Location from 'expo-location';
-import { supabase } from '../../supabaseConfig';
-import { getEffectiveSession } from '../../utils/authSession';
+import { supabase } from '../supabaseConfig';
+import { getEffectiveSession } from '../utils/authSession';
 import {
   getSelectedAddressId,
   setSelectedAddressId,
@@ -30,7 +30,7 @@ import {
   setLastVerifiedPoint,
   distanceInMeters,
   VERIFICATION_RADIUS_METERS,
-} from '../../utils/addressVerification';
+} from '../utils/addressVerification';
 
 // Cache curto do GPS — evita pedir localização de novo a cada clique em
 // "Adicionar" quando a pessoa tá adicionando vários itens em sequência.

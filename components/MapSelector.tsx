@@ -18,7 +18,7 @@ import { useSafeAreaInsets, SafeAreaProvider } from 'react-native-safe-area-cont
 import MapView, { Region } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS } from '../constants/theme';
-import useGeolocationWithMaps from 'app/hooks/useGeolocationWithMaps';
+import useGeolocationWithMaps from '../hooks/useGeolocationWithMaps';
 import { useModalFade } from '../hooks/useModalFade';
 
 const CIDADE_PERMITIDA = 'Iacanga';

@@ -24,10 +24,11 @@ async function getNotifications() {
     if (!handlerConfigured) {
       notificationsModule.setNotificationHandler({
         handleNotification: async () => ({
-          shouldShowBanner: true,
-          shouldShowList: true,
-          shouldPlaySound: true,
-          shouldSetBadge: true,
+          shouldShowAlert: false,
+          shouldShowBanner: false,
+          shouldShowList: false,
+          shouldPlaySound: false,
+          shouldSetBadge: false,
         }),
       });
       handlerConfigured = true;
@@ -38,7 +39,7 @@ async function getNotifications() {
 }
 
 export async function safeGetNotificationPermissions() {
-  if (isRunningInExpoGo() && Platform.OS === 'android') {
+  if (!isAdminPushAvailable) {
     return { status: 'undetermined' };
   }
   try {
@@ -50,12 +51,19 @@ export async function safeGetNotificationPermissions() {
 }
 
 export async function safeRequestNotificationPermissions() {
-  if (isRunningInExpoGo() && Platform.OS === 'android') {
+  if (!isAdminPushAvailable) {
     return { status: 'undetermined' };
   }
   try {
     const Notifications = await import('expo-notifications');
-    return await Notifications.requestPermissionsAsync();
+    return await Notifications.requestPermissionsAsync({
+      ios: {
+        allowAlert: true,
+        allowBadge: true,
+        allowSound: true,
+        allowAnnouncements: true,
+      },
+    });
   } catch (e) {
     return { status: 'undetermined' };
   }
@@ -87,7 +95,10 @@ export async function registerForAdminPushNotifications(userId) {
     return null;
   }
 
-  if (!userId) return null;
+  if (!userId) {
+    console.warn('[push] registerForAdminPushNotifications chamado sem userId');
+    return null;
+  }
 
   try {
     const Notifications = await getNotifications();
@@ -95,16 +106,23 @@ export async function registerForAdminPushNotifications(userId) {
 
     await setupAndroidChannel();
 
-    const { status: existing } = await Notifications.getPermissionsAsync();
-    let finalStatus = existing;
+    const perm = await Notifications.getPermissionsAsync();
+    let finalStatus = perm.status;
 
-    if (existing !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
+    if (finalStatus !== 'granted') {
+      const requested = await Notifications.requestPermissionsAsync({
+        ios: {
+          allowAlert: true,
+          allowBadge: true,
+          allowSound: true,
+          allowAnnouncements: true,
+        },
+      });
+      finalStatus = requested.status;
     }
 
     if (finalStatus !== 'granted') {
-      console.warn('[push] Permissão de notificação negada');
+      console.warn('[push] Permissão nativa POST_NOTIFICATIONS negada ou cancelada pelo usuário');
       return null;
     }
 
@@ -123,11 +141,11 @@ export async function registerForAdminPushNotifications(userId) {
 
     const expoPushToken = tokenResponse?.data;
     if (!expoPushToken) {
-      console.warn('[push] ExpoPushToken vazio');
+      console.warn('[push] ExpoPushToken vazio retornado pela Expo API');
       return null;
     }
 
-    const deviceName = Device.modelName || `${Platform.OS} device`;
+    const deviceName = Device.modelName || Device.deviceName || `${Platform.OS} device`;
 
     const { error } = await supabase
       .from('admin_push_tokens')
@@ -142,12 +160,14 @@ export async function registerForAdminPushNotifications(userId) {
       );
 
     if (error) {
-      console.warn('[push] Erro ao salvar token:', error.message);
+      console.error('[push] Erro ao persistir token em admin_push_tokens:', error.message);
+    } else if (__DEV__) {
+      console.log('[push] Token admin registrado com sucesso no Supabase:', expoPushToken);
     }
 
     return expoPushToken;
   } catch (e) {
-    console.warn('[push] Falha ao registrar:', e?.message || e);
+    console.error('[push] Falha na rotina de registro do push admin:', e?.message || e);
     return null;
   }
 }

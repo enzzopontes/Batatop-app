@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { supabase } from '../../supabaseConfig';
+import { supabase } from '../supabaseConfig';
 
 /**
  * Mapeia uma row da tabela `orders` (com order_items joinado) pro formato
@@ -30,6 +30,16 @@ const mapOrderData = (o) => {
     }));
   }
 
+  const isPaid =
+    o.metadata?.mp_payment_status === 'approved' ||
+    o.metadata?.pix?.status === 'approved' ||
+    Boolean(o.metadata?.paid_at);
+
+  const normalizedStatus =
+    (o.status === 'awaiting_payment' || o.status === 'pending') && isPaid
+      ? 'preparing'
+      : o.status;
+
   return {
     id: o.id,
     orderNumber: o.order_number || 0,
@@ -37,7 +47,7 @@ const mapOrderData = (o) => {
     customerPhone: o.customer_phone,
     items,
     total: Number(o.total_amount),
-    status: o.status,
+    status: normalizedStatus,
     paymentMethod: o.payment_method,
     deliveryType: o.delivery_type || 'delivery',
     address: o.customer_address,
@@ -53,6 +63,48 @@ const mapOrderData = (o) => {
     deliveryLng: o.delivery_lng ?? o.metadata?.delivery_lng ?? null,
   };
 };
+
+const PIX_EXPIRATION_MS = 30 * 60 * 1000; // 30 minutos
+
+function checkAndAutoCancelPix(order) {
+  if (!order) return order;
+  const isPaid =
+    order.metadata?.mp_payment_status === 'approved' ||
+    order.metadata?.pix?.status === 'approved' ||
+    Boolean(order.metadata?.paid_at) ||
+    ['preparing', 'preparo', 'ready', 'out_for_delivery', 'delivered'].includes(order.status);
+
+  if (isPaid) return order;
+
+  const isPixAwaiting =
+    order.status === 'awaiting_payment' ||
+    (order.status === 'pending' &&
+      (order.payment_method === 'pix' ||
+        order.paymentMethod === 'pix' ||
+        order.metadata?.pix ||
+        order.metadata?.qr_code));
+
+  if (!isPixAwaiting) return order;
+
+  const createdAt = order.created_at
+    ? new Date(order.created_at).getTime()
+    : order.createdAt
+    ? new Date(order.createdAt).getTime()
+    : Date.now();
+  const age = Date.now() - createdAt;
+
+  if (age >= PIX_EXPIRATION_MS) {
+    supabase
+      .rpc('cancel_order_user', {
+        p_order_id: order.id,
+        p_cancel_reason: 'pix_expirado_30min',
+      })
+      .catch(() => {});
+    return { ...order, status: 'cancelled' };
+  }
+
+  return order;
+}
 
 export const usePedidos = () => {
   const [error, setError] = useState(null);
@@ -75,7 +127,12 @@ export const usePedidos = () => {
 
       if (fetchError) throw fetchError;
 
-      return { success: true, data: (data || []).map(mapOrderData) };
+      const mapped = (data || []).map((raw) => {
+        const checked = checkAndAutoCancelPix(raw);
+        return mapOrderData(checked);
+      });
+
+      return { success: true, data: mapped };
     } catch (err) {
       console.error('Erro ao buscar pedidos do usuário:', err);
       setError(err.message);
@@ -98,7 +155,8 @@ export const usePedidos = () => {
 
       if (fetchError) throw fetchError;
 
-      return { success: true, data: mapOrderData(data) };
+      const checked = checkAndAutoCancelPix(data);
+      return { success: true, data: mapOrderData(checked) };
     } catch (err) {
       console.error('Erro ao buscar pedido:', err);
       setError(err.message);

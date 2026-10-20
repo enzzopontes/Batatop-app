@@ -60,8 +60,8 @@ export default function WelcomeScreen() {
 
     setLoading(false);
 
-    // 3. Navega pra Home
-    router.replace('/');
+    // 3. Navega para a segunda etapa do onboarding (localização)
+    router.replace('/location');
   }
 
   return (

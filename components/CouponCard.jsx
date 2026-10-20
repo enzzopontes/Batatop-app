@@ -44,7 +44,7 @@ export function SelectorCircle({ selected, disabled, size = SELECTOR_SIZE }) {
 }
 
 // Divisória do ticket: une perfeitamente a parte superior e inferior sem linha reta atravessando
-function TicketDivider({ pageBackgroundColor, borderColor }) {
+export function TicketDivider({ pageBackgroundColor = DEFAULT_PAGE_BG, borderColor = COLORS.border }) {
   const [dashAreaWidth, setDashAreaWidth] = useState(0);
   const count =
     dashAreaWidth > 0

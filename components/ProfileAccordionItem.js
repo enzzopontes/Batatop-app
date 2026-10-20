@@ -17,6 +17,7 @@ import useStaggerEntrance from '../hooks/useStaggerEntrance';
 
 if (
   Platform.OS === 'android' &&
+  !global?.nativeFabricUIManager &&
   UIManager.setLayoutAnimationEnabledExperimental
 ) {
   UIManager.setLayoutAnimationEnabledExperimental(true);

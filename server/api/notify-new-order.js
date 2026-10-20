@@ -188,10 +188,10 @@ module.exports = async function handler(req, res) {
       'admin_push_tokens?select=expo_push_token',
     );
 
-    const uniqueTokens = [...new Set((tokens || []).map((t) => t.expo_push_token).filter(Boolean))];
+    const uniqueAdminTokens = [...new Set((tokens || []).map((t) => t.expo_push_token).filter(Boolean))];
     const content = buildNewOrderPushContent(order, order.order_items || []);
 
-    const messages = uniqueTokens.map((to) => ({
+    const adminMessages = uniqueAdminTokens.map((to) => ({
       to,
       title: content.title,
       subtitle: content.subtitle,
@@ -204,7 +204,7 @@ module.exports = async function handler(req, res) {
         channelId: ADMIN_ORDERS_CHANNEL_ID,
         priority: 'max',
         sound: 'new_order.mp3',
-        color: '#1A1A1A',
+        color: '#FFB800',
       },
       ios: {
         sound: 'new_order.mp3',
@@ -212,9 +212,43 @@ module.exports = async function handler(req, res) {
       },
     }));
 
-    const pushResult = await sendExpoPush(messages);
+    // Notificação isolada do Cliente (curta, com previsão eta)
+    const userTokensData = await supabaseFetch(
+      `user_push_tokens?user_id=eq.${encodeURIComponent(order.user_id)}&select=expo_push_token`,
+    ).catch(() => []);
+    const uniqueUserTokens = [
+      ...new Set(
+        (userTokensData || [])
+          .map((t) => t.expo_push_token)
+          .filter(Boolean)
+      ),
+    ];
 
-    if (pushResult.ok) {
+    const etaMin = order.metadata?.eta_minutes || 40;
+    const etaMax = etaMin + 20;
+    const customerMessages = uniqueUserTokens.map((to) => ({
+      to,
+      title: 'Pedido confirmado',
+      body: `Estamos preparando seu pedido. Previsão de entrega: ${etaMin} a ${etaMax} min`,
+      sound: 'default',
+      priority: 'high',
+      data: {
+        orderId: order.id,
+        screen: 'pedidos',
+        url: `/pedidos/${order.id}`,
+      },
+      android: {
+        color: '#FFB800',
+        priority: 'high',
+      },
+    }));
+
+    const [adminPushResult, customerPushResult] = await Promise.all([
+      sendExpoPush(adminMessages),
+      sendExpoPush(customerMessages),
+    ]);
+
+    if (adminPushResult.ok || customerPushResult.ok) {
       await supabase
         .from('orders')
         .update({
@@ -225,8 +259,10 @@ module.exports = async function handler(req, res) {
 
     return res.status(200).json({
       success: true,
-      sent: messages.length,
-      push: pushResult,
+      sent_admin: adminMessages.length,
+      sent_customer: customerMessages.length,
+      push_admin: adminPushResult,
+      push_customer: customerPushResult,
     });
   } catch (e) {
     return res.status(500).json({

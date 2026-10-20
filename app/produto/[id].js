@@ -26,7 +26,7 @@ import { getEffectiveSession } from '../../utils/authSession';
 import { setPendingCartIntent } from '../../utils/pendingCartIntent';
 import { requestAuthSheet } from '../../utils/authSheetRequest';
 import { COLORS, SHADOWS, RADIUS } from '../../constants/theme';
-import useAddressVerification from '../hooks/useAddressVerification';
+import useAddressVerification from '../../hooks/useAddressVerification';
 import { useFooterInsets } from '../../hooks/useFooterInsets';
 import AddressVerificationModal from '../../components/AddressVerificationModal';
 import NoAddressModal from '../../components/NoAddressModal';
@@ -77,7 +77,7 @@ export default function ProdutoDetail() {
   const [observacoes, setObservacoes] = useState(initialObs ? String(initialObs) : '');
 
   // Verificação de endereço (GPS vs endereço selecionado) — ver
-  // app/hooks/useAddressVerification.js
+  // hooks/useAddressVerification.js
   const { verifyAddress, confirmContinue } = useAddressVerification();
   const [showNoAddress, setShowNoAddress] = useState(false);
   const [showVerify, setShowVerify] = useState(false);
@@ -412,7 +412,7 @@ export default function ProdutoDetail() {
       }
 
       // Gate de endereço: verifica se o GPS atual bate com o endereço
-      // selecionado (raio de 30m — ver app/hooks/useAddressVerification.js).
+      // selecionado (raio de 30m — ver hooks/useAddressVerification.js).
       // Roda antes do gate de login: sem sessão, o hook devolve
       // 'no_session' e cai direto no fluxo de login já existente abaixo.
       const addressCheck = await verifyAddress();

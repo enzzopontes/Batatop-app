@@ -47,6 +47,36 @@ class MainApplication : Application(), ReactApplication {
     }
     loadReactNative(this)
     ApplicationLifecycleDispatcher.onApplicationCreate(this)
+
+    // Garante que o canal 'new-orders' seja criado nativamente no Android
+    // com o som 'new_order.mp3' e alta prioridade para tocar mesmo com tela bloqueada
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+      try {
+        val channelId = "new-orders"
+        val channelName = "Novos Pedidos"
+        val importance = android.app.NotificationManager.IMPORTANCE_HIGH
+        val channel = android.app.NotificationChannel(channelId, channelName, importance).apply {
+          description = "Alertas de novos pedidos recebidos"
+          enableLights(true)
+          lightColor = android.graphics.Color.parseColor("#FFB800")
+          enableVibration(true)
+          vibrationPattern = longArrayOf(0, 400, 250, 400)
+          lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+          setShowBadge(true)
+
+          val soundUri = android.net.Uri.parse("android.resource://" + packageName + "/" + R.raw.new_order)
+          val audioAttributes = android.media.AudioAttributes.Builder()
+            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION)
+            .build()
+          setSound(soundUri, audioAttributes)
+        }
+        val notificationManager = getSystemService(android.app.NotificationManager::class.java)
+        notificationManager?.createNotificationChannel(channel)
+      } catch (e: Exception) {
+        android.util.Log.w("MainApplication", "Falha ao registrar NotificationChannel nativo", e)
+      }
+    }
   }
 
   override fun onConfigurationChanged(newConfig: Configuration) {

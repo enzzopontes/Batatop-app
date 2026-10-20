@@ -15,7 +15,7 @@ const LOGO = require('../assets/logo.png');
    tabBarHeight vem via prop (não useTabBarHeight()) pra evitar
    import circular com app/_layout.js — mesmo padrão do EntrarBanner.
    ============================================================ */
-export default function CartBar({ tabBarHeight }) {
+export default function CartBar({ tabBarHeight, isAuthVisible = false }) {
   const router = useRouter();
   const pathname = usePathname();
   const { count: totalItems, total, hideFloating } = useCart();
@@ -31,10 +31,11 @@ export default function CartBar({ tabBarHeight }) {
   const isCuponsPage = pathname.includes('/cupons');
   const isPaymentsPage = pathname.includes('payments');
   const isAddressesPage = pathname.includes('addresses');
+  const isAuthPage = isAuthVisible || pathname.includes('auth') || pathname.includes('login') || pathname.includes('codigo') || pathname.includes('register');
 
-  if (isAddressesPage) return null;
+  if (isAddressesPage || isAuthPage) return null;
 
-  const shouldShow = totalItems > 0 && !isCartPage && !isWelcomePage && !isLocationPage && !isAdminPage && !isCuponsPage && !isPaymentsPage && !hideFloating;
+  const shouldShow = totalItems > 0 && !isCartPage && !isWelcomePage && !isLocationPage && !isAdminPage && !isCuponsPage && !isPaymentsPage && !isAuthPage && !hideFloating;
 
   useEffect(() => {
     if (shouldShow && !wasVisible.current) {
@@ -69,7 +70,7 @@ export default function CartBar({ tabBarHeight }) {
       <View style={s.cartBarInner}>
         <View style={s.left}>
           <Image source={LOGO} style={s.logo} resizeMode="contain" />
-          <View>
+          <View style={s.leftText}>
             <Text style={s.totalLabel}>
               Total com <Text style={s.totalLabelBold}>entrega grátis</Text>
             </Text>
@@ -98,15 +99,21 @@ const s = StyleSheet.create({
   cartBarInner: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     backgroundColor: COLORS.white,
     paddingVertical: SPACING[3],
     paddingHorizontal: SPACING[4],
-    gap: SPACING[3],
   },
   left: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING[2],
+    paddingRight: SPACING[2],
+  },
+  leftText: {
+    flex: 1,
+    minWidth: 0,
   },
   logo: { width: 48, height: 48 },
   totalLabel: {
@@ -130,10 +137,9 @@ const s = StyleSheet.create({
     fontWeight: TYPOGRAPHY.weights.regular,
   },
   cta: {
-    flex: 1,
-    maxWidth: '58%',
-    marginLeft: 'auto',
+    width: '50%',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: COLORS.primary,
     borderRadius: RADIUS.sm,
     paddingVertical: SPACING[3],

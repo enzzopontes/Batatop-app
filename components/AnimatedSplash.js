@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { View, Image, StyleSheet } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 
@@ -6,6 +6,14 @@ const BRAND_RED = '#8F0B0F';
 
 export default function AnimatedSplash({ onFinish }) {
   const [videoReady, setVideoReady] = useState(false);
+  const finishedRef = useRef(false);
+
+  const safeFinish = () => {
+    if (!finishedRef.current) {
+      finishedRef.current = true;
+      onFinish?.();
+    }
+  };
 
   const player = useVideoPlayer(require('../assets/splash-animation.mp4'), (playerInstance) => {
     playerInstance.loop = false;
@@ -13,24 +21,34 @@ export default function AnimatedSplash({ onFinish }) {
   });
 
   useEffect(() => {
+    // Fallback de segurança: vídeo tem 2.9s. Se travar decoder ou evento falhar, libera tela após 3.2s
+    const fallbackTimer = setTimeout(() => {
+      safeFinish();
+    }, 3200);
+
+    if (player.status === 'readyToPlay') {
+      setVideoReady(true);
+    }
+
     const statusSubscription = player.addListener('statusChange', ({ status, error }) => {
       if (status === 'readyToPlay') {
         setVideoReady(true);
       } else if (status === 'error') {
         console.warn('Erro ao tocar splash:', error);
-        onFinish?.();
+        safeFinish();
       }
     });
 
     const finishSubscription = player.addListener('playToEnd', () => {
-      onFinish?.();
+      safeFinish();
     });
 
     return () => {
+      clearTimeout(fallbackTimer);
       statusSubscription.remove();
       finishSubscription.remove();
     };
-  }, [player, onFinish]);
+  }, [player]);
 
   return (
     <View style={styles.container}>

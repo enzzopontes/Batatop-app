@@ -13,6 +13,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../constants/theme';
 import SwipeableBottomSheetModal from './SwipeableBottomSheetModal';
 
@@ -23,12 +24,19 @@ type Props = {
 };
 
 export default function NoAddressModal({ visible, onClose, onCadastrar }: Props) {
+  const insets = useSafeAreaInsets();
+  // Detecta se dispositivo está com 3 botões do Android (insets.bottom >= 40) ou barra de gestos / sem barra
+  const isThreeButtonsNav = (insets?.bottom ?? 0) >= 40;
+  const extraBottom = isThreeButtonsNav ? 20 : ((insets?.bottom ?? 0) > 0 ? 16 : 24);
+
   return (
     <SwipeableBottomSheetModal
       visible={visible}
       onRequestClose={onClose}
       backdropColor="rgba(0,0,0,0.5)"
       contentStyle={s.sheet}
+      minBottomPadding={isThreeButtonsNav ? 48 : 24}
+      extraBottomPadding={extraBottom}
     >
       <View style={s.iconWrap}>
         <Ionicons name="location-outline" size={28} color={COLORS.primary} />
@@ -56,7 +64,6 @@ const s = StyleSheet.create({
     borderTopRightRadius: RADIUS.xl,
     paddingHorizontal: SPACING[6],
     paddingTop: SPACING[3],
-    paddingBottom: SPACING[8],
     alignItems: 'center',
   },
   handle: {

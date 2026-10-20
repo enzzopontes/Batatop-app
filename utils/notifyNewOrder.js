@@ -67,18 +67,39 @@ export async function notifyAdminNewOrder(orderId) {
     // 2. Constrói conteúdo rico da notificação
     const pushContent = buildNewOrderPushContent(order, items);
 
-    // 3. Disparo seguro server-side via RPC Postgres (dispatch_admin_new_order_push) com pg_net
-    // Mantém tokens dos administradores 100% blindados dentro do banco
-    let dispatchedViaRpc = false;
+    // 3. Disparo unificado via API Vercel (garante envio isolado admin + cliente com FCM v1)
+    if (API_BASE_URL) {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData?.session?.access_token;
+        if (token) {
+          const res = await fetch(`${API_BASE_URL}/api/notify-new-order`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ orderId }),
+          });
+
+          const resJson = await res.json().catch(() => null);
+          if (res.ok) {
+            if (__DEV__) console.log('[notify] Push disparado com sucesso via API Vercel:', resJson);
+            return;
+          }
+        }
+      } catch (apiErr) {
+        console.warn('[notify] Falha na API Vercel, tentando fallbacks:', apiErr?.message);
+      }
+    }
+
+    // 4. Fallback server-side via RPC Postgres (dispatch_admin_new_order_push) com pg_net
     try {
       const { data: rpcRes, error: rpcDispatchErr } = await supabase.rpc('dispatch_admin_new_order_push', {
         p_order_id: orderId,
       });
       if (!rpcDispatchErr && (rpcRes?.success || rpcRes?.sent || rpcRes?.already_sent)) {
-        dispatchedViaRpc = true;
-        if (__DEV__) {
-          console.log('[notify] Push disparado com sucesso via pg_net no Postgres:', rpcRes);
-        }
+        if (__DEV__) console.log('[notify] Push disparado com sucesso via pg_net:', rpcRes);
         return;
       }
     } catch (_) {}
@@ -134,28 +155,58 @@ export async function notifyAdminNewOrder(orderId) {
       }
     }
 
-    // 5. Fallback redundante para Edge Function / API Vercel
+    // 6. Fallback redundante: Supabase Edge Function
     try {
-      const { data, error } = await supabase.functions.invoke('notify-admin-order', {
+      const { data: edgeData, error: edgeError } = await supabase.functions.invoke('notify-admin-order', {
         body: { orderId },
       });
-      if (!error && data?.success !== false) return;
-    } catch (_) {}
+      if (edgeError) {
+        console.warn('[notify] Edge function notify-admin-order retornou erro:', edgeError.message);
+      } else if (edgeData?.success) {
+        if (__DEV__) console.log('[notify] Push enviado via Edge Function:', edgeData);
+        return;
+      }
+    } catch (edgeEx) {
+      console.warn('[notify] Falha de rede ao invocar Edge Function:', edgeEx?.message || edgeEx);
+    }
 
+    // 7. Fallback redundante: Rota API Next.js /api/notify-new-order
     if (API_BASE_URL) {
       try {
         const { data: sessionData } = await supabase.auth.getSession();
-        await fetch(`${API_BASE_URL}/api/notify-new-order`, {
+        const token = sessionData?.session?.access_token;
+        if (!token) {
+          console.warn('[notify] Sem access_token para chamar API Vercel /api/notify-new-order');
+          return;
+        }
+
+        const res = await fetch(`${API_BASE_URL}/api/notify-new-order`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...(sessionData?.session?.access_token ? { Authorization: `Bearer ${sessionData.session.access_token}` } : {}),
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({ orderId }),
         });
-      } catch (_) {}
+
+        const resJson = await res.json().catch(() => null);
+        if (!res.ok) {
+          // HTTP 409: pedido não precisa de push manual (ex: pagamento online gerenciado via webhook)
+          if (res.status === 409) {
+            if (__DEV__) {
+              console.log('[notify] Pedido não requer notificação manual (notificado via webhook/outro fluxo):', resJson?.error);
+            }
+          } else {
+            console.error(`[notify] API /api/notify-new-order falhou [HTTP ${res.status}]:`, resJson);
+          }
+        } else if (__DEV__) {
+          console.log('[notify] API /api/notify-new-order sucesso:', resJson);
+        }
+      } catch (apiEx) {
+        console.error('[notify] Falha de conexão com API Next.js /api/notify-new-order:', apiEx?.message || apiEx);
+      }
     }
   } catch (globalErr) {
-    console.warn('[notify] Erro geral ao notificar admin:', globalErr?.message || globalErr);
+    console.error('[notify] Erro crítico ao notificar admin:', globalErr?.message || globalErr);
   }
 }

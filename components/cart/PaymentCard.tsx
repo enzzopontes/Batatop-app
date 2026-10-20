@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/theme';
 import { PaymentMethod } from './useCheckoutFlow';
 import { SavedCard } from '../../utils/usePaymentCards';
+import CardBrandBadge from './CardBrandBadge';
 
 /* ------------------------------------------------------------------ */
 /* Constantes de layout — ajuste aqui                                  */
@@ -173,7 +174,7 @@ export default function PaymentCard({
         </View>
       );
     }
-    return <BrandBadge brand={isOnlineCard ? detectBrand(selectedSavedCard?.payment_method_id) : null} />;
+    return <CardBrandBadge brand={isOnlineCard ? selectedSavedCard?.payment_method_id : null} size="sm" />;
   };
 
   const formattedTotal = `R$ ${total.toFixed(2).replace('.', ',')}`;

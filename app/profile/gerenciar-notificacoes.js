@@ -76,7 +76,8 @@ export default function GerenciarNotificacoes() {
     try {
       const { error } = await supabase
         .from('profiles')
-        .upsert({ id: userId, [key]: nextValue }, { onConflict: 'id' });
+        .update({ [key]: nextValue })
+        .eq('id', userId);
 
       if (error) throw error;
 

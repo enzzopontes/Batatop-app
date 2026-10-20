@@ -21,23 +21,84 @@ import {
 import { useSafeAreaInsets, SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../constants/theme';
+import * as Haptics from 'expo-haptics';
 import { useModalFade } from '../hooks/useModalFade';
+
+function isSuccessTone(title, message) {
+  const t = String(title || '').toLowerCase().trim();
+  const m = String(message || '').toLowerCase().trim();
+
+  // 1. Se tiver qualquer termo de erro, falha, atenção, recusa ou impedimento -> NUNCA é sucesso (VERMELHO)
+  if (
+    t.includes('erro') ||
+    t.includes('falha') ||
+    t.includes('atenção') ||
+    t.includes('atencao') ||
+    t.includes('aviso') ||
+    t.includes('alerta') ||
+    t.includes('ops') ||
+    t.includes('problema') ||
+    t.includes('recus') ||
+    t.includes('indispon') ||
+    t.includes('obrigatór') ||
+    t.includes('obrigator') ||
+    t.includes('inválid') ||
+    t.includes('invalid') ||
+    m.includes('não foi possível') ||
+    m.includes('nao foi possivel') ||
+    m.includes('erro ao') ||
+    m.includes('falha ao') ||
+    m.includes('inválid') ||
+    m.includes('invalid') ||
+    m.includes('expirad') ||
+    m.includes('obrigatór') ||
+    m.includes('obrigator') ||
+    m.includes('ocorreu um erro') ||
+    m.includes('tente novamente') ||
+    m.includes('deve ser maior') ||
+    m.includes('já existe') ||
+    m.includes('ja existe') ||
+    m.includes('não pode') ||
+    m.includes('nao pode') ||
+    m.includes('recusad')
+  ) {
+    return false;
+  }
+
+  // 2. Só é sucesso se o título for explicitamente positivo ou a mensagem for estritamente de sucesso
+  return (
+    t === 'sucesso' ||
+    t === 'pronto' ||
+    t === 'parabéns' ||
+    t === 'parabens' ||
+    t === 'salvo' ||
+    t.startsWith('sucesso') ||
+    t.includes('copiad') ||
+    t.includes('enviad') ||
+    t.includes('ativad') ||
+    m.includes('com sucesso') ||
+    m.includes('copiad') ||
+    m.includes('obrigado')
+  );
+}
 
 // Intercepta chamadas legadas ao Alert.alert nativo para padronizar com a barrinha no topo
 if (RNAlert && typeof RNAlert.alert === 'function' && !RNAlert.__batataPatched) {
   RNAlert.alert = (title, message, buttons, options) => {
-    showThemedAlert(title, message, buttons);
+    const isSuccess = options?.type === 'success' || isSuccessTone(title, message);
+    showThemedAlert(title, message, buttons, isSuccess ? 'success' : 'error');
   };
   RNAlert.__batataPatched = true;
 }
 
 const listeners = new Set();
 
-export function showThemedAlert(title, message, buttons = [{ text: 'OK' }], type = 'error') {
+export function showThemedAlert(title, message, buttons = [{ text: 'OK' }], type) {
+  const resolvedType = type || (isSuccessTone(title, message) ? 'success' : 'error');
   const listenerArray = Array.from(listeners);
   if (listenerArray.length > 0) {
     const activeListener = listenerArray[listenerArray.length - 1];
-    activeListener({ title, message, buttons, type });
+    activeListener({ title, message, buttons, type: resolvedType });
   }
 }
 
@@ -49,24 +110,34 @@ export function hideThemedAlert() {
   }
 }
 
-showThemedAlert.error = (message, title = '') => {
-  showThemedAlert(title, message, [{ text: 'OK' }], 'error');
-};
-
-showThemedAlert.success = (message, title = '') => {
+export function showSuccessAlert(message, title = 'Sucesso') {
   showThemedAlert(title, message, [{ text: 'OK' }], 'success');
-};
+}
+
+export function showErrorAlert(message, title = 'Erro') {
+  showThemedAlert(title, message, [{ text: 'OK' }], 'error');
+}
+
+showThemedAlert.error = showErrorAlert;
+showThemedAlert.success = showSuccessAlert;
+
+// Globais para permitir chamada direta showSuccessAlert(...) ou showErrorAlert(...) em qualquer tela
+if (typeof global !== 'undefined') {
+  global.showSuccessAlert = showSuccessAlert;
+  global.showErrorAlert = showErrorAlert;
+}
 
 export function ThemedAlertHost() {
   const insets = useSafeAreaInsets();
   const [banner, setBanner] = useState(null);
   const [modalConfig, setModalConfig] = useState(null);
 
-  const translateY = useRef(new Animated.Value(-100)).current;
+  const translateY = useRef(new Animated.Value(-120)).current;
+  const scale = useRef(new Animated.Value(0.92)).current;
   const opacity = useRef(new Animated.Value(0)).current;
   const hideTimerRef = useRef(null);
 
-  // Animação de saída: desce um pouquinho (pulinho pra baixo) e sobe com tudo pra cima
+  // Animação de saída: desce um pouquinho (pulinho pra baixo) e sobe rápido encolhendo
   const hideBanner = useCallback(() => {
     if (hideTimerRef.current) {
       clearTimeout(hideTimerRef.current);
@@ -74,10 +145,10 @@ export function ThemedAlertHost() {
     }
 
     Animated.sequence([
-      // 1. Pulinho de antecipação: desce um pouco pra baixo
+      // 1. Pulinho de antecipação
       Animated.timing(translateY, {
-        toValue: 14,
-        duration: 120,
+        toValue: 8,
+        duration: 90,
         easing: Easing.out(Easing.quad),
         useNativeDriver: true,
       }),
@@ -85,56 +156,81 @@ export function ThemedAlertHost() {
       Animated.parallel([
         Animated.timing(translateY, {
           toValue: -140,
-          duration: 220,
+          duration: 210,
           easing: Easing.in(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(scale, {
+          toValue: 0.88,
+          duration: 180,
           useNativeDriver: true,
         }),
         Animated.timing(opacity, {
           toValue: 0,
-          duration: 180,
+          duration: 170,
           useNativeDriver: true,
         }),
       ]),
     ]).start(() => {
       setBanner(null);
     });
-  }, [translateY, opacity]);
+  }, [translateY, scale, opacity]);
 
-  const showBanner = useCallback((text, type = 'error') => {
+  const showBanner = useCallback((bannerData, type = 'error') => {
     if (hideTimerRef.current) {
       clearTimeout(hideTimerRef.current);
     }
-    setBanner({ text, type });
-    translateY.setValue(-120);
+
+    const payload = typeof bannerData === 'string'
+      ? { text: bannerData, type }
+      : { ...bannerData, type: bannerData.type || type };
+
+    setBanner(payload);
+    translateY.setValue(-100);
+    scale.setValue(0.92);
     opacity.setValue(0);
 
+    try {
+      if (payload.type === 'error') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      } else {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    } catch (_) {}
+
     Animated.parallel([
-      // Animação de entrada: desce com tudo de cima, dá um pulinho pra baixo e assenta na posição
+      // Animação de entrada elástica estilo iFood
       Animated.sequence([
         Animated.timing(translateY, {
-          toValue: 14,
-          duration: 220,
+          toValue: 12,
+          duration: 200,
           easing: Easing.out(Easing.cubic),
           useNativeDriver: true,
         }),
         Animated.spring(translateY, {
           toValue: 0,
-          bounciness: 6,
+          bounciness: 7,
           speed: 12,
           useNativeDriver: true,
         }),
       ]),
+      Animated.spring(scale, {
+        toValue: 1,
+        bounciness: 6,
+        speed: 14,
+        useNativeDriver: true,
+      }),
       Animated.timing(opacity, {
         toValue: 1,
-        duration: 160,
+        duration: 170,
         useNativeDriver: true,
       }),
     ]).start();
 
     hideTimerRef.current = setTimeout(() => {
       hideBanner();
-    }, 3500);
-  }, [translateY, opacity, hideBanner]);
+    }, 3800);
+  }, [translateY, scale, opacity, hideBanner]);
 
   useEffect(() => {
     const handleAlert = (payload) => {
@@ -152,12 +248,11 @@ export function ThemedAlertHost() {
       if (isSimpleAlert) {
         // Formatar texto limpo para o banner no topo
         let text = message || title || 'Algo deu errado. Tente novamente.';
+        let displayTitle = null;
         if (title && message && !['Erro', 'Atenção', 'Alerta', 'Aviso', 'Ops!'].includes(title)) {
-          if (!message.toLowerCase().includes(title.toLowerCase())) {
-            text = `${title}: ${message}`;
-          }
+          displayTitle = title;
         }
-        showBanner(text, type);
+        showBanner({ title: displayTitle, message: message || text, text, type }, type);
       } else {
         // Confirmação interativa com múltiplos botões (ex: Cancelar / Remover)
         setModalConfig({ title, message, buttons });
@@ -169,7 +264,7 @@ export function ThemedAlertHost() {
       listeners.delete(handleAlert);
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     };
-  }, [showBanner]);
+  }, [showBanner, hideBanner]);
 
   const { mounted, fadeAnim } = useModalFade(!!modalConfig);
   const modalConfigRef = useRef(modalConfig);
@@ -183,7 +278,7 @@ export function ThemedAlertHost() {
 
   return (
     <>
-      {/* ── Banner Flutuante Superior (Estilo Login: sem travar a tela, auto-dismiss) ── */}
+      {/* ── Banner Flutuante Superior (Estilo iFood: sem travar a tela, auto-dismiss, animação elástica) ── */}
       {banner && (
         <View
           pointerEvents="box-none"
@@ -193,22 +288,33 @@ export function ThemedAlertHost() {
             style={[
               styles.banner,
               banner.type === 'error' ? styles.bannerError : styles.bannerSuccess,
-              { opacity, transform: [{ translateY }] },
+              { opacity, transform: [{ translateY }, { scale }] },
             ]}
           >
             <Pressable
               style={styles.bannerInner}
               onPress={hideBanner}
             >
-              <Ionicons
-                name={banner.type === 'error' ? 'alert-circle' : 'checkmark-circle'}
-                size={20}
-                color={COLORS.white}
-              />
-              <Text style={styles.bannerText} numberOfLines={3}>
-                {banner.text}
-              </Text>
-              <Ionicons name="close" size={16} color="rgba(255,255,255,0.7)" />
+              <View style={styles.iconCircle}>
+                <Ionicons
+                  name={banner.type === 'error' ? 'alert-circle' : 'checkmark-circle'}
+                  size={20}
+                  color={COLORS.white}
+                />
+              </View>
+              <View style={styles.bannerTextContainer}>
+                {!!banner.title && (
+                  <Text style={styles.bannerTitle} numberOfLines={1}>
+                    {banner.title}
+                  </Text>
+                )}
+                <Text style={styles.bannerText} numberOfLines={3}>
+                  {banner.message || banner.text}
+                </Text>
+              </View>
+              <View style={styles.closeBtn}>
+                <Ionicons name="close" size={16} color="rgba(255,255,255,0.85)" />
+              </View>
             </Pressable>
           </Animated.View>
         </View>
@@ -273,28 +379,61 @@ const styles = StyleSheet.create({
   },
   banner: {
     width: '100%',
-    borderRadius: 12,
-    ...SHADOWS.md,
+    borderRadius: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 10,
   },
   bannerInner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingVertical: 14,
+    gap: 12,
+    paddingVertical: 12,
     paddingHorizontal: 16,
   },
   bannerError: {
-    backgroundColor: COLORS.error,
+    backgroundColor: '#EA1D2C', // Vermelho vibrante estilo iFood
   },
   bannerSuccess: {
-    backgroundColor: COLORS.success,
+    backgroundColor: '#27AE60',
+  },
+  iconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  bannerTextContainer: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  bannerTitle: {
+    color: COLORS.white,
+    fontSize: 14,
+    fontWeight: '800',
+    marginBottom: 2,
+    letterSpacing: 0.2,
   },
   bannerText: {
     color: COLORS.white,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
-    flex: 1,
-    lineHeight: 19,
+    lineHeight: 18,
+    opacity: 0.95,
+  },
+  closeBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
   },
 });
 

@@ -295,9 +295,14 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   cancelBtn: {
-    paddingVertical: 14,
+    paddingVertical: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+    borderRadius: 8,
+    marginTop: 8,
+    backgroundColor: '#FFFFFF',
   },
   cancelBtnText: {
     fontSize: 15,

@@ -12,3 +12,8 @@ build/
 # Local tooling & IDE
 .agents/
 .idea/
+
+# Google & Firebase credentials
+*-firebase-adminsdk-*.json
+google-services.json
+credentials.json

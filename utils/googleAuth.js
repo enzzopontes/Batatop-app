@@ -1,12 +1,115 @@
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { supabase } from '../supabaseConfig';
 import { SOFT_LOGOUT_KEY, emitAuthUiChange } from './authSession';
 
 WebBrowser.maybeCompleteAuthSession();
 
 const SAVED_USER_KEY = '@batatatop:savedUser';
+
+GoogleSignin.configure({
+  webClientId:
+    process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ||
+    '620439334147-48i6mgc0ois3a83tppme6pkd7thii358.apps.googleusercontent.com',
+});
+
+/**
+ * Salva sessão de login e atualiza perfil/storage local
+ */
+async function finalizeLoginSession(session) {
+  if (!session?.user) {
+    throw new Error('Sessão não identificada após o login.');
+  }
+
+  // Desliga soft-logout e notifica a UI (seção 11 do CLAUDE.md)
+  await AsyncStorage.setItem(SOFT_LOGOUT_KEY, 'false');
+  emitAuthUiChange();
+
+  // Persiste dados para "Continuar como [nome]"
+  const user = session.user;
+  const name =
+    user.user_metadata?.full_name ||
+    user.user_metadata?.name ||
+    user.email?.split('@')[0] ||
+    'Cliente';
+  const email = user.email || '';
+
+  let phone = user.phone || user.user_metadata?.phone || '';
+  if (!phone && user.id) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('telefone')
+      .eq('id', user.id)
+      .maybeSingle();
+    phone = profile?.telefone || '';
+  }
+
+  await AsyncStorage.setItem(
+    SAVED_USER_KEY,
+    JSON.stringify({
+      name,
+      email,
+      phone,
+    })
+  );
+
+  return { success: true, user: session.user };
+}
+
+/**
+ * Login nativo com Google Sign-In e fallback para Web OAuth
+ */
+export async function signInWithNativeGoogle() {
+  let idToken = null;
+  try {
+    await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+    const response = await GoogleSignin.signIn();
+    if (response?.type === 'cancelled') {
+      return { success: false, cancelled: true };
+    }
+    idToken = response?.data?.idToken || response?.idToken;
+
+    if (!idToken) {
+      throw new Error('Não foi possível obter o idToken do Google.');
+    }
+  } catch (error) {
+    if (
+      error.code === statusCodes.SIGN_IN_CANCELLED ||
+      error.code === '13' ||
+      error.message?.includes('cancelled')
+    ) {
+      return { success: false, cancelled: true };
+    }
+    console.error('❌ [GoogleAuth] Erro no GoogleSignin nativo:', error);
+    return {
+      success: false,
+      error: error.message || `Erro Google (${error.code || 'desconhecido'})`,
+    };
+  }
+
+  // Token obtido nativamente: autentica no Supabase sem abrir navegador
+  try {
+    const { data, error } = await supabase.auth.signInWithIdToken({
+      provider: 'google',
+      token: idToken,
+    });
+
+    if (error) {
+      console.error('❌ [GoogleAuth] Erro signInWithIdToken do Supabase:', error);
+      throw error;
+    }
+
+    return await finalizeLoginSession(data.session);
+  } catch (err) {
+    console.error('❌ [GoogleAuth] Erro ao autenticar no Supabase:', err);
+    return {
+      success: false,
+      error: err.message || 'Falha ao autenticar conta Google no Supabase.',
+    };
+  }
+}
 
 /**
  * Extrai parâmetros retornados na URL após o redirecionamento OAuth.
@@ -107,43 +210,7 @@ export async function signInWithSocial(provider = 'google') {
       session = currentSession.session;
     }
 
-    if (!session?.user) {
-      throw new Error('Sessão não identificada após o login.');
-    }
-
-    // Desliga soft-logout e notifica a UI (seção 11 do CLAUDE.md)
-    await AsyncStorage.setItem(SOFT_LOGOUT_KEY, 'false');
-    emitAuthUiChange();
-
-    // Persiste dados para "Continuar como [nome]"
-    const user = session.user;
-    const name =
-      user.user_metadata?.full_name ||
-      user.user_metadata?.name ||
-      user.email?.split('@')[0] ||
-      'Cliente';
-    const email = user.email || '';
-
-    let phone = user.phone || user.user_metadata?.phone || '';
-    if (!phone && user.id) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('telefone')
-        .eq('id', user.id)
-        .maybeSingle();
-      phone = profile?.telefone || '';
-    }
-
-    await AsyncStorage.setItem(
-      SAVED_USER_KEY,
-      JSON.stringify({
-        name,
-        email,
-        phone,
-      })
-    );
-
-    return { success: true, user: session.user };
+    return await finalizeLoginSession(session);
   } catch (err) {
     console.error(`Erro em signInWithSocial (${provider}):`, err);
     return {
@@ -153,6 +220,6 @@ export async function signInWithSocial(provider = 'google') {
   }
 }
 
-export const signInWithGoogle = () => signInWithSocial('google');
+export const signInWithGoogle = () => signInWithNativeGoogle();
 export const signInWithFacebook = () => signInWithSocial('facebook');
 

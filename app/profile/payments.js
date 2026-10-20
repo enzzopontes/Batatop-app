@@ -20,6 +20,7 @@ import { usePaymentCards, formatCardDisplay } from '../../utils/usePaymentCards'
 import { ThemedAlertHost, showThemedAlert } from '../../components/ThemedAlert';
 import CardWizard from '../../components/CardWizard';
 import SwipeableBottomSheetModal from '../../components/SwipeableBottomSheetModal';
+import CardBrandBadge from '../../components/cart/CardBrandBadge';
 
 /**
  * Página "Pagamentos" — gerencia cartões salvos (listar/adicionar/remover)
@@ -110,11 +111,7 @@ export default function PaymentsScreen() {
               {cards.map((card) => (
                 <View key={card.id} style={s.cardTile}>
                   <View style={s.cardTileHeader}>
-                    <Ionicons
-                      name="card"
-                      size={22}
-                      color={card.card_type === 'cartão de crédito' ? '#2563EB' : '#16A34A'}
-                    />
+                    <CardBrandBadge brand={card.payment_method_id} size="md" />
                     <Pressable
                       style={s.cardTrash}
                       onPress={() => handleRemoveCard(card)}

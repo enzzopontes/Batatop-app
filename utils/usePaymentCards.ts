@@ -21,6 +21,14 @@ export type SavedCard = {
   created_at?: string;
 };
 
+export function normalizeCardType(rawType?: string | null): 'cartão de crédito' | 'cartão de débito' {
+  const t = (rawType || '').toLowerCase();
+  if (t === 'debit_card' || t.includes('débito') || t.includes('debito')) {
+    return 'cartão de débito';
+  }
+  return 'cartão de crédito';
+}
+
 /**
  * Hook que centraliza toda a lógica de cartões salvos do usuário:
  * listar (via SELECT), salvar (tokeniza no cliente e chama POST /api/mercadopago/cards),
@@ -55,8 +63,13 @@ export function usePaymentCards() {
         return [];
       }
 
-      setCards((data as SavedCard[]) || []);
-      return (data as SavedCard[]) || [];
+      const normalizedCards: SavedCard[] = ((data as any[]) || []).map((card) => ({
+        ...card,
+        card_type: normalizeCardType(card.card_type),
+      }));
+
+      setCards(normalizedCards);
+      return normalizedCards;
     } finally {
       setLoadingCards(false);
     }
@@ -110,6 +123,16 @@ export function usePaymentCards() {
 
       const paymentMethodId = guessPaymentMethodId(cardNumber);
 
+      // Salva CPF do titular no perfil do usuário se válido
+      const cleanDoc = (docNumber || '').replace(/\D/g, '');
+      if (cleanDoc.length === 11) {
+        try {
+          await supabase.from('profiles').update({ cpf: cleanDoc }).eq('id', user.id);
+        } catch (e) {
+          console.warn('[usePaymentCards] Falha ao atualizar CPF no perfil:', e);
+        }
+      }
+
       // 2. Chama a rota segura do servidor com Bearer
       const response = await fetch(`${API_BASE_URL}/api/mercadopago/cards`, {
         method: 'POST',
@@ -121,6 +144,8 @@ export function usePaymentCards() {
           token: tokenResult.token,
           payment_method_id: paymentMethodId,
           cardholder_name: cardholderName,
+          card_type: cardType === 'cartão de débito' ? 'debit_card' : 'credit_card',
+          doc_number: cleanDoc,
           is_default: !!setAsDefault,
         }),
       });
@@ -134,8 +159,12 @@ export function usePaymentCards() {
         };
       }
 
-      await loadCards();
-      return { success: true, card: data.card as SavedCard };
+      const reloaded = await loadCards();
+      const saved = (reloaded && reloaded.find((c) => c.id === data.card?.id)) || {
+        ...data.card,
+        card_type: normalizeCardType(data.card?.card_type || cardType),
+      };
+      return { success: true, card: saved as SavedCard };
     } catch (err: any) {
       console.error('Erro ao adicionar cartão:', err);
       return { success: false, error: err?.message || 'Erro inesperado ao salvar o cartão.' };

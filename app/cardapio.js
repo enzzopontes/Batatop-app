@@ -16,8 +16,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image as ExpoImage } from 'expo-image';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../constants/theme';
-import { useProductRanking } from './hooks/useProductRanking';
-import { useBuscarProdutos } from './hooks/useProdutos';
+import { useProductRanking } from '../hooks/useProductRanking';
+import { useBuscarProdutos } from '../hooks/useProdutos';
 import { useCart } from '../utils/cartStore';
 
 // MAPEAMENTO: label visível → valor exato no campo `category` do Supabase

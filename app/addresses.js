@@ -18,8 +18,8 @@ import { Ionicons } from '@expo/vector-icons';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../constants/theme';
-import { useModalFade } from './hooks/useModalFade';
-import { useBottomInset } from './hooks/useBottomInset';
+import { useModalFade } from '../hooks/useModalFade';
+import { useBottomInset } from '../hooks/useBottomInset';
 import { supabase } from '../supabaseConfig';
 import { getEffectiveSession, subscribeAuthUiChange } from '../utils/authSession';
 import { getPendingAddress, setPendingAddress, clearPendingAddress } from '../utils/pendingAddress';
@@ -32,8 +32,8 @@ import AuthBottomSheet from 'components/AuthBottomSheet';
 import AddressCard from '../components/AddressCard';
 import AddressModal from '../components/AddressModal';
 import { ThemedAlertHost, showThemedAlert } from '../components/ThemedAlert';
-import useGeolocationWithMaps from './hooks/useGeolocationWithMaps';
-import usePlacesAutocomplete from './hooks/usePlacesAutocomplete';
+import useGeolocationWithMaps from '../hooks/useGeolocationWithMaps';
+import usePlacesAutocomplete from '../hooks/usePlacesAutocomplete';
 
 class PreviewErrorBoundary extends React.Component {
   state = { hasError: false };

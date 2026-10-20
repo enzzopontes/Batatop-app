@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter, useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../supabaseConfig';
 import { useCart } from '../../utils/cartStore';
 import { getEffectiveSession, subscribeAuthUiChange } from '../../utils/authSession';
@@ -13,7 +14,7 @@ import {
   setPreferredCardId,
 } from '../../utils/paymentPrefs';
 import { usePaymentCards, SavedCard } from '../../utils/usePaymentCards';
-import { useProductRanking } from '../../app/hooks/useProductRanking';
+import { useProductRanking } from '../../hooks/useProductRanking';
 import {
   createPixPayment,
   chargeWithSavedCard,
@@ -25,9 +26,11 @@ import {
 import { InstallmentOption } from './InstallmentsModal';
 import { notifyAdminNewOrder } from '../../utils/notifyNewOrder';
 import { MIN_ORDER_VALUE, DELIVERY_FEE, STORE_ADDRESS } from '../../constants/store';
-import { showThemedAlert } from '../ThemedAlert';
+import { showThemedAlert, showErrorAlert } from '../ThemedAlert';
 
 export type CheckoutStep = 'itens' | 'entrega' | 'pagamento';
+
+const SAVED_USER_KEY = '@batatatop:savedUser';
 
 import { mapCartItemsToOrderItems } from '../../utils/orderMapper';
 
@@ -99,6 +102,34 @@ function isValidCpf(cpf: string): boolean {
   return rest === Number(digits[10]);
 }
 
+export function isValidPhone(phone: string): boolean {
+  let digits = (phone || '').replace(/\D/g, '');
+  if (digits.startsWith('55') && digits.length > 11) {
+    digits = digits.slice(2);
+  }
+  if (digits.length !== 10 && digits.length !== 11) return false;
+  const ddd = parseInt(digits.slice(0, 2), 10);
+  if (ddd < 11 || ddd > 99) return false;
+  if (digits.length === 11 && digits[2] !== '9') return false;
+  if (/^(\d)\1+$/.test(digits)) return false;
+  return true;
+}
+
+export function formatPhone(value: string): string {
+  let digits = (value || '').replace(/\D/g, '');
+  if (digits.startsWith('55') && digits.length > 11) {
+    digits = digits.slice(2);
+  }
+  digits = digits.slice(0, 11);
+  if (digits.length === 0) return '';
+  if (digits.length <= 2) return `(${digits}`;
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  if (digits.length <= 10) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  }
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+}
+
 export function useCheckoutFlow() {
   const router = useRouter();
   const { items, total: totalCents, add: addToCart, remove: removeFromCart, updateQty, clear: clearCart, coupon, setCoupon } = useCart();
@@ -107,7 +138,17 @@ export function useCheckoutFlow() {
 
   // Navigation & Step state
   const [step, setStep] = useState<CheckoutStep>('itens');
-  const [showPaymentSelector, setShowPaymentSelector] = useState(false);
+  const [_showPaymentSelector, _setShowPaymentSelector] = useState(false);
+  const showPaymentSelector = _showPaymentSelector;
+  const setShowPaymentSelector = useCallback((val: boolean | ((prev: boolean) => boolean)) => {
+    _setShowPaymentSelector((prev) => {
+      const next = typeof val === 'function' ? val(prev) : val;
+      if (next) {
+        loadSavedCards();
+      }
+      return next;
+    });
+  }, [loadSavedCards]);
   const [_showReviseModal, _setShowReviseModal] = useState(false);
   const [showCardWizard, setShowCardWizard] = useState(false);
   const [minOrderSheetVisible, setMinOrderSheetVisible] = useState(false);
@@ -116,17 +157,20 @@ export function useCheckoutFlow() {
   const [selectedInstallment, setSelectedInstallment] = useState<InstallmentOption | null>(null);
   const [loadingInstallments, setLoadingInstallments] = useState(false);
   const [installmentsError, setInstallmentsError] = useState<string | null>(null);
+  const [orderCompleted, setOrderCompleted] = useState(false);
 
   // User & Session
   const [user, setUser] = useState<any>(null);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [hasSavedPhone, setHasSavedPhone] = useState(false);
 
   // Delivery
   const [deliveryType, setDeliveryType] = useState<DeliveryType>('delivery');
   const [selectedAddress, setSelectedAddress] = useState<Address | null>(null);
   const [loadingAddress, setLoadingAddress] = useState(false);
   const [dynamicDeliveryFee, setDynamicDeliveryFee] = useState<number>(DELIVERY_FEE);
+  const [isDeliveryFeeEnabled, setIsDeliveryFeeEnabled] = useState<boolean>(true);
 
   // Payment
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix');
@@ -161,6 +205,7 @@ export function useCheckoutFlow() {
   // Process / Submission
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
+  const isOrderFinishingRef = useRef(false);
   const pendingOrderIdRef = useRef<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -173,7 +218,7 @@ export function useCheckoutFlow() {
 
   // Calculations
   const subtotal = totalCents / 100;
-  const deliveryFee = deliveryType === 'delivery' ? dynamicDeliveryFee : 0;
+  const deliveryFee = deliveryType === 'delivery' && isDeliveryFeeEnabled ? dynamicDeliveryFee : 0;
 
   // Coupon discount calculation
   let discount = 0;
@@ -205,6 +250,17 @@ export function useCheckoutFlow() {
 
   // Load dynamic delivery fee from store_settings
   useEffect(() => {
+    const applySettingValue = (val: any) => {
+      if (!val) return;
+      if (val.isDeliveryFeeEnabled === false) {
+        setIsDeliveryFeeEnabled(false);
+        setDynamicDeliveryFee(0);
+      } else {
+        setIsDeliveryFeeEnabled(true);
+        setDynamicDeliveryFee(Number(val.deliveryFee ?? DELIVERY_FEE));
+      }
+    };
+
     (async () => {
       try {
         const { data } = await supabase
@@ -212,18 +268,26 @@ export function useCheckoutFlow() {
           .select('setting_value')
           .eq('setting_key', 'store_status')
           .maybeSingle();
-        const val = data?.setting_value;
-        if (val) {
-          if (val.isDeliveryFeeEnabled === false) {
-            setDynamicDeliveryFee(0);
-          } else if (val.deliveryFee !== undefined) {
-            setDynamicDeliveryFee(Number(val.deliveryFee));
-          }
-        }
+        applySettingValue(data?.setting_value);
       } catch {
         // fallback to DELIVERY_FEE
       }
     })();
+
+    const channel = supabase
+      .channel('store_settings_checkout_delivery_fee')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'store_settings', filter: 'setting_key=eq.store_status' },
+        (payload) => {
+          applySettingValue(payload.new?.setting_value);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   // Load Session and Profile
@@ -232,9 +296,48 @@ export function useCheckoutFlow() {
     if (session?.user) {
       setUser(session.user);
       setName((prev) => prev || session.user.user_metadata?.full_name || '');
-      setPhone((prev) => prev || session.user.phone || session.user.user_metadata?.phone || '');
+
+      let userPhone = (session.user.phone || session.user.user_metadata?.phone || '').trim();
+
+      // Carrega CPF e telefone salvos do perfil do usuário
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('cpf, phone')
+          .eq('id', session.user.id)
+          .maybeSingle();
+
+        if (profile?.cpf && isValidCpf(profile.cpf)) {
+          setCardCpf(profile.cpf);
+        }
+        if (profile?.phone && !userPhone) {
+          userPhone = profile.phone.trim();
+        }
+      } catch (e) {
+        console.warn('[useCheckoutFlow] Falha ao carregar perfil de profiles:', e);
+      }
+
+      // Fallback para AsyncStorage (se não tiver no profiles nem no auth)
+      if (!userPhone) {
+        try {
+          const raw = await AsyncStorage.getItem(SAVED_USER_KEY);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed.phone) {
+              userPhone = String(parsed.phone).trim();
+            }
+          }
+        } catch (e) {
+          console.warn('[useCheckoutFlow] Falha ao carregar dados locais do usuário:', e);
+        }
+      }
+
+      const formatted = formatPhone(userPhone);
+      setPhone(formatted || userPhone);
+      setHasSavedPhone(Boolean(userPhone && isValidPhone(userPhone)));
     } else {
       setUser(null);
+      setHasSavedPhone(false);
     }
   }, []);
 
@@ -288,14 +391,15 @@ export function useCheckoutFlow() {
     }
   }, []);
 
-  // Reload address on screen focus
+  // Reload address and saved cards on screen focus
   useFocusEffect(
     useCallback(() => {
       loadAddress();
-    }, [loadAddress])
+      loadSavedCards();
+    }, [loadAddress, loadSavedCards])
   );
 
-  // Load preferred payment method and saved card on mount (Item 9: se tiver cartão salvo, já vem selecionado)
+  // Load preferred payment method and saved card on mount (Padrão Pix ou último usado)
   useEffect(() => {
     (async () => {
       try {
@@ -303,26 +407,39 @@ export function useCheckoutFlow() {
         const savedMethod = await getPreferredPaymentMethod();
         const preferredCardId = await getPreferredCardId();
 
-        if (cards && cards.length > 0) {
-          const match = preferredCardId
-            ? cards.find((c) => c.id === preferredCardId)
-            : cards.find((c) => c.is_default) || cards[0];
-
-          if (match) {
-            setSelectedSavedCard(match);
-            setPaymentMethod(match.card_type as PaymentMethod);
-            setUseManualCardForm(false);
-            return;
-          }
-        }
-
         if (savedMethod) {
-          setPaymentMethod(savedMethod as PaymentMethod);
+          const normSaved =
+            savedMethod === 'credit_card' ? 'cartão de crédito' :
+            savedMethod === 'debit_card' ? 'cartão de débito' :
+            savedMethod;
+          setPaymentMethod(normSaved as PaymentMethod);
+
+          if (normSaved === 'cartão de crédito' || normSaved === 'cartão de débito') {
+            if (cards && cards.length > 0) {
+              const match = preferredCardId
+                ? cards.find((c) => c.id === preferredCardId)
+                : cards.find((c) => c.card_type === normSaved && c.is_default) || cards.find((c) => c.card_type === normSaved) || cards[0];
+              if (match) {
+                setSelectedSavedCard(match);
+                setUseManualCardForm(false);
+                return;
+              }
+            }
+            setSelectedSavedCard(null);
+            setUseManualCardForm(true);
+          } else {
+            setSelectedSavedCard(null);
+            setUseManualCardForm(false);
+          }
         } else {
+          // Nenhum método salvo anteriormente -> Padrão absoluto é PIX
           setPaymentMethod('pix');
+          setSelectedSavedCard(null);
+          setUseManualCardForm(false);
         }
       } catch (e) {
         console.error('Erro ao ler preferências de pagamento:', e);
+        setPaymentMethod('pix');
       }
     })();
   }, [loadSavedCards]);
@@ -330,8 +447,14 @@ export function useCheckoutFlow() {
   // Select payment method helper
   const selectPaymentMethod = useCallback(
     async (method: PaymentMethod, card?: SavedCard) => {
-      setPaymentMethod(method);
-      if (method !== 'cartão de crédito') {
+      const normalizedMethod: PaymentMethod =
+        (method as string) === 'credit_card'
+          ? 'cartão de crédito'
+          : (method as string) === 'debit_card'
+          ? 'cartão de débito'
+          : method;
+      setPaymentMethod(normalizedMethod);
+      if (normalizedMethod !== 'cartão de crédito') {
         setSelectedInstallment(null);
         setInstallmentOptions([]);
         setShowInstallmentsModal(false);
@@ -341,9 +464,9 @@ export function useCheckoutFlow() {
         setSelectedSavedCard(card);
         setUseManualCardForm(false);
         await setPreferredCardId(card.id);
-      } else if (method === 'cartão de crédito' || method === 'cartão de débito') {
+      } else if (normalizedMethod === 'cartão de crédito' || normalizedMethod === 'cartão de débito') {
         const cards = savedCards.length > 0 ? savedCards : await loadSavedCards();
-        const match = cards.find((c) => c.card_type === method);
+        const match = cards.find((c) => c.card_type === normalizedMethod);
         if (match) {
           setSelectedSavedCard(match);
           setUseManualCardForm(false);
@@ -358,6 +481,7 @@ export function useCheckoutFlow() {
         setUseManualCardForm(false);
         await setPreferredCardId(null);
       }
+      await setPreferredPaymentMethod(normalizedMethod);
       setShowPaymentSelector(false);
     },
     [savedCards, loadSavedCards]
@@ -442,7 +566,8 @@ export function useCheckoutFlow() {
   // Validation
   const validateOrder = (): string | null => {
     if (!name.trim()) return 'Informe seu nome para o pedido';
-    if (!phone.trim()) return 'Informe seu telefone (WhatsApp)';
+    if (!phone.trim()) return 'Informe seu número de WhatsApp para contato';
+    if (!isValidPhone(phone)) return 'Informe um número de WhatsApp válido com DDD (ex: 14 99999-9999)';
     if (wantsCutlery === null) return 'Por favor, informe se precisa de talheres descartáveis';
     if (deliveryType === 'delivery') {
       if (!selectedAddress) return 'Selecione um endereço para entrega';
@@ -450,7 +575,23 @@ export function useCheckoutFlow() {
     }
     if (items.length === 0) return 'Sua sacola está vazia';
 
+    if (orderNotes && orderNotes.trim().length > 300) {
+      return 'A observação do pedido deve ter no máximo 300 caracteres';
+    }
+
+    if (paymentMethod === 'dinheiro' && cashChange.trim()) {
+      const cleanChangeStr = cashChange.replace(/\s/g, '').replace('R$', '').replace(/\./g, '').replace(',', '.');
+      const numericChange = parseFloat(cleanChangeStr);
+      if (isNaN(numericChange) || numericChange <= 0) {
+        return 'Valor de troco inválido';
+      }
+      if (numericChange < total) {
+        return `O valor do troco (R$ ${numericChange.toFixed(2).replace('.', ',')}) não pode ser menor que o total do pedido (R$ ${total.toFixed(2).replace('.', ',')})`;
+      }
+    }
+
     if (paymentMethod === 'cartão de crédito' || paymentMethod === 'cartão de débito') {
+      if (!isValidCpf(cardCpf)) return 'Informe um CPF válido para pagamento com cartão';
       if (selectedSavedCard && !useManualCardForm) {
         if (!savedCardCvv || savedCardCvv.length < 3) return 'Digite o CVV do cartão salvo para confirmar o pedido';
       } else {
@@ -458,7 +599,6 @@ export function useCheckoutFlow() {
         if (cardNumber.replace(/\D/g, '').length < 15) return 'Número de cartão inválido';
         if (cardExpiry.replace(/\D/g, '').length !== 4) return 'Validade do cartão inválida';
         if (cardCvv.length < 3) return 'CVV do cartão inválido';
-        if (!isValidCpf(cardCpf)) return 'CPF do titular inválido';
       }
     }
     return null;
@@ -481,7 +621,7 @@ export function useCheckoutFlow() {
     if (validationError) {
       submittingRef.current = false;
       setErrorMessage(validationError);
-      showThemedAlert('Atenção', validationError);
+      showErrorAlert(validationError, 'Atenção');
       return;
     }
 
@@ -580,9 +720,12 @@ export function useCheckoutFlow() {
           return;
         }
 
+        const cleanPhoneDigits = phone.replace(/\D/g, '').replace(/^55/, '');
+        const formattedPhone = formatPhone(cleanPhoneDigits) || phone.trim();
+
         const { data: rpcData, error: rpcError } = await supabase.rpc('create_order', {
-          p_customer_name: name.trim(),
-          p_customer_phone: phone.trim(),
+          p_customer_name: name.trim().slice(0, 100),
+          p_customer_phone: formattedPhone,
           p_customer_address: customerAddress,
           p_customer_neighborhood: customerNeighborhood,
           p_customer_complement:
@@ -652,6 +795,15 @@ export function useCheckoutFlow() {
           const chosenInstallments = paymentMethod === 'cartão de crédito' ? (selectedInstallment?.installments || 1) : 1;
 
           if (selectedSavedCard && !useManualCardForm) {
+            // Sincroniza CPF do titular com profiles para evitar solicitar no futuro
+            if (cardCpf && isValidCpf(cardCpf) && session?.user?.id) {
+              supabase
+                .from('profiles')
+                .update({ cpf: cardCpf.replace(/\D/g, '') })
+                .eq('id', session.user.id)
+                .then(() => {});
+            }
+
             cardResult = await chargeWithSavedCard({
               orderId: currentOrderId,
               savedCardId: selectedSavedCard.id,
@@ -734,12 +886,49 @@ export function useCheckoutFlow() {
       // Sucesso na submissão
       const finalOrderId = currentOrderId;
       pendingOrderIdRef.current = null;
+
+      // Persiste o telefone no banco de dados atrelado ao usuário (profiles), user_metadata e AsyncStorage
+      if (session?.user?.id && phone.trim()) {
+        const cleanPhone = phone.trim();
+        const cleanDigits = cleanPhone.replace(/\D/g, '').replace(/^55/, '');
+        const phoneToSave = cleanDigits || cleanPhone;
+
+        supabase
+          .from('profiles')
+          .upsert({ id: session.user.id, phone: phoneToSave }, { onConflict: 'id' })
+          .then(({ error }) => {
+            if (error) console.warn('[useCheckoutFlow] Falha ao atualizar telefone em profiles:', error);
+          });
+
+        supabase.auth
+          .updateUser({
+            data: { phone: phoneToSave },
+          })
+          .catch(() => {});
+
+        AsyncStorage.getItem(SAVED_USER_KEY)
+          .then((raw) => {
+            try {
+              const parsed = raw ? JSON.parse(raw) : {};
+              parsed.phone = phoneToSave;
+              AsyncStorage.setItem(SAVED_USER_KEY, JSON.stringify(parsed)).catch(() => {});
+            } catch {}
+          })
+          .catch(() => {});
+
+        setHasSavedPhone(true);
+      }
+
       if (paymentMethod !== 'pix') {
-        notifyAdminNewOrder(finalOrderId);
+        notifyAdminNewOrder(finalOrderId).catch((notifyErr) => {
+          console.error('[useCheckoutFlow] Falha silenciosa no notifyAdminNewOrder:', notifyErr);
+        });
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      clearCart();
+      setOrderCompleted(true);
       setShowReviseModal(false);
+      isOrderFinishingRef.current = true;
+      clearCart();
       setSubmitting(false);
       router.replace(`/pedidos/${finalOrderId}`);
     } catch (e: any) {
@@ -783,6 +972,40 @@ export function useCheckoutFlow() {
     }
 
     // step === 'pagamento' -> Botão "Revisar pedido" abre o ReviseOrderModal
+    if (wantsCutlery === null) {
+      showErrorAlert('Por favor, informe se precisa de talheres.', 'Atenção');
+      return;
+    }
+
+    if (!hasSavedPhone) {
+      if (!phone.trim()) {
+        showErrorAlert('Por favor, informe seu número de WhatsApp para contato.', 'WhatsApp obrigatório');
+        return;
+      }
+      if (!isValidPhone(phone)) {
+        showErrorAlert('Informe um número de WhatsApp válido com DDD (ex: 14 99999-9999).', 'WhatsApp inválido');
+        return;
+      }
+    }
+
+    if (orderNotes && orderNotes.trim().length > 300) {
+      showErrorAlert('A observação do pedido deve ter no máximo 300 caracteres.', 'Observação muito longa');
+      return;
+    }
+
+    if (paymentMethod === 'dinheiro' && cashChange.trim()) {
+      const cleanChangeStr = cashChange.replace(/\s/g, '').replace('R$', '').replace(/\./g, '').replace(',', '.');
+      const numericChange = parseFloat(cleanChangeStr);
+      if (isNaN(numericChange) || numericChange <= 0) {
+        showErrorAlert('Por favor, informe um valor de troco válido.', 'Troco inválido');
+        return;
+      }
+      if (numericChange < total) {
+        showErrorAlert(`O valor do troco (R$ ${numericChange.toFixed(2).replace('.', ',')}) não pode ser menor que o total do pedido (R$ ${total.toFixed(2).replace('.', ',')}).`, 'Troco insuficiente');
+        return;
+      }
+    }
+
     const session = await getEffectiveSession();
     if (!session) {
       requestAuthSheet();
@@ -829,7 +1052,6 @@ export function useCheckoutFlow() {
         style: 'destructive',
         onPress: () => {
           clearCart();
-          router.back();
         },
       },
     ]);
@@ -869,6 +1091,7 @@ export function useCheckoutFlow() {
     items,
     subtotal,
     deliveryFee,
+    isDeliveryFeeEnabled,
     discount,
     total,
     coupon,
@@ -908,6 +1131,8 @@ export function useCheckoutFlow() {
     setName,
     phone,
     setPhone,
+    hasSavedPhone,
+    setHasSavedPhone,
     submitting,
     errorMessage,
     showPaymentSelector,
@@ -931,6 +1156,8 @@ export function useCheckoutFlow() {
     installmentLabel,
     selectPaymentMethod,
     submitOrder,
+    orderCompleted,
+    isOrderFinishingRef,
     handleContinue,
     handleBack,
     handleClearCart,

@@ -15,7 +15,7 @@
 Antes de formular dúvidas ao usuário ou deduzir regras, investigue o repositório na seguinte ordem:
 1. `constants/theme.js` (cores/espaçamentos) e `constants/store.js` (regras e taxas da loja).
 2. `supabaseConfig.js` e `supabase/migrations/` (modelos e políticas RLS). Nunca crie conexões ad-hoc ao Supabase.
-3. `utils/` e `app/hooks/` (lógicas centrais: `cartStore.js`, `authSession.js`, `useCheckoutFlow.ts`, etc.).
+3. `utils/` e `hooks/` (lógicas centrais: `cartStore.js`, `authSession.js`, `useCheckoutFlow.ts`, etc.).
 4. Componente ou tela alvo.
 
 **Edição Cirúrgica de Código:**
@@ -261,7 +261,7 @@ const headerHeight = useHeaderHeight();
 
 **Carrinho em memória (`utils/cartStore.js`):** Observer pattern + hook `useCart()`. `cartItemId` = `${product.id}-${adIds}-${observacoes}`.
 
-**Backend / Dados:** Hooks em `app/hooks/` (`useProdutos.js`, `useProductRanking.js`, `usePedidos.js`, `useCoupons.js`, `useAddressVerification.js`, `useGeolocationWithMaps.js`, `usePlacesAutocomplete.js`).
+**Backend / Dados:** Hooks em `hooks/` (`useProdutos.js`, `useProductRanking.js`, `usePedidos.js`, `useCoupons.js`, `useAddressVerification.js`, `useGeolocationWithMaps.js`, `usePlacesAutocomplete.js`).
 
 **Cartões (`utils/usePaymentCards.ts`):** Tokenização client-side + tabela `payment_cards`.
 
@@ -666,27 +666,34 @@ export function initAuthStateListener() {
 ### Como usar
 
 ```js
-import { showThemedAlert, hideThemedAlert, ThemedAlertHost } from '../components/ThemedAlert';
+import { showSuccessAlert, showErrorAlert, showThemedAlert, hideThemedAlert, ThemedAlertHost } from '../components/ThemedAlert';
 ```
 
-#### 1. Notificação de Sucesso (banner verde animado no topo):
+Também acessíveis globalmente via `showSuccessAlert(...)` e `showErrorAlert(...)` sem necessidade de importação.
+
+#### 1. Notificação de Sucesso (banner verde `COLORS.success` `#27AE60` animado no topo):
 ```js
+showSuccessAlert('Endereço salvo com sucesso!', 'Pronto');
+// Ou:
 showThemedAlert.success('Código enviado');
-showThemedAlert.success('Endereço salvo com sucesso!', 'Pronto');
 ```
 
-#### 2. Notificação de Erro (banner vermelho animado no topo):
+#### 2. Notificação de Erro (banner vermelho original `COLORS.error` `#EB5757` animado no topo):
 ```js
+showErrorAlert('Não foi possível conectar com o servidor.', 'Erro');
+// Ou:
 showThemedAlert.error('Código inválido ou expirado. Tente novamente.');
-showThemedAlert.error('Não foi possível conectar com o servidor.');
 ```
 
-#### 3. Alerta simples / Atenção:
+#### 3. Interceptação Automática do Alert.alert:
+Chamadas legadas a `Alert.alert(title, message)` são interceptadas: se o título ou mensagem contiver palavras de sucesso (sucesso, copiado, salvo, parabéns, concluído), o alerta abre verde (`success`); caso contrário, mantém o vermelho original (`error`).
+
+#### 4. Alerta simples / Atenção:
 ```js
 showThemedAlert('Atenção', 'Selecione uma opção antes de continuar.');
 ```
 
-#### 4. Confirmação com botões (abre em modal):
+#### 5. Confirmação com botões (abre em modal):
 ```js
 showThemedAlert('Limpar sacola?', 'Deseja remover todos os itens?', [
   { text: 'Cancelar', style: 'cancel' },
@@ -694,7 +701,7 @@ showThemedAlert('Limpar sacola?', 'Deseja remover todos os itens?', [
 ]);
 ```
 
-#### 5. Fechar alerta programaticamente (ex: usuário começou a digitar de novo):
+#### 6. Fechar alerta programaticamente (ex: usuário começou a digitar de novo):
 ```js
 hideThemedAlert();
 ```
@@ -751,3 +758,23 @@ Refatoração canônica da Sacola (`app/cart.tsx`, `components/cart/*`) seguindo
   - Ordenação por dados reais de venda através do hook `useProductRanking`.
   - Performance: FlatList horizontal com `getItemLayout`, `initialNumToRender={4}`, `maxToRenderPerBatch={4}`, `windowSize={3}`, `removeClippedSubviews`, `snapToInterval`, `React.memo` nos cards e imagens com cache `memory-disk` via `expo-image`.
 - **Cores:** Zero amarelo escuro/hardcoded; todos os botões e destaques utilizam a cor primária canônica `COLORS.primary` de `constants/theme.js`.
+
+---
+
+## 15. Rastreio Ao Vivo Estilo iFood & Motor Zero Cliques da Mara
+
+### Identidade do Produto:
+- **Batata Recheada** (nunca mencionar "batata frita" em textos, ilustrações, animações ou estados de preparo).
+
+### Fluxo de Rastreio Ao Vivo & Mapa iFood (`components/orders/LiveDeliveryMap.js`, `DeliveryVehicleMarker.js`, `DeliveryDestinationMarker.js`, `app/pedidos/[id].js`):
+- **Carro 3D Top-Down VW Gol G2 ("Bolinha") Prata Metálico:** SVG customizado (`#C0C0C0` / `#D8D8D8`) dimensionado em `Math.floor(100 / PixelRatio.get())` dp (`viewBox="0 0 100 100"`) para zero clipping no Android Fabric (`react-native-maps` possui buffer nativo fixo de 100x100px).
+- **Interpolação Fluida Quadro a Quadro:** `requestAnimationFrame` de `1.85s` sincronizado com pulsos de GPS a cada `2s` (dependendo apenas das primitivas `[driverPos.latitude, driverPos.longitude, driverPos.heading]`) e rotação automática nas curvas via `calculateBearing`.
+- **Experiência Dual (Card + Modal):** Mini-preview não-interativo de `140px` integrado ao Card 1 de status (`app/pedidos/[id].js`) quando o rastreio está ativo (`is_active && isFreshPing <= 150s`), abrindo modal em tela cheia com Bottom Sheet estilo iFood ao toque.
+
+### Motor Zero Cliques da Mara (`utils/maraTrackingEngine.js` & `app/admin/pedidos.js`) + `pg_cron` (`advance_order_progression`):
+- **Auto-start no Painel Admin:** Liga o GPS automaticamente em `/admin/pedidos` sempre que há pedido `delivery` ativo (`preparing`, `ready` ou `out_for_delivery`).
+- **Privacidade de Balcão na Loja:** Enquanto a Mara está na loja (`<= 40m`, 0 pedidos em `out_for_delivery`), mantém `delivery_tracking.is_active = false` no banco (protege a privacidade e deixa o `pg_cron` livre).
+- **Saída Automática da Base:** Ao sair `> 40m` da base por 2 leituras consecutivas (com trava `canDispatchFromBase` que só desarma após despachar pelo menos 1 pedido e só rearma ao voltar `<= 80m` da loja), muda os pedidos da leva (`preparing`/`ready`) para `out_for_delivery` e ativa o mapa ao vivo.
+- **Chegada no Cliente (Trava Irreversível):** Permanecer num raio de `<= 40m` do cliente (com histerese de saída em `60m`) por `25s` grava `metadata.arrived_at` e `metadata.auto_deliver_at` (+2 min). Essa trava é **irreversível**: conclui o pedido para `delivered` em 2 minutos invisíveis para o cliente mesmo se a Mara desligar o GPS ou fechar o app para cobrar na maquininha/Pix.
+- **Fallback Automático (`pg_cron`):** Se o GPS desligar ou ficar `> 2 min` sem heartbeat antes de chegar no cliente, o `pg_cron` (`advance_order_progression`) desativa `delivery_tracking`, esconde o mapa do cliente e retoma a fila automática normal por tempo (`2 min` confirmação + `10..45 min` preparo dinâmico + `20 min` entrega).
+

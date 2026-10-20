@@ -4,22 +4,68 @@
  * Mapa interativo estilo iFood para rastreio em tempo real da entrega.
  *
  * Recursos:
- * - Marcador do Carrinho Amarelo da Mara (#FFB800 com contorno #3E3E3E).
- * - Traçado de rota pelas ruas via OSRM público com duas polylines sobrepostas.
- * - Múltiplas paradas anonimizadas (toFixed(3)) sem expor dados de terceiros.
- * - Marcador customizado "Sua Casa" para o endereço do cliente.
+ * - Modo Tela Cheia (Fullscreen Modal) com header de navegação e sheet inferior informativo.
+ * - Carro SVG ultra realista com feixe de luz dos faróis e animação suave nas curvas.
+ * - Marcador de destino "Sua Casa" estilo iFood com casinha detalhada em vetor.
+ * - Marcador de origem da loja Batata Top.
+ * - Traçado de rota via OSRM público com duas polylines sobrepostas.
+ * - Múltiplas paradas anonimizadas (toFixed(3)).
+ * - Botão de recentralizar o trajeto no mapa.
  * - Supabase Realtime ouvindo delivery_tracking em tempo real.
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, Dimensions, Platform } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ActivityIndicator,
+  Dimensions,
+  Platform,
+  Pressable,
+  Animated,
+  StatusBar,
+} from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
-import { supabase } from '../../supabaseConfig';
-import { COLORS } from '../../constants/theme';
-import { STORE_ADDRESS } from '../../constants/store';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
 
+import { supabase } from '../../supabaseConfig';
+import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../../constants/theme';
+import { STORE_ADDRESS } from '../../constants/store';
 import { calculateDistanceMeters } from '../../utils/maraTrackingEngine';
+
+import DeliveryVehicleMarker from './DeliveryVehicleMarker';
+import DeliveryDestinationMarker from './DeliveryDestinationMarker';
+
+function calculateBearing(startLat, startLng, destLat, destLng) {
+  if (startLat == null || startLng == null || destLat == null || destLng == null) return 0;
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const toDeg = (rad) => (rad * 180) / Math.PI;
+  const dLng = toRad(destLng - startLng);
+  const lat1 = toRad(startLat);
+  const lat2 = toRad(destLat);
+  const y = Math.sin(dLng) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+  return (toDeg(Math.atan2(y, x)) + 360) % 360;
+}
+
+function LiveGreenDot() {
+  const pulseAnim = useRef(new Animated.Value(0.4)).current;
+  useEffect(() => {
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1, duration: 650, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 0.35, duration: 650, useNativeDriver: true }),
+      ])
+    );
+    pulse.start();
+    return () => pulse.stop();
+  }, [pulseAnim]);
+
+  return <Animated.View style={[styles.liveGreenDot, { opacity: pulseAnim }]} />;
+}
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -28,7 +74,14 @@ const STORE_COORDS = {
   longitude: STORE_ADDRESS.longitude ?? -49.0058,
 };
 
-export default function LiveDeliveryMap({ order, height = SCREEN_HEIGHT * 0.48 }) {
+export default function LiveDeliveryMap({
+  order,
+  height,
+  isFullScreen = false,
+  isPreview = false,
+  onClose,
+}) {
+  const insets = useSafeAreaInsets();
   const mapRef = useRef(null);
   const lastRouteFetchedDriverPosRef = useRef(null);
 
@@ -40,9 +93,99 @@ export default function LiveDeliveryMap({ order, height = SCREEN_HEIGHT * 0.48 }
     longitude: STORE_COORDS.longitude,
     heading: 0,
   });
+  const [displayPos, setDisplayPos] = useState({
+    latitude: STORE_COORDS.latitude,
+    longitude: STORE_COORDS.longitude,
+    heading: 0,
+  });
+  const displayPosRef = useRef({
+    latitude: STORE_COORDS.latitude,
+    longitude: STORE_COORDS.longitude,
+    heading: 0,
+  });
+  const animFrameRef = useRef(null);
   const [routeCoords, setRouteCoords] = useState([]);
   const [otherStops, setOtherStops] = useState([]);
   const [loadingRoute, setLoadingRoute] = useState(false);
+  const [tracksMarkerView, setTracksMarkerView] = useState(true);
+
+  useEffect(() => {
+    setTracksMarkerView(true);
+    const timer = setTimeout(() => {
+      setTracksMarkerView(false);
+    }, 600);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Interpolação suave estilo Uber/iFood (1850ms) ao atualizar driverPos
+  useEffect(() => {
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+
+    const startLat = displayPosRef.current.latitude;
+    const startLng = displayPosRef.current.longitude;
+    const startHeading = displayPosRef.current.heading || 0;
+
+    const targetLat = driverPos.latitude;
+    const targetLng = driverPos.longitude;
+    const targetHeading = driverPos.heading || 0;
+
+    const dist = calculateDistanceMeters(startLat, startLng, targetLat, targetLng);
+
+    // Salto inicial (> 2000m) ou micro-ajuste (< 0.5m): aplica imediatamente
+    if (dist < 0.5 || dist > 2000) {
+      const snapped = {
+        latitude: targetLat,
+        longitude: targetLng,
+        heading: targetHeading,
+      };
+      displayPosRef.current = snapped;
+      setDisplayPos(snapped);
+      return;
+    }
+
+    const deltaHeading = ((targetHeading - startHeading + 540) % 360) - 180;
+    const duration = 1850;
+    const startTime = Date.now();
+    let lastRenderTime = 0;
+
+    const step = () => {
+      const now = Date.now();
+      const elapsed = now - startTime;
+      const t = Math.min(1, elapsed / duration);
+
+      const nextPos = {
+        latitude: startLat + (targetLat - startLat) * t,
+        longitude: startLng + (targetLng - startLng) * t,
+        heading: (startHeading + deltaHeading * t + 360) % 360,
+      };
+
+      displayPosRef.current = nextPos;
+
+      // Atualiza estado a ~22fps (a cada ~45ms) ou no frame final para suavidade sem sobrecarregar a bridge
+      if (t >= 1 || now - lastRenderTime >= 45) {
+        lastRenderTime = now;
+        setDisplayPos(nextPos);
+      }
+
+      if (t < 1) {
+        animFrameRef.current = requestAnimationFrame(step);
+      } else {
+        animFrameRef.current = null;
+      }
+    };
+
+    animFrameRef.current = requestAnimationFrame(step);
+
+    return () => {
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = null;
+      }
+    };
+  }, [driverPos.latitude, driverPos.longitude, driverPos.heading]);
 
   // 1. Traça rota pelas ruas via OSRM público com throttle de 15 metros
   const fetchRouteFromOSRM = useCallback(async (startLat, startLng, destLat, destLng, force = false) => {
@@ -57,7 +200,7 @@ export default function LiveDeliveryMap({ order, height = SCREEN_HEIGHT * 0.48 }
         startLng
       );
       if (movedDist < 15) {
-        return; // Economiza request ao OSRM
+        return;
       }
     }
 
@@ -76,6 +219,16 @@ export default function LiveDeliveryMap({ order, height = SCREEN_HEIGHT * 0.48 }
           longitude: lng,
         }));
         setRouteCoords(points);
+        if (points.length > 1) {
+          const lookAheadIdx = Math.min(3, points.length - 1);
+          const roadBearing = calculateBearing(
+            points[0].latitude,
+            points[0].longitude,
+            points[lookAheadIdx].latitude,
+            points[lookAheadIdx].longitude
+          );
+          setDriverPos((prev) => (prev.heading ? prev : { ...prev, heading: roadBearing }));
+        }
       } else {
         // Fallback: linha reta
         setRouteCoords([
@@ -96,6 +249,7 @@ export default function LiveDeliveryMap({ order, height = SCREEN_HEIGHT * 0.48 }
 
   // 2. Busca a coordenada inicial e assina o Realtime (lendo public_stops sanitizadas)
   useEffect(() => {
+    let isMounted = true;
     let channel = null;
 
     async function initLiveTracking() {
@@ -105,6 +259,8 @@ export default function LiveDeliveryMap({ order, height = SCREEN_HEIGHT * 0.48 }
           .select('driver_lat, driver_lng, heading, is_active, public_stops')
           .eq('id', 'live')
           .single();
+
+        if (!isMounted) return;
 
         if (data?.driver_lat && data?.driver_lng) {
           const pos = {
@@ -119,7 +275,6 @@ export default function LiveDeliveryMap({ order, height = SCREEN_HEIGHT * 0.48 }
         }
 
         if (data?.public_stops && Array.isArray(data.public_stops)) {
-          // Filtra parada que coincida com a casa deste cliente para não duplicar
           const clientLat3 = Number(Number(clientLat).toFixed(3));
           const clientLng3 = Number(Number(clientLng).toFixed(3));
           const filteredStops = data.public_stops.filter(
@@ -128,8 +283,11 @@ export default function LiveDeliveryMap({ order, height = SCREEN_HEIGHT * 0.48 }
           setOtherStops(filteredStops);
         }
       } catch {
+        if (!isMounted) return;
         fetchRouteFromOSRM(STORE_COORDS.latitude, STORE_COORDS.longitude, clientLat, clientLng, true);
       }
+
+      if (!isMounted) return;
 
       // Assina atualizações do Realtime para o id 'live'
       const channelName = `live-tracking-${Date.now()}`;
@@ -144,15 +302,34 @@ export default function LiveDeliveryMap({ order, height = SCREEN_HEIGHT * 0.48 }
             filter: 'id=eq.live',
           },
           (payload) => {
+            if (!isMounted) return;
             const row = payload.new;
             if (row?.driver_lat && row?.driver_lng) {
-              const newPos = {
-                latitude: row.driver_lat,
-                longitude: row.driver_lng,
-                heading: row.heading || 0,
-              };
-              setDriverPos(newPos);
-              fetchRouteFromOSRM(newPos.latitude, newPos.longitude, clientLat, clientLng, false);
+              setDriverPos((prev) => {
+                let nextHeading = row.heading && row.heading > 0 ? row.heading : prev.heading;
+                if (!row.heading || row.heading <= 0) {
+                  const movedMeters = calculateDistanceMeters(
+                    prev.latitude,
+                    prev.longitude,
+                    row.driver_lat,
+                    row.driver_lng
+                  );
+                  if (movedMeters > 2) {
+                    nextHeading = calculateBearing(
+                      prev.latitude,
+                      prev.longitude,
+                      row.driver_lat,
+                      row.driver_lng
+                    );
+                  }
+                }
+                return {
+                  latitude: row.driver_lat,
+                  longitude: row.driver_lng,
+                  heading: nextHeading || 0,
+                };
+              });
+              fetchRouteFromOSRM(row.driver_lat, row.driver_lng, clientLat, clientLng, false);
             }
 
             if (row?.public_stops && Array.isArray(row.public_stops)) {
@@ -171,12 +348,16 @@ export default function LiveDeliveryMap({ order, height = SCREEN_HEIGHT * 0.48 }
     initLiveTracking();
 
     return () => {
+      isMounted = false;
       if (channel) supabase.removeChannel(channel);
     };
   }, [clientLat, clientLng, fetchRouteFromOSRM]);
 
-  // 4. Ajusta o enquadramento do mapa para incluir motorista e cliente
-  useEffect(() => {
+  const statusBarHeight = Platform.OS === 'android' ? (StatusBar.currentHeight || 28) : insets.top;
+  const headerPaddingTop = Math.max(statusBarHeight, insets.top, 28) + 14;
+
+  // 3. Centraliza a visão do mapa nos pontos principais
+  const fitAllCoords = useCallback(() => {
     if (!mapRef.current) return;
 
     const coordsToFit = [
@@ -185,25 +366,51 @@ export default function LiveDeliveryMap({ order, height = SCREEN_HEIGHT * 0.48 }
       ...otherStops.map((s) => ({ latitude: s.latitude, longitude: s.longitude })),
     ];
 
+    const edgePadding = isPreview
+      ? { top: 24, right: 36, bottom: 48, left: 36 }
+      : {
+          top: isFullScreen ? headerPaddingTop + 70 : 60,
+          right: 60,
+          bottom: isFullScreen ? 280 : 60,
+          left: 60,
+        };
+
+    mapRef.current.fitToCoordinates(coordsToFit, {
+      edgePadding,
+      animated: !isPreview,
+    });
+  }, [driverPos.latitude, driverPos.longitude, clientLat, clientLng, otherStops, isFullScreen, isPreview, headerPaddingTop]);
+
+  useEffect(() => {
     const timer = setTimeout(() => {
-      mapRef.current?.fitToCoordinates(coordsToFit, {
-        edgePadding: { top: 60, right: 60, bottom: 60, left: 60 },
-        animated: true,
-      });
-    }, 400);
+      fitAllCoords();
+    }, 450);
 
     return () => clearTimeout(timer);
-  }, [driverPos.latitude, driverPos.longitude, clientLat, clientLng, otherStops]);
+  }, [fitAllCoords]);
 
   const initialRegion = {
     latitude: (driverPos.latitude + clientLat) / 2,
     longitude: (driverPos.longitude + clientLng) / 2,
-    latitudeDelta: Math.abs(driverPos.latitude - clientLat) * 1.8 + 0.01,
-    longitudeDelta: Math.abs(driverPos.longitude - clientLng) * 1.8 + 0.01,
+    latitudeDelta: Math.abs(driverPos.latitude - clientLat) * 1.8 + 0.015,
+    longitudeDelta: Math.abs(driverPos.longitude - clientLng) * 1.8 + 0.015,
   };
 
+  const containerHeight = isFullScreen ? '100%' : (height ?? SCREEN_HEIGHT * 0.48);
+  const etaMinutes = order?.metadata?.eta_minutes ?? 15;
+  const clientAddress = [order?.address, order?.complement, order?.neighborhood]
+    .filter(Boolean)
+    .join(', ') || 'Endereço de entrega';
+
   return (
-    <View style={[styles.container, { height }]}>
+    <View
+      style={[styles.container, { height: containerHeight }]}
+      pointerEvents={isPreview ? 'none' : 'auto'}
+    >
+      {isFullScreen && (
+        <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+      )}
+
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFillObject}
@@ -212,20 +419,24 @@ export default function LiveDeliveryMap({ order, height = SCREEN_HEIGHT * 0.48 }
         showsCompass={false}
         showsMyLocationButton={false}
         toolbarEnabled={false}
+        scrollEnabled={!isPreview}
+        zoomEnabled={!isPreview}
+        rotateEnabled={!isPreview}
+        pitchEnabled={!isPreview}
       >
-        {/* Linha Dupla Sobreposta: Base Escura + Amarelo Batata Top */}
+        {/* Linha Dupla Sobreposta: Borda Amarelo Claro + Amarelo Dourado Batata Top */}
         {routeCoords.length > 1 && (
           <>
             <Polyline
               coordinates={routeCoords}
-              strokeColor="#3E3E3E"
-              strokeWidth={7}
+              strokeColor={COLORS.warningBg}
+              strokeWidth={8}
               lineCap="round"
               lineJoin="round"
             />
             <Polyline
               coordinates={routeCoords}
-              strokeColor={COLORS.primary || '#FFB800'}
+              strokeColor={COLORS.primary}
               strokeWidth={5}
               lineCap="round"
               lineJoin="round"
@@ -236,7 +447,7 @@ export default function LiveDeliveryMap({ order, height = SCREEN_HEIGHT * 0.48 }
         {/* Marcador Paradas Anteriores / Outros Clientes (Anonimizadas) */}
         {otherStops.map((stop, idx) => (
           <Marker
-            key={stop.id}
+            key={stop.id || `stop-${idx}`}
             coordinate={{ latitude: stop.latitude, longitude: stop.longitude }}
             anchor={{ x: 0.5, y: 0.5 }}
           >
@@ -246,43 +457,140 @@ export default function LiveDeliveryMap({ order, height = SCREEN_HEIGHT * 0.48 }
           </Marker>
         ))}
 
-        {/* Marcador do Cliente ("Sua Casa") */}
+        {/* Marcador da Casa do Cliente estilo iFood */}
         <Marker
           coordinate={{ latitude: clientLat, longitude: clientLng }}
           anchor={{ x: 0.5, y: 1 }}
+          tracksViewChanges={tracksMarkerView}
         >
-          <View style={styles.clientMarkerWrap}>
-            <View style={styles.clientBadge}>
-              <Ionicons name="home" size={14} color="#FFF" />
-              <Text style={styles.clientBadgeText}>Sua Casa</Text>
-            </View>
-            <View style={styles.clientPinPointer} />
-          </View>
+          <DeliveryDestinationMarker />
         </Marker>
 
-        {/* Marcador do Carrinho Amarelo da Mara */}
+        {/* Marcador do Carro 3D da Mara (Gol G2 Prata rotacionado nas curvas) */}
         <Marker
-          coordinate={{ latitude: driverPos.latitude, longitude: driverPos.longitude }}
+          coordinate={{ latitude: displayPos.latitude, longitude: displayPos.longitude }}
           anchor={{ x: 0.5, y: 0.5 }}
-          flat
-          rotation={driverPos.heading}
+          flat={true}
+          rotation={displayPos.heading || 0}
+          tracksViewChanges={tracksMarkerView}
         >
-          <View style={styles.carMarkerWrap}>
-            <View style={styles.carCircle}>
-              <Ionicons name="car" size={20} color="#3E3E3E" />
-            </View>
-            <View style={styles.carLabelBadge}>
-              <Text style={styles.carLabelText}>Mara</Text>
-            </View>
-          </View>
+          <DeliveryVehicleMarker />
         </Marker>
       </MapView>
 
-      {/* Indicador de Rota Ao Vivo */}
-      <View style={styles.liveOverlayBadge}>
-        <View style={styles.livePulseDot} />
-        <Text style={styles.liveOverlayText}>Rastreio ao vivo da Mara</Text>
-      </View>
+      {/* HEADER SUPERIOR ESTILO ADDRESSES (Abaixo da barra de status) */}
+      {isFullScreen ? (
+        <View style={[styles.addressStyleHeader, { paddingTop: headerPaddingTop }]} collapsable={false}>
+          <Pressable
+            style={styles.addressStyleBackBtn}
+            hitSlop={10}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              if (onClose) onClose();
+            }}
+          >
+            <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
+          </Pressable>
+
+          <View style={styles.addressStyleHeaderCenter}>
+            <Text style={styles.addressStyleHeaderTitle}>ACOMPANHAR ENTREGA</Text>
+            {order?.order_number || order?.id ? (
+              <Text style={styles.addressStyleHeaderSub}>
+                Pedido #{order?.order_number || order?.id?.slice(0, 4)}
+              </Text>
+            ) : null}
+          </View>
+
+          {/* Badge ao vivo com bola verde do ladinho */}
+          <View style={styles.liveBadgeAddressHeader}>
+            <LiveGreenDot />
+            <Text style={styles.liveBadgeAddressText}>ao vivo</Text>
+          </View>
+        </View>
+      ) : !isPreview ? (
+        /* Indicador Compacto de Rota Ao Vivo */
+        <View style={styles.liveOverlayBadge}>
+          <LiveGreenDot />
+          <Text style={styles.liveOverlayText}>Rastreio ao vivo da Mara</Text>
+        </View>
+      ) : null}
+
+      {/* BOTÃO FLUTUANTE DE RE-CENTRALIZAR O TRAJETO */}
+      {isFullScreen && (
+        <Pressable
+          style={[
+            styles.recenterBtn,
+            { bottom: Math.max(insets.bottom, 16) + 250 },
+          ]}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            fitAllCoords();
+          }}
+        >
+          <Ionicons name="locate" size={22} color={COLORS.primary} />
+        </Pressable>
+      )}
+
+      {/* SHEET INFERIOR INFORMATIVO ESTILO IFOOD (Em modo tela cheia) */}
+      {isFullScreen && (
+        <View
+          style={[
+            styles.bottomSheet,
+            { paddingBottom: Math.max(insets.bottom, SPACING[4]) + SPACING[3] },
+          ]}
+        >
+          <View style={styles.sheetHandle} />
+
+          {/* Header: Status secundário + Previsão ETA em destaque */}
+          <Text style={styles.sheetStatusSubtitle}>
+            Pedido a caminho • Saiu para entrega
+          </Text>
+
+          <View style={styles.sheetEtaHeaderRow}>
+            <Text style={styles.sheetEtaMain}>Chega em ~{etaMinutes} min</Text>
+            <View style={styles.sheetLivePill}>
+              <LiveGreenDot />
+              <Text style={styles.sheetLivePillText}>Tempo real</Text>
+            </View>
+          </View>
+
+          {/* Barra de progresso contínua estilo iFood (4 etapas) */}
+          <View style={styles.sheetProgressRow}>
+            <View style={[styles.sheetProgressSegment, styles.sheetProgressSegmentDone]} />
+            <View style={[styles.sheetProgressSegment, styles.sheetProgressSegmentDone]} />
+            <View style={[styles.sheetProgressSegment, styles.sheetProgressSegmentActive]} />
+            <View style={styles.sheetProgressSegment} />
+          </View>
+
+          <View style={styles.sheetDivider} />
+
+          {/* Card Entregadora Mara (Gol G2 Prata) */}
+          <View style={styles.driverCard}>
+            <View style={styles.driverAvatar}>
+              <Ionicons name="car-sport" size={22} color={COLORS.text} />
+            </View>
+            <View style={styles.driverInfo}>
+              <Text style={styles.driverName}>Mara • Gol G2 Prata</Text>
+              <Text style={styles.driverSubtitle}>
+                {loadingRoute ? 'Atualizando rota em tempo real...' : 'Entregadora parceira Batata Top'}
+              </Text>
+            </View>
+          </View>
+
+          {/* Endereço de Entrega alinhado estilo iFood */}
+          <View style={styles.addressRow}>
+            <View style={styles.addressIconBox}>
+              <Ionicons name="location-sharp" size={18} color={COLORS.secondary} />
+            </View>
+            <View style={styles.addressInfo}>
+              <Text style={styles.addressLabel}>Entregar em</Text>
+              <Text style={styles.addressText} numberOfLines={2}>
+                {clientAddress}
+              </Text>
+            </View>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -290,130 +598,268 @@ export default function LiveDeliveryMap({ order, height = SCREEN_HEIGHT * 0.48 }
 const styles = StyleSheet.create({
   container: {
     width: '100%',
-    backgroundColor: '#EAEAEA',
+    backgroundColor: COLORS.backgroundElevated,
     overflow: 'hidden',
   },
-  // Marcador Carrinho da Mara
-  carMarkerWrap: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  carCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#FFB800',
-    borderWidth: 3,
-    borderColor: '#3E3E3E',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 5,
-    elevation: 6,
-  },
-  carLabelBadge: {
-    backgroundColor: '#3E3E3E',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-    marginTop: -4,
-    borderWidth: 1,
-    borderColor: '#FFB800',
-  },
-  carLabelText: {
-    fontSize: 9,
-    fontWeight: '900',
-    color: '#FFB800',
-    textTransform: 'uppercase',
-  },
-  // Marcador Sua Casa
-  clientMarkerWrap: {
-    alignItems: 'center',
-  },
-  clientBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#E61E2A',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 4,
-  },
-  clientBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  clientPinPointer: {
-    width: 0,
-    height: 0,
-    backgroundColor: 'transparent',
-    borderStyle: 'solid',
-    borderLeftWidth: 5,
-    borderRightWidth: 5,
-    borderBottomWidth: 0,
-    borderTopWidth: 6,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderTopColor: '#E61E2A',
-  },
+
   // Outras Paradas Anonimizadas
   otherStopBadge: {
-    backgroundColor: '#3E3E3E',
+    backgroundColor: COLORS.text,
     borderWidth: 1.5,
-    borderColor: '#FFB800',
-    borderRadius: 10,
-    paddingHorizontal: 6,
+    borderColor: COLORS.primary,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING[2],
     paddingVertical: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.15,
-    shadowRadius: 2,
-    elevation: 3,
+    ...SHADOWS.sm,
   },
   otherStopText: {
-    color: '#FFF',
+    color: COLORS.white,
     fontSize: 9,
-    fontWeight: '800',
+    fontWeight: TYPOGRAPHY.weights.extrabold,
   },
-  // Badge Flutuante no Topo
+
+  // Header Tela Cheia Estilo Addresses
+  addressStyleHeader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: SPACING[5],
+    paddingBottom: SPACING[4],
+    backgroundColor: COLORS.background,
+    borderBottomLeftRadius: RADIUS.xl,
+    borderBottomRightRadius: RADIUS.xl,
+    zIndex: 10,
+    ...SHADOWS.md,
+  },
+  addressStyleBackBtn: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addressStyleHeaderCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: SPACING[2],
+  },
+  addressStyleHeaderTitle: {
+    color: COLORS.text,
+    fontWeight: TYPOGRAPHY.weights.extrabold,
+    fontSize: 13,
+    letterSpacing: 0.6,
+  },
+  addressStyleHeaderSub: {
+    color: COLORS.textSecondary,
+    fontSize: 11,
+    fontWeight: TYPOGRAPHY.weights.semibold,
+    marginTop: 1,
+  },
+  liveBadgeAddressHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.backgroundElevated,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: RADIUS.full,
+  },
+  liveGreenDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: COLORS.success,
+  },
+  liveBadgeAddressText: {
+    fontSize: 11,
+    fontWeight: TYPOGRAPHY.weights.extrabold,
+    color: COLORS.success,
+    letterSpacing: 0.2,
+  },
+
+  // Botão Centralizar
+  recenterBtn: {
+    position: 'absolute',
+    right: SPACING[4],
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: COLORS.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    ...SHADOWS.md,
+    zIndex: 9,
+  },
+
+  // Sheet Inferior estilo iFood
+  bottomSheet: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: COLORS.background,
+    borderTopLeftRadius: RADIUS['2xl'],
+    borderTopRightRadius: RADIUS['2xl'],
+    paddingTop: SPACING[3],
+    paddingHorizontal: SPACING[5],
+    ...SHADOWS.lg,
+    zIndex: 10,
+  },
+  sheetHandle: {
+    width: 38,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: COLORS.grayBorder,
+    alignSelf: 'center',
+    marginBottom: SPACING[3],
+  },
+  sheetStatusSubtitle: {
+    fontSize: TYPOGRAPHY.sizes.xs,
+    fontWeight: TYPOGRAPHY.weights.semibold,
+    color: COLORS.textSecondary,
+    marginBottom: 2,
+  },
+  sheetEtaHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: SPACING[3],
+  },
+  sheetEtaMain: {
+    fontSize: TYPOGRAPHY.sizes.xl,
+    fontWeight: TYPOGRAPHY.weights.extrabold,
+    color: COLORS.text,
+  },
+  sheetLivePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.warningBg,
+    borderWidth: 1,
+    borderColor: COLORS.warningBorder,
+    paddingHorizontal: SPACING[3],
+    paddingVertical: SPACING[1],
+    borderRadius: RADIUS.full,
+  },
+  sheetLivePillText: {
+    fontSize: TYPOGRAPHY.sizes.xs,
+    fontWeight: TYPOGRAPHY.weights.bold,
+    color: COLORS.primaryText,
+  },
+  sheetProgressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: SPACING[4],
+  },
+  sheetProgressSegment: {
+    flex: 1,
+    height: 4,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.border,
+  },
+  sheetProgressSegmentDone: {
+    backgroundColor: COLORS.primary,
+  },
+  sheetProgressSegmentActive: {
+    backgroundColor: COLORS.primary,
+    height: 5,
+  },
+  sheetDivider: {
+    height: 1,
+    backgroundColor: COLORS.borderLight,
+    marginBottom: SPACING[3],
+  },
+  driverCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.backgroundLight,
+    borderRadius: RADIUS.lg,
+    padding: SPACING[3],
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: SPACING[3],
+  },
+  driverAvatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: COLORS.grayBorder,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: SPACING[3],
+  },
+  driverInfo: {
+    flex: 1,
+  },
+  driverName: {
+    fontSize: TYPOGRAPHY.sizes.sm,
+    fontWeight: TYPOGRAPHY.weights.extrabold,
+    color: COLORS.text,
+  },
+  driverSubtitle: {
+    fontSize: TYPOGRAPHY.sizes.xs,
+    fontWeight: TYPOGRAPHY.weights.medium,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+  },
+  addressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING[3],
+  },
+  addressIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.warningBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addressInfo: {
+    flex: 1,
+  },
+  addressLabel: {
+    fontSize: TYPOGRAPHY.sizes.xs,
+    fontWeight: TYPOGRAPHY.weights.semibold,
+    color: COLORS.textMuted,
+  },
+  addressText: {
+    fontSize: TYPOGRAPHY.sizes.sm,
+    color: COLORS.text,
+    fontWeight: TYPOGRAPHY.weights.semibold,
+    lineHeight: 18,
+  },
+
+  // Badge Flutuante no Topo (Modo embutido)
   liveOverlayBadge: {
     position: 'absolute',
-    top: 14,
+    top: SPACING[3],
     alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.94)',
-    paddingHorizontal: 12,
+    backgroundColor: COLORS.background,
+    paddingHorizontal: SPACING[3],
     paddingVertical: 6,
-    borderRadius: 20,
+    borderRadius: RADIUS.full,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  livePulseDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#10B981',
+    borderColor: COLORS.border,
+    ...SHADOWS.sm,
   },
   liveOverlayText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#1F2937',
+    fontSize: TYPOGRAPHY.sizes.xs,
+    fontWeight: TYPOGRAPHY.weights.bold,
+    color: COLORS.text,
   },
 });

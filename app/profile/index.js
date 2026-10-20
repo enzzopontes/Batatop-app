@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../supabaseConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../../constants/theme';
-import { useScrollHandler, useHeaderHeight } from '../_layout';
+import { useScrollHandler } from '../_layout';
 import { SOFT_LOGOUT_KEY, emitAuthUiChange, getEffectiveSession } from '../../utils/authSession';
 import LogoutRememberModal from '../../components/LogoutRememberModal';
 import { requestAuthSheet } from '../../utils/authSheetRequest';
@@ -20,7 +20,6 @@ const SAVED_USER_KEY = '@batatatop:savedUser';
 export default function Profile() {
   const router = useRouter();
   const { onScroll, resetHeader } = useScrollHandler();
-  const headerHeight = useHeaderHeight();
   const insets = useSafeAreaInsets();
 
   const [user, setUser] = useState(null);
@@ -177,7 +176,7 @@ export default function Profile() {
         />
 
         <ScrollView
-          contentContainerStyle={[sg.scrollContent, { paddingTop: insets.top + 10 }]}
+          contentContainerStyle={[sg.scrollContent, { paddingTop: Math.max(insets.top, 16) + 12 }]}
           showsVerticalScrollIndicator={false}
         >
           {/* Header */}
@@ -265,7 +264,7 @@ export default function Profile() {
         onScroll={onScroll}
         scrollEventThrottle={16}
         contentContainerStyle={{
-          paddingTop: headerHeight + 10,
+          paddingTop: Math.max(insets.top, 16) + 12,
           paddingHorizontal: 20,
           paddingBottom: 40,
         }}

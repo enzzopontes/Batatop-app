@@ -16,7 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../supabaseConfig';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../../constants/theme';
-import { ThemedAlertHost, showThemedAlert, hideThemedAlert } from '../../components/ThemedAlert';
+import { ThemedAlertHost, showThemedAlert, hideThemedAlert, showErrorAlert } from '../../components/ThemedAlert';
 import SwipeableBottomSheetModal from '../../components/SwipeableBottomSheetModal';
 
 const RESEND_SECONDS = 59;
@@ -164,7 +164,7 @@ export default function CodigoScreen() {
     setLoading(false);
 
     if (error) {
-      showThemedAlert.error('Código inválido ou expirado. Tente novamente.');
+      showErrorAlert('Código inválido. Verifique e tente novamente.', 'Erro');
       setCode(['', '', '', '', '', '']);
       setTimeout(() => codeRefs.current[0]?.focus(), 100);
       return;
@@ -471,7 +471,10 @@ export default function CodigoScreen() {
       <SwipeableBottomSheetModal
         visible={helpVisible}
         onClose={() => setHelpVisible(false)}
-        contentContainerStyle={{ paddingHorizontal: SPACING[6], paddingTop: 8 }}
+        contentStyle={styles.modalContent}
+        contentContainerStyle={styles.modalContainer}
+        minBottomPadding={Math.max(insets.bottom, 24)}
+        extraBottomPadding={16}
       >
         <Text style={styles.modalTitle}>Não recebeu o código?</Text>
         <Text style={styles.modalSubtitle}>
@@ -481,15 +484,17 @@ export default function CodigoScreen() {
         </Text>
         <Text style={styles.modalPhone}>{verifying === 'phone' ? phoneDisplay : linkedEmail}</Text>
 
-        <TouchableOpacity style={styles.modalResendBtn} onPress={handleResend}>
-          <Text style={styles.modalResendBtnText}>Reenviar código</Text>
-        </TouchableOpacity>
+        <View style={[styles.modalActionsContainer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+          <TouchableOpacity style={styles.modalResendBtn} onPress={handleResend}>
+            <Text style={styles.modalResendBtnText}>Reenviar código</Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity style={styles.modalChangePhoneBtn} onPress={handleAlterarIdentificador}>
-          <Text style={styles.modalChangePhoneText}>
-            {verifying === 'phone' ? 'Alterar número' : 'Alterar e-mail'}
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity style={styles.modalChangePhoneBtn} onPress={handleAlterarIdentificador}>
+            <Text style={styles.modalChangePhoneText}>
+              {verifying === 'phone' ? 'Alterar número' : 'Alterar e-mail'}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </SwipeableBottomSheetModal>
       <ThemedAlertHost />
     </View>
@@ -556,7 +561,7 @@ const styles = StyleSheet.create({
   resendLink: {
     fontSize: 13,
     fontWeight: '700',
-    color: COLORS.accent,
+    color: COLORS.text,
   },
   // Input "Nome" (primeiro acesso) — mesmo padrão do login.js
   inputWrapper: {
@@ -610,59 +615,46 @@ const styles = StyleSheet.create({
   },
 
   // ── Bottom sheet "Não recebeu o código?" ───────────────────────────
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
+  modalContent: {
+    backgroundColor: COLORS.primary,
   },
-  modalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-  },
-  modalContentWrap: {
-    width: '100%',
-  },
-  modalSheet: {
-    backgroundColor: COLORS.white,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 24,
-    paddingBottom: 36,
-    alignItems: 'center',
-  },
-  modalHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: COLORS.border,
-    marginBottom: 20,
+  modalContainer: {
+    paddingHorizontal: SPACING[6],
+    paddingTop: 8,
   },
   modalTitle: {
     fontSize: 17,
     fontWeight: '700',
     color: COLORS.text,
     marginBottom: 10,
+    textAlign: 'center',
   },
   modalSubtitle: {
     fontSize: 13,
-    color: COLORS.textSecondary,
+    color: COLORS.text,
     textAlign: 'center',
     lineHeight: 19,
     marginBottom: 6,
+    opacity: 0.9,
   },
   modalPhone: {
     fontSize: 14,
     fontWeight: '700',
     color: COLORS.text,
     marginBottom: 24,
+    textAlign: 'center',
+  },
+  modalActionsContainer: {
+    width: '100%',
   },
   modalResendBtn: {
     width: '100%',
     height: 52,
-    borderRadius: 10,
+    borderRadius: RADIUS.lg,
     backgroundColor: COLORS.secondary,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   modalResendBtnText: {
     color: COLORS.white,
@@ -670,12 +662,17 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   modalChangePhoneBtn: {
-    paddingVertical: 10,
-    alignItems: 'center',
+    width: '100%',
+    height: 52,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1.5,
+    borderColor: COLORS.text,
+    backgroundColor: COLORS.white,
     justifyContent: 'center',
+    alignItems: 'center',
   },
   modalChangePhoneText: {
-    color: COLORS.secondary,
+    color: COLORS.text,
     fontSize: 14,
     fontWeight: '700',
   },

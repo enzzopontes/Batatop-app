@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS } from '../../constants/theme';
 import { DeliveryType, PaymentMethod, Address } from './useCheckoutFlow';
 import { SavedCard } from '../../utils/usePaymentCards';
+import { STORE_ADDRESS } from '../../constants/store';
 import RipplePressable from './RipplePressable';
 import PrimaryButton from '../PrimaryButton';
 import SwipeableBottomSheetModal from '../SwipeableBottomSheetModal';
@@ -28,6 +29,8 @@ interface ReviseOrderModalProps {
   selectedSavedCard: SavedCard | null;
   savedCardCvv: string;
   setSavedCardCvv: (cvv: string) => void;
+  cardCpf?: string;
+  setCardCpf?: (cpf: string) => void;
   wantsCutlery: boolean | null;
   setWantsCutlery: (wants: boolean) => void;
   submitting: boolean;
@@ -37,6 +40,30 @@ interface ReviseOrderModalProps {
   onEditCoupon: () => void;
   onEditPayment: () => void;
   onToggleDeliveryType: () => void;
+}
+
+function formatCpf(val: string): string {
+  const d = (val || '').replace(/\D/g, '').slice(0, 11);
+  if (d.length <= 3) return d;
+  if (d.length <= 6) return `${d.slice(0, 3)}.${d.slice(3)}`;
+  if (d.length <= 9) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6)}`;
+  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+}
+
+function isValidCpf(cpf: string): boolean {
+  const digits = (cpf || '').replace(/\D/g, '');
+  if (digits.length !== 11) return false;
+  if (/^(\d)\1{10}$/.test(digits)) return false;
+  let sum = 0;
+  for (let i = 0; i < 9; i++) sum += Number(digits[i]) * (10 - i);
+  let rest = (sum * 10) % 11;
+  if (rest === 10) rest = 0;
+  if (rest !== Number(digits[9])) return false;
+  sum = 0;
+  for (let i = 0; i < 10; i++) sum += Number(digits[i]) * (11 - i);
+  rest = (sum * 10) % 11;
+  if (rest === 10) rest = 0;
+  return rest === Number(digits[10]);
 }
 
 export default function ReviseOrderModal({
@@ -49,6 +76,8 @@ export default function ReviseOrderModal({
   selectedSavedCard,
   savedCardCvv,
   setSavedCardCvv,
+  cardCpf,
+  setCardCpf,
   wantsCutlery,
   setWantsCutlery,
   submitting,
@@ -131,7 +160,16 @@ export default function ReviseOrderModal({
                 <Ionicons name="location-sharp" size={22} color="#18181B" />
               </View>
               <View style={styles.rowTexts}>
-                {selectedAddress ? (
+                {!isDelivery ? (
+                  <>
+                    <Text style={styles.rowTitle} numberOfLines={1}>
+                      {STORE_ADDRESS.full}
+                    </Text>
+                    <Text style={styles.rowSub} numberOfLines={1}>
+                      Retirada: Portão de ferro preto
+                    </Text>
+                  </>
+                ) : selectedAddress ? (
                   <>
                     <Text style={styles.rowTitle} numberOfLines={1}>
                       {selectedAddress.street}, {selectedAddress.number}
@@ -145,7 +183,7 @@ export default function ReviseOrderModal({
                 ) : (
                   <>
                     <Text style={[styles.rowTitle, { color: COLORS.error }]}>
-                      {isDelivery ? 'Selecione um endereço' : 'Retirada em Iacanga-SP'}
+                      Selecione um endereço
                     </Text>
                     <Text style={styles.rowSub}>Toque para configurar endereço</Text>
                   </>
@@ -177,45 +215,7 @@ export default function ReviseOrderModal({
               </View>
             </RipplePressable>
 
-            {/* 4. Linha Talheres (OBRIGATÓRIO) */}
-            <View style={styles.rowItem}>
-              <View style={styles.iconCircle}>
-                <Ionicons name="restaurant-outline" size={22} color="#18181B" />
-              </View>
-              <View style={styles.rowTexts}>
-                <Text style={styles.rowTitle}>Precisa de talher?</Text>
-                <Text style={[styles.rowSub, wantsCutlery === null && { color: COLORS.error, fontWeight: '700' }]}>
-                  {wantsCutlery === null
-                    ? 'Resposta obrigatória'
-                    : wantsCutlery
-                    ? 'Sim, enviar descartáveis'
-                    : 'Não preciso de talheres'}
-                </Text>
-              </View>
-              <View style={styles.cutleryButtons}>
-                <RipplePressable
-                  style={[styles.cutleryBtn, wantsCutlery === false && styles.cutleryBtnActive]}
-                  onPress={() => setWantsCutlery(false)}
-                  rippleColor="rgba(0,0,0,0.12)"
-                >
-                  <Text style={[styles.cutleryBtnText, wantsCutlery === false && styles.cutleryBtnTextActive]}>
-                    Não
-                  </Text>
-                </RipplePressable>
-
-                <RipplePressable
-                  style={[styles.cutleryBtn, wantsCutlery === true && styles.cutleryBtnActive]}
-                  onPress={() => setWantsCutlery(true)}
-                  rippleColor="rgba(0,0,0,0.12)"
-                >
-                  <Text style={[styles.cutleryBtnText, wantsCutlery === true && styles.cutleryBtnTextActive]}>
-                    Sim
-                  </Text>
-                </RipplePressable>
-              </View>
-            </View>
-
-            {/* 5. Linha Pagamento */}
+            {/* 4. Linha Pagamento */}
             <RipplePressable style={styles.rowItem} onPress={onEditPayment} hitSlop={6} rippleColor="rgba(0,0,0,0.06)">
               <View style={styles.iconCircle}>
                 <Ionicons
@@ -237,20 +237,37 @@ export default function ReviseOrderModal({
               <Text style={styles.rowPriceText}>{formattedTotal}</Text>
             </RipplePressable>
 
-            {/* Campo discreto de CVV se cartão salvo foi selecionado */}
+            {/* Campos de segurança do cartão salvo (CVV obrigatório no MP e CPF se pendente) */}
             {isSavedCardActive && (
-              <View style={styles.cvvContainer}>
-                <Text style={styles.cvvLabel}>CVV do cartão salvo:</Text>
-                <TextInput
-                  style={styles.cvvInput}
-                  value={savedCardCvv}
-                  onChangeText={(t) => setSavedCardCvv(t.replace(/\D/g, '').slice(0, 4))}
-                  placeholder="123"
-                  placeholderTextColor="#A1A1AA"
-                  keyboardType="numeric"
-                  secureTextEntry
-                  maxLength={4}
-                />
+              <View style={styles.cardSecurityContainer}>
+                {!isValidCpf(cardCpf || '') && setCardCpf && (
+                  <View style={styles.cpfRow}>
+                    <Text style={styles.cvvLabel}>CPF do titular:</Text>
+                    <TextInput
+                      style={styles.cpfInput}
+                      value={formatCpf(cardCpf || '')}
+                      onChangeText={(t) => setCardCpf(t.replace(/\D/g, '').slice(0, 11))}
+                      placeholder="000.000.000-00"
+                      placeholderTextColor="#A1A1AA"
+                      keyboardType="numeric"
+                      maxLength={14}
+                    />
+                  </View>
+                )}
+
+                <View style={styles.cvvContainer}>
+                  <Text style={styles.cvvLabel}>CVV do cartão salvo:</Text>
+                  <TextInput
+                    style={styles.cvvInput}
+                    value={savedCardCvv}
+                    onChangeText={(t) => setSavedCardCvv(t.replace(/\D/g, '').slice(0, 4))}
+                    placeholder="123"
+                    placeholderTextColor="#A1A1AA"
+                    keyboardType="numeric"
+                    secureTextEntry
+                    maxLength={4}
+                  />
+                </View>
               </View>
             )}
           </View>
@@ -388,11 +405,35 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontWeight: '700',
   },
+  cardSecurityContainer: {
+    gap: 8,
+    alignItems: 'flex-end',
+    paddingRight: 4,
+    marginTop: 4,
+  },
+  cpfRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cpfInput: {
+    borderWidth: 1,
+    borderColor: '#D4D4D8',
+    borderRadius: RADIUS.sm,
+    width: 140,
+    height: 32,
+    textAlign: 'center',
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#18181B',
+    paddingHorizontal: 6,
+    paddingVertical: 0,
+    backgroundColor: '#FFFFFF',
+  },
   cvvContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    paddingRight: 4,
     gap: 8,
   },
   cvvLabel: {

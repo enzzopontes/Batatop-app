@@ -27,6 +27,7 @@ import { useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller
 import { Ionicons, FontAwesome } from '@expo/vector-icons';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS } from '../constants/theme';
 import { showThemedAlert } from './ThemedAlert';
+import CardBrandBadge from './cart/CardBrandBadge';
 
 const BRAND_LABELS = {
   visa: 'Visa',
@@ -107,39 +108,7 @@ function getCardNumberParts(cardNumber) {
 }
 
 function CardBrandLogo({ brand }) {
-  if (brand === 'visa') {
-    return <FontAwesome name="cc-visa" size={32} color="#1A1F71" />;
-  }
-  if (brand === 'master') {
-    return (
-      <View style={s.mastercardWrap}>
-        <View style={[s.mastercardCircle, { backgroundColor: '#EB001B' }]} />
-        <View style={[s.mastercardCircle, { backgroundColor: '#F79E1B', marginLeft: -10 }]} />
-      </View>
-    );
-  }
-  if (brand === 'amex') {
-    return <FontAwesome name="cc-amex" size={32} color="#006FCF" />;
-  }
-  if (brand === 'elo') {
-    return (
-      <View style={s.eloBadge}>
-        <Text style={s.eloBadgeText}>elo</Text>
-      </View>
-    );
-  }
-  if (brand === 'hipercard') {
-    return (
-      <View style={s.hiperBadge}>
-        <Text style={s.hiperBadgeText}>Hipercard</Text>
-      </View>
-    );
-  }
-  return (
-    <View style={s.brandBadge}>
-      <Text style={s.brandBadgeText}>{BRAND_LABELS[brand] || brand}</Text>
-    </View>
-  );
+  return <CardBrandBadge brand={brand} size="lg" />;
 }
 
 function formatCardNumber(raw) {

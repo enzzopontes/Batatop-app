@@ -5,9 +5,11 @@ import {
   StyleSheet,
   ScrollView,
   Image,
+  TextInput,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { COLORS, SPACING } from '../../constants/theme';
+import { Ionicons } from '@expo/vector-icons';
 import { PaymentMethod, DeliveryType } from './useCheckoutFlow';
 import { SavedCard } from '../../utils/usePaymentCards';
 import RipplePressable from './RipplePressable';
@@ -15,6 +17,21 @@ import PaymentCard from './PaymentCard';
 
 const LOGO = require('../../assets/logo.png');
 const CUPOM_ICON = require('../../assets/cuponpretobranco.png');
+
+function formatPhone(value: string) {
+  let digits = (value || '').replace(/\D/g, '');
+  if (digits.startsWith('55') && digits.length > 11) {
+    digits = digits.slice(2);
+  }
+  digits = digits.slice(0, 11);
+  if (digits.length === 0) return '';
+  if (digits.length <= 2) return `(${digits}`;
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  if (digits.length <= 10) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  }
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+}
 
 interface StepPagamentoProps {
   paymentMethod: PaymentMethod;
@@ -29,6 +46,13 @@ interface StepPagamentoProps {
   onOpenPaymentSelector: () => void;
   onOpenInstallments?: () => void;
   installmentText?: string;
+  wantsCutlery: boolean | null;
+  onSelectCutlery: (val: boolean) => void;
+  cashChange: string;
+  onChangeCashChange: (text: string) => void;
+  hasSavedPhone?: boolean;
+  phone?: string;
+  onChangePhone?: (text: string) => void;
 }
 
 export default function StepPagamento({
@@ -44,6 +68,13 @@ export default function StepPagamento({
   onOpenPaymentSelector,
   onOpenInstallments,
   installmentText,
+  wantsCutlery,
+  onSelectCutlery,
+  cashChange,
+  onChangeCashChange,
+  hasSavedPhone,
+  phone = '',
+  onChangePhone,
 }: StepPagamentoProps) {
   const router = useRouter();
 
@@ -126,6 +157,96 @@ export default function StepPagamento({
           </RipplePressable>
         )}
       </View>
+
+      {/* 4.1 Bloco de Talheres */}
+      <View style={styles.optionCard}>
+        <View style={styles.optionIconCircle}>
+          <Ionicons name="restaurant-outline" size={20} color={COLORS.text} />
+        </View>
+        <View style={styles.optionInfo}>
+          <Text style={styles.optionTitle}>Precisa de talher?</Text>
+          <Text style={[styles.optionSub, wantsCutlery === null && styles.optionSubRequired]}>
+            {wantsCutlery === null
+              ? 'Escolha obrigatória'
+              : wantsCutlery
+              ? 'Sim, enviar talheres'
+              : 'Não preciso de talher'}
+          </Text>
+        </View>
+        <View style={styles.cutleryBtnGroup}>
+          <RipplePressable
+            style={[styles.cutleryBtn, wantsCutlery === false && styles.cutleryBtnActive]}
+            onPress={() => onSelectCutlery(false)}
+            hitSlop={6}
+          >
+            <Text style={[styles.cutleryBtnText, wantsCutlery === false && styles.cutleryBtnTextActive]}>
+              Não
+            </Text>
+          </RipplePressable>
+          <RipplePressable
+            style={[styles.cutleryBtn, wantsCutlery === true && styles.cutleryBtnActive]}
+            onPress={() => onSelectCutlery(true)}
+            hitSlop={6}
+          >
+            <Text style={[styles.cutleryBtnText, wantsCutlery === true && styles.cutleryBtnTextActive]}>
+              Sim
+            </Text>
+          </RipplePressable>
+        </View>
+      </View>
+
+      {/* 4.2 Bloco de Troco (apenas dinheiro) */}
+      {paymentMethod === 'dinheiro' && (
+        <View style={styles.changeCard}>
+          <View style={styles.changeHeader}>
+            <View style={styles.optionIconCircle}>
+              <Ionicons name="cash-outline" size={20} color={COLORS.text} />
+            </View>
+            <View style={styles.optionInfo}>
+              <Text style={styles.optionTitle}>Precisa de troco para quanto?</Text>
+              <Text style={styles.optionSub}>Deixe em branco se não precisar</Text>
+            </View>
+          </View>
+          <View style={styles.changeInputWrapper}>
+            <Text style={styles.changeCurrencyPrefix}>R$</Text>
+            <TextInput
+              style={styles.changeInput}
+              placeholder="0,00"
+              placeholderTextColor={COLORS.textMuted}
+              keyboardType="numeric"
+              value={cashChange}
+              onChangeText={(text) => onChangeCashChange(text.replace(/[^0-9,.]/g, ''))}
+              maxLength={10}
+            />
+          </View>
+        </View>
+      )}
+
+      {/* 4.3 Bloco de WhatsApp (exigido apenas se o cliente não tiver WhatsApp salvo) */}
+      {!hasSavedPhone && (
+        <View style={styles.phoneCard}>
+          <View style={styles.phoneHeader}>
+            <View style={styles.optionIconCircle}>
+              <Ionicons name="logo-whatsapp" size={20} color={COLORS.success} />
+            </View>
+            <View style={styles.optionInfo}>
+              <Text style={styles.optionTitle}>WhatsApp para contato *</Text>
+              <Text style={styles.optionSub}>Necessário para atualizações do seu primeiro pedido</Text>
+            </View>
+          </View>
+          <View style={styles.phoneInputWrapper}>
+            <TextInput
+              style={styles.phoneInput}
+              placeholder="(00) 00000-0000"
+              placeholderTextColor={COLORS.textMuted}
+              keyboardType="phone-pad"
+              value={phone}
+              onChangeText={(text) => onChangePhone && onChangePhone(formatPhone(text))}
+              maxLength={15}
+            />
+          </View>
+        </View>
+      )}
 
       {/* 5. Resumo de valores */}
       <View style={styles.summarySection}>
@@ -239,6 +360,126 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: COLORS.error,
+  },
+  optionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.white,
+    paddingVertical: SPACING[3],
+    borderTopWidth: 1,
+    borderTopColor: '#F4F4F5',
+  },
+  optionIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F4F4F5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: SPACING[3],
+  },
+  optionInfo: {
+    flex: 1,
+  },
+  optionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  optionSub: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+  },
+  optionSubRequired: {
+    color: COLORS.error,
+    fontWeight: '700',
+  },
+  cutleryBtnGroup: {
+    flexDirection: 'row',
+    gap: SPACING[2],
+  },
+  cutleryBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#E4E4E7',
+    backgroundColor: COLORS.white,
+  },
+  cutleryBtnActive: {
+    backgroundColor: '#18181B',
+    borderColor: '#18181B',
+  },
+  cutleryBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.text,
+  },
+  cutleryBtnTextActive: {
+    color: COLORS.white,
+  },
+  changeCard: {
+    backgroundColor: COLORS.white,
+    paddingVertical: SPACING[3],
+    borderTopWidth: 1,
+    borderTopColor: '#F4F4F5',
+  },
+  changeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING[3],
+  },
+  changeInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F4F4F5',
+    borderWidth: 1,
+    borderColor: '#E4E4E7',
+    borderRadius: 10,
+    paddingHorizontal: SPACING[3],
+    minHeight: 50,
+  },
+  changeCurrencyPrefix: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.textSecondary,
+    marginRight: 6,
+  },
+  changeInput: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.text,
+    paddingVertical: 10,
+  },
+  phoneCard: {
+    backgroundColor: COLORS.white,
+    paddingVertical: SPACING[3],
+    borderTopWidth: 1,
+    borderTopColor: COLORS.grayLight,
+  },
+  phoneHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING[3],
+  },
+  phoneInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.grayLight,
+    borderWidth: 1,
+    borderColor: COLORS.grayBorder,
+    borderRadius: 10,
+    paddingHorizontal: SPACING[3],
+    minHeight: 50,
+  },
+  phoneInput: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.text,
+    paddingVertical: 10,
   },
   summarySection: {
     borderTopWidth: 1,

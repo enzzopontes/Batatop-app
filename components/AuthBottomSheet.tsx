@@ -17,7 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../supabaseConfig';
 import { SOFT_LOGOUT_KEY, emitAuthUiChange } from '../utils/authSession';
-import { signInWithGoogle, signInWithFacebook } from '../utils/googleAuth';
+import { signInWithGoogle } from '../utils/googleAuth';
 import { ThemedAlertHost, showThemedAlert } from './ThemedAlert';
 import HelpModal from './HelpModal';
 import Animated, {
@@ -358,16 +358,6 @@ export default function AuthBottomSheet({ visible, onClose }: AuthBottomSheetPro
     }
   }
 
-  async function handleFacebook() {
-    const result = await signInWithFacebook();
-    if (result.success) {
-      onClose();
-      router.replace('/');
-    } else if (!result.cancelled) {
-      showThemedAlert('Erro no login', result.error || 'Não foi possível conectar com o Facebook.');
-    }
-  }
-
   function handleContactSupport() {
     const msg = encodeURIComponent('Olá! Preciso de ajuda para acessar minha conta no app Batata Top.');
     Linking.openURL(`https://wa.me/5514997361015?text=${msg}`).catch(() => {
@@ -523,9 +513,6 @@ export default function AuthBottomSheet({ visible, onClose }: AuthBottomSheetPro
               <Pressable style={styles.socialBtn} onPress={handleGoogle}>
                 <Ionicons name="logo-google" size={22} color="#1A1A1A" />
               </Pressable>
-              <Pressable style={styles.socialBtn} onPress={handleFacebook}>
-                <Ionicons name="logo-facebook" size={22} color="#1A1A1A" />
-              </Pressable>
             </View>
           </Animated.View>
 
@@ -635,7 +622,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING[3],
   },
   btnFilledText: {
-    color: COLORS.text,
+    color: '#FFFFFF',
     fontWeight: '800',
     fontSize: TYPOGRAPHY.sizes.base,
   },

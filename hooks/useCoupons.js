@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '../../utils/supabase';
-import { getEffectiveSession } from '../../utils/authSession';
+import { supabase } from '../utils/supabase';
+import { getEffectiveSession } from '../utils/authSession';
 
 export function useCoupons(currentOrderTotal = 0) {
   const [coupons, setCoupons] = useState([]);

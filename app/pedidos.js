@@ -19,7 +19,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS } from '../constants/theme';
-import { usePedidos } from './hooks/usePedidos';
+import { usePedidos } from '../hooks/usePedidos';
 import { supabase } from '../supabaseConfig';
 import { getEffectiveSession, subscribeAuthUiChange } from '../utils/authSession';
 import { useTabBarHeight } from './_layout';
@@ -27,6 +27,7 @@ import HelpModal from '../components/HelpModal';
 import OrderFeedbackModal from '../components/orders/OrderFeedbackModal';
 import { ThemedAlertHost, showThemedAlert } from '../components/ThemedAlert';
 import { cartStore } from '../utils/cartStore';
+import { checkPixStatus } from '../utils/mercadoPago';
 import batataDormindo from '../assets/batatadormindo.png';
 
 // ─── Header Minimalista Padrão (Estilo iFood) ─────────────────────────────────
@@ -89,12 +90,12 @@ function SegmentedProgressBar({ status }) {
   if (status === 'awaiting_payment') {
     currentStep = 1;
     statusText = 'Aguardando pagamento Pix';
-  } else if (status === 'pending') {
+  } else if (status === 'pending' || status === 'confirmed') {
     currentStep = 1;
-    statusText = 'Pedido recebido pela loja';
-  } else if (status === 'preparing') {
+    statusText = 'Pedido confirmado';
+  } else if (status === 'preparing' || status === 'preparo') {
     currentStep = 2;
-    statusText = 'Em preparo na cozinha';
+    statusText = 'Seu pedido está sendo preparado';
   } else if (status === 'ready') {
     currentStep = 3;
     statusText = 'Pronto para sair';
@@ -173,10 +174,32 @@ function formatOrderDate(date) {
   return `${capitalizedWeekday}, ${day} de ${month} de ${year}`;
 }
 
+// ─── Verificador de Pedido Aguardando Pix ──────────────────────────────────
+export function isOrderAwaitingPix(order) {
+  if (!order) return false;
+  const isPaid =
+    order.metadata?.mp_payment_status === 'approved' ||
+    order.metadata?.pix?.status === 'approved' ||
+    Boolean(order.metadata?.paid_at) ||
+    ['preparing', 'preparo', 'ready', 'out_for_delivery', 'delivered'].includes(order.status);
+
+  if (isPaid) return false;
+
+  const isPixMethod =
+    order.paymentMethod === 'pix' ||
+    order.payment_method === 'pix' ||
+    Boolean(order.metadata?.pix) ||
+    Boolean(order.metadata?.qr_code) ||
+    Boolean(order.metadata?.pix_qr_code);
+
+  return order.status === 'awaiting_payment' || (order.status === 'pending' && isPixMethod);
+}
+
 // ─── Card de Pedido em Andamento (Design Rico iFood) ─────────────────────────
 function ActiveOrderCard({ order, onDetails }) {
   const num = order.orderNumber || order.id.slice(-4).toUpperCase();
   const etaMinutes = order.metadata?.eta_minutes;
+  const awaitingPix = isOrderAwaitingPix(order);
 
   const formattedEta = useMemo(() => {
     if (!etaMinutes) return '30-45 min';
@@ -212,10 +235,10 @@ function ActiveOrderCard({ order, onDetails }) {
       </View>
 
       {/* Faixa de Status Estilo iFood */}
-      {order.status === 'awaiting_payment' || (order.status === 'pending' && (order.paymentMethod === 'pix' || order.payment_method === 'pix') && (order.metadata?.pix || order.metadata?.qr_code || order.metadata?.pix_qr_code)) ? (
-        <View style={[styles.statusBanner, { backgroundColor: '#FEE2E2' }]}>
-          <Ionicons name="time-outline" size={16} color="#E61E2A" />
-          <Text style={[styles.statusBannerText, { color: '#E61E2A' }]}>
+      {awaitingPix ? (
+        <View style={[styles.statusBanner, { backgroundColor: '#FEF3C7' }]}>
+          <Ionicons name="time-outline" size={16} color="#D97706" />
+          <Text style={[styles.statusBannerText, { color: '#B45309' }]}>
             Aguardando pagamento Pix • Toque para pagar
           </Text>
         </View>
@@ -230,7 +253,7 @@ function ActiveOrderCard({ order, onDetails }) {
         <View style={[styles.statusBanner, { backgroundColor: '#FEF3C7' }]}>
           <PulsingDot />
           <Text style={[styles.statusBannerText, { color: '#B45309' }]}>
-            Preparando seu pedido • Previsão {formattedEta}
+            Seu pedido está sendo preparado
           </Text>
         </View>
       )}
@@ -282,7 +305,7 @@ function ActiveOrderCard({ order, onDetails }) {
       {/* Toque para Acompanhar */}
       <View style={styles.trackOrderRow}>
         <Text style={styles.trackOrderText}>
-          {order.status === 'awaiting_payment' || (order.status === 'pending' && (order.paymentMethod === 'pix' || order.payment_method === 'pix') && (order.metadata?.pix || order.metadata?.qr_code || order.metadata?.pix_qr_code))
+          {awaitingPix
             ? 'Ver código e pagar Pix'
             : 'Acompanhar detalhes do pedido'}
         </Text>
@@ -595,6 +618,40 @@ export default function PedidosScreen() {
       supabase.removeChannel(channel);
     };
   }, [userId]);
+
+  // Polling ágil dedicado quando houver pedido aguardando Pix
+  useEffect(() => {
+    if (!userId) return;
+    const awaitingOrders = orders.filter(isOrderAwaitingPix);
+    if (awaitingOrders.length === 0) return;
+
+    let isPolling = true;
+    const interval = setInterval(async () => {
+      if (!isPolling) return;
+      for (const ord of awaitingOrders) {
+        const paymentId =
+          ord.metadata?.pix?.payment_id ||
+          ord.metadata?.pix?.id ||
+          ord.metadata?.payment_id;
+        if (!paymentId) continue;
+
+        try {
+          const res = await checkPixStatus(paymentId);
+          if (res?.success && (res.status === 'approved' || res.statusDetail === 'accredited')) {
+            if (userIdRef.current) {
+              fetchOrdersRef.current(userIdRef.current, { silent: true });
+            }
+            break;
+          }
+        } catch {}
+      }
+    }, 4000);
+
+    return () => {
+      isPolling = false;
+      clearInterval(interval);
+    };
+  }, [orders, userId]);
 
   // Ações
   const handleDetails = (orderId) => {

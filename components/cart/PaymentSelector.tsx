@@ -6,6 +6,7 @@ import * as Haptics from 'expo-haptics';
 import { COLORS, SPACING, RADIUS } from '../../constants/theme';
 import { PaymentMethod } from './useCheckoutFlow';
 import { SavedCard, formatCardDisplay } from '../../utils/usePaymentCards';
+import CardBrandBadge from './CardBrandBadge';
 
 interface PaymentSelectorProps {
   currentMethod: PaymentMethod;
@@ -111,9 +112,7 @@ export default function PaymentSelector({
                   accessibilityLabel={formatCardDisplay(card)}
                 >
                   <View style={styles.cardOptionLeft}>
-                    <View style={styles.iconCircle}>
-                      <Ionicons name="card" size={20} color={COLORS.text} />
-                    </View>
+                    <CardBrandBadge brand={card.payment_method_id} size="md" />
                     <View style={styles.cardOptionTexts}>
                       <Text style={styles.cardOptionTitle}>
                         {formatCardDisplay(card)}

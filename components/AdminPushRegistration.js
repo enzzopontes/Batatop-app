@@ -22,17 +22,26 @@ export default function AdminPushRegistration() {
     let mounted = true;
 
     async function tryRegister() {
-      const session = await getEffectiveSession();
-      if (!mounted || !session?.user) return;
-      const isInstant = isAdminUser(session.user);
-      let isDb = false;
-      if (!isInstant) {
-        isDb = await checkIsAdmin(session.user.id);
+      try {
+        const session = await getEffectiveSession();
+        if (!mounted || !session?.user) return;
+        const isInstant = isAdminUser(session.user);
+        let isDb = false;
+        if (!isInstant) {
+          isDb = await checkIsAdmin(session.user.id);
+        }
+        if (isInstant || isDb) {
+          const token = await syncAdminPushRegistration(session.user);
+          if (mounted && token) {
+            pushTokenRef.current = token;
+          }
+        }
+        // Registra SEMPRE em user_push_tokens para receber push de status de pedido como cliente
+        const { registerForUserPushNotifications } = await import('../utils/userPushNotifications');
+        await registerForUserPushNotifications(session.user.id);
+      } catch (err) {
+        console.warn('[AdminPushRegistration] Falha no tryRegister:', err?.message || err);
       }
-      if (!isInstant && !isDb) return;
-
-      const token = await syncAdminPushRegistration(session.user);
-      if (mounted) pushTokenRef.current = token;
     }
 
     tryRegister();
