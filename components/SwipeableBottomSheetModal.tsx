@@ -242,31 +242,33 @@ export default function SwipeableBottomSheetModal({
       navigationBarTranslucent
       onRequestClose={handleDismiss}
     >
-      <View style={styles.overlay}>
-        {/* Fundo escuro fixo em tela cheia com fade */}
-        <Animated.View
-          style={[
-            styles.backdrop,
-            { backgroundColor: backdropColor, opacity: backdropOpacity },
-          ]}
-        >
-          <Pressable style={StyleSheet.absoluteFill} onPress={handleDismiss} />
-        </Animated.View>
+      <SafeAreaProvider>
+        <View style={styles.overlay}>
+          {/* Fundo escuro fixo em tela cheia com fade */}
+          <Animated.View
+            style={[
+              styles.backdrop,
+              { backgroundColor: backdropColor, opacity: backdropOpacity },
+            ]}
+          >
+            <Pressable style={StyleSheet.absoluteFill} onPress={handleDismiss} />
+          </Animated.View>
 
-        {/* Conteúdo animado que desce no arraste */}
-        <SheetInner
-          contentStyle={contentStyle}
-          contentContainerStyle={contentContainerStyle}
-          minBottomPadding={minBottomPadding}
-          extraBottomPadding={extraBottomPadding}
-          panHandlers={!scrollable ? panResponder.panHandlers : undefined}
-          handlePanHandlers={handlePanResponder.panHandlers}
-          showHandle={showHandle}
-          translateY={translateY}
-        >
-          {children}
-        </SheetInner>
-      </View>
+          {/* Conteúdo animado que desce no arraste */}
+          <SheetInner
+            contentStyle={contentStyle}
+            contentContainerStyle={contentContainerStyle}
+            minBottomPadding={minBottomPadding}
+            extraBottomPadding={extraBottomPadding}
+            panHandlers={!scrollable ? panResponder.panHandlers : undefined}
+            handlePanHandlers={handlePanResponder.panHandlers}
+            showHandle={showHandle}
+            translateY={translateY}
+          >
+            {children}
+          </SheetInner>
+        </View>
+      </SafeAreaProvider>
     </Modal>
   );
 }

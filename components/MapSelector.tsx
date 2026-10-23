@@ -96,24 +96,26 @@ function OutOfAreaModal({ visible, onClose }: { visible: boolean; onClose: () =>
 
   return (
     <Modal visible={mounted} transparent animationType="none" statusBarTranslucent navigationBarTranslucent onRequestClose={onClose}>
-      <View style={oa.overlay}>
-        <Animated.View style={[oa.backdrop, { opacity: fadeAnim }]}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        </Animated.View>
-        <Animated.View style={[oa.card, { opacity: fadeAnim }]}>
-          <View style={oa.iconWrap}>
-            <Ionicons name="location-outline" size={28} color={COLORS.secondary} />
-          </View>
-          <Text style={oa.title}>Fora da área de entrega</Text>
-          <Text style={oa.subtitle}>
-            Só entregamos em <Text style={{ fontWeight: '800', color: COLORS.text }}>{CIDADE_PERMITIDA}/{UF_PERMITIDA}</Text>.
-            Mova o mapa até essa região pra continuar.
-          </Text>
-          <Pressable style={oa.button} onPress={onClose}>
-            <Text style={oa.buttonText}>Entendi</Text>
-          </Pressable>
-        </Animated.View>
-      </View>
+      <SafeAreaProvider>
+        <View style={oa.overlay}>
+          <Animated.View style={[oa.backdrop, { opacity: fadeAnim }]}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+          </Animated.View>
+          <Animated.View style={[oa.card, { opacity: fadeAnim }]}>
+            <View style={oa.iconWrap}>
+              <Ionicons name="location-outline" size={28} color={COLORS.secondary} />
+            </View>
+            <Text style={oa.title}>Fora da área de entrega</Text>
+            <Text style={oa.subtitle}>
+              Só entregamos em <Text style={{ fontWeight: '800', color: COLORS.text }}>{CIDADE_PERMITIDA}/{UF_PERMITIDA}</Text>.
+              Mova o mapa até essa região pra continuar.
+            </Text>
+            <Pressable style={oa.button} onPress={onClose}>
+              <Text style={oa.buttonText}>Entendi</Text>
+            </Pressable>
+          </Animated.View>
+        </View>
+      </SafeAreaProvider>
     </Modal>
   );
 }
