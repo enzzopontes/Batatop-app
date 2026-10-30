@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS } from '../../constants/theme';
+import { PaymentCardsSkeleton } from '../../components/Skeleton';
 import { usePaymentCards, formatCardDisplay } from '../../utils/usePaymentCards';
 import { ThemedAlertHost, showThemedAlert } from '../../components/ThemedAlert';
 import CardWizard from '../../components/CardWizard';
@@ -140,7 +141,7 @@ export default function PaymentsScreen() {
             </ScrollView>
 
             {loadingCards ? (
-              <ActivityIndicator color={COLORS.primary} style={{ marginTop: 40 }} />
+              <PaymentCardsSkeleton />
             ) : cards.length === 0 ? (
               <View style={s.emptyState}>
                 <Image

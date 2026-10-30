@@ -8,6 +8,7 @@ import { useCart } from '../utils/cartStore';
 import CouponCard, { SelectorCircle } from '../components/CouponCard';
 import FreeCouponCard from '../components/FreeCouponCard';
 import { ThemedAlertHost, showThemedAlert } from '../components/ThemedAlert';
+import { CuponsSkeleton } from '../components/Skeleton';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS } from '../constants/theme';
 
 export default function CuponsScreen() {
@@ -111,7 +112,9 @@ export default function CuponsScreen() {
           </Pressable>
         </View>
 
-        {!loading && coupons.map((coupon) => (
+        {loading ? (
+          <CuponsSkeleton count={3} />
+        ) : coupons.map((coupon) => (
           <CouponCard
             key={coupon.id}
             coupon={coupon}
@@ -121,7 +124,7 @@ export default function CuponsScreen() {
             onSelect={handleSelect}
           />
         ))}
-      </ScrollView>
+        </ScrollView>
 
       <ThemedAlertHost />
     </SafeAreaView>

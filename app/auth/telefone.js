@@ -1,3 +1,4 @@
+import ThreeDotsLoader from '../../components/ThreeDotsLoader';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
@@ -146,7 +147,7 @@ export default function TelefoneScreen() {
               onPress={() => handleReceberCodigo('whatsapp')}
             >
               {loadingChannel === 'whatsapp' ? (
-                <ActivityIndicator color={COLORS.text} />
+                <ThreeDotsLoader color="#FFFFFF" dotSize={7} />
               ) : (
                 <Text style={[styles.btnFilledText, !isValid && styles.btnTextDisabled]}>
                   Receber por WhatsApp
@@ -160,7 +161,7 @@ export default function TelefoneScreen() {
               onPress={() => handleReceberCodigo('sms')}
             >
               {loadingChannel === 'sms' ? (
-                <ActivityIndicator color={COLORS.primary} />
+                <ThreeDotsLoader color={COLORS.primary} dotSize={7} />
               ) : (
                 <Text style={[styles.btnOutlineText, !isValid && styles.btnTextDisabled]}>
                   Receber por SMS

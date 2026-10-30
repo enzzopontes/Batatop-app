@@ -20,6 +20,7 @@ import { SOFT_LOGOUT_KEY, emitAuthUiChange } from '../utils/authSession';
 import { signInWithGoogle } from '../utils/googleAuth';
 import { ThemedAlertHost, showThemedAlert } from './ThemedAlert';
 import HelpModal from './HelpModal';
+import RipplePressable from './cart/RipplePressable';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -479,9 +480,9 @@ export default function AuthBottomSheet({ visible, onClose }: AuthBottomSheetPro
                   </View>
                 </View>
 
-                <Pressable style={styles.btnFilled} onPress={handleContinuarComo}>
+                <RipplePressable style={styles.btnFilled} onPress={handleContinuarComo}>
                   <Text style={styles.btnFilledText}>Continuar</Text>
-                </Pressable>
+                </RipplePressable>
 
                 <View style={styles.dividerRow}>
                   <View style={styles.dividerLine} />
@@ -501,18 +502,18 @@ export default function AuthBottomSheet({ visible, onClose }: AuthBottomSheetPro
             onLayout={handleLayoutA}
             pointerEvents={estado === 'A' ? 'auto' : 'none'}
           >
-            <Pressable style={styles.btnFilled} onPress={handleJaTenhoConta}>
+            <RipplePressable style={styles.btnFilled} onPress={handleJaTenhoConta}>
               <Text style={styles.btnFilledText}>Já tenho uma conta</Text>
-            </Pressable>
-            <Pressable style={styles.btnOutline} onPress={handleCriarConta}>
+            </RipplePressable>
+            <RipplePressable style={styles.btnOutline} onPress={handleCriarConta} rippleColor="rgba(181, 134, 10, 0.2)">
               <Text style={styles.btnOutlineText}>Criar nova conta</Text>
-            </Pressable>
+            </RipplePressable>
 
             <Text style={styles.acessarComText}>Acessar com</Text>
             <View style={styles.socialRow}>
-              <Pressable style={styles.socialBtn} onPress={handleGoogle}>
+              <RipplePressable style={styles.socialBtn} onPress={handleGoogle} rippleColor="rgba(181, 134, 10, 0.25)">
                 <Ionicons name="logo-google" size={22} color="#1A1A1A" />
-              </Pressable>
+              </RipplePressable>
             </View>
           </Animated.View>
 
@@ -522,9 +523,9 @@ export default function AuthBottomSheet({ visible, onClose }: AuthBottomSheetPro
             pointerEvents={estado === 'C' ? 'auto' : 'none'}
           >
             <Text style={styles.comoContinuarTitle}>Como deseja continuar?</Text>
-            <Pressable style={styles.btnFilled} onPress={handleEscolherEmail}>
+            <RipplePressable style={styles.btnFilled} onPress={handleEscolherEmail}>
               <Text style={styles.btnFilledText}>E-mail</Text>
-            </Pressable>
+            </RipplePressable>
             <Pressable
               style={[styles.btnOutline, styles.btnOutlineDisabled]}
               onPress={handleEscolherCelular}

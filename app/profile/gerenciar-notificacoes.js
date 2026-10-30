@@ -7,6 +7,7 @@ import { supabase } from '../../supabaseConfig';
 import { COLORS, TYPOGRAPHY, SPACING } from '../../constants/theme';
 import { showThemedAlert, ThemedAlertHost } from '../../components/ThemedAlert';
 import { registerForUserPushNotifications } from '../../utils/userPushNotifications';
+import { SettingsListSkeleton } from '../../components/Skeleton';
 
 /**
  * GerenciarNotificacoes
@@ -107,8 +108,8 @@ export default function GerenciarNotificacoes() {
 
   if (loading) {
     return (
-      <SafeAreaView style={s.loadingContainer} edges={['top']}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+      <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.white }} edges={['top']}>
+        <SettingsListSkeleton count={4} />
       </SafeAreaView>
     );
   }

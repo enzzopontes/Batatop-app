@@ -1,11 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
+import ThreeDotsLoader from '../../components/ThreeDotsLoader';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../../supabaseConfig';
 import { COLORS, TYPOGRAPHY, SPACING } from '../../constants/theme';
 import { showThemedAlert, ThemedAlertHost } from '../../components/ThemedAlert';
+import { FormFieldsSkeleton } from '../../components/Skeleton';
 
 /**
  * InformacoesAcesso ("Informações de acesso")
@@ -130,8 +132,8 @@ export default function InformacoesAcesso() {
 
   if (loading) {
     return (
-      <SafeAreaView style={s.loadingContainer} edges={['top']}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+      <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.white }} edges={['top']}>
+        <FormFieldsSkeleton count={2} />
       </SafeAreaView>
     );
   }
@@ -200,7 +202,7 @@ export default function InformacoesAcesso() {
               </Pressable>
               <Pressable onPress={handleSaveContact} hitSlop={8} style={s.editIconBtn} disabled={savingContact}>
                 {savingContact ? (
-                  <ActivityIndicator size="small" color={COLORS.primary} />
+                  <ThreeDotsLoader color={COLORS.primary} dotSize={5} />
                 ) : (
                   <Ionicons name="checkmark" size={22} color={COLORS.primary} />
                 )}

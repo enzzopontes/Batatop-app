@@ -31,6 +31,7 @@ import CategoriasFlutuantes from '../components/CategoriasFlutuantes';
 import { CATEGORIAS, handleCategoriaPress } from '../constants/categorias';
 import { fetchHomeCoupons } from '../utils/homeCoupons';
 import HomeCouponCard, { HOME_COUPON_CARD_WIDTH, HOME_COUPON_GAP } from '../components/HomeCouponCard';
+import { HomeDestaquesSkeleton, HomeGridSkeleton } from '../components/Skeleton';
 import {
   useScrollHandler,
   useHeaderHeight,
@@ -371,7 +372,7 @@ export default function Home() {
           </View>
 
           {loading ? (
-            <ActivityIndicator size="small" color={COLORS.primary} style={{ marginTop: SPACING[4] }} />
+            <HomeDestaquesSkeleton />
           ) : (
             <ScrollView
               horizontal
@@ -435,9 +436,7 @@ export default function Home() {
           </View>
 
           {loading ? (
-            <View style={s.loader}>
-              <ActivityIndicator size="large" color={COLORS.primary} />
-            </View>
+            <HomeGridSkeleton count={4} />
           ) : (
             <View style={s.prodGrid}>
               {maisPedidos.map((p, i) => (
@@ -463,9 +462,7 @@ export default function Home() {
           </View>
 
           {loading ? (
-            <View style={s.loader}>
-              <ActivityIndicator size="large" color={COLORS.primary} />
-            </View>
+            <HomeGridSkeleton count={4} />
           ) : (
             <View style={s.prodGrid}>
               {maisPedidosMacarrao.map((p, i) => (

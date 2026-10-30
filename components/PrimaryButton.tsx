@@ -1,21 +1,28 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   Text,
   StyleSheet,
-  ActivityIndicator,
   View,
   StyleProp,
   ViewStyle,
   TextStyle,
 } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
 import { COLORS, RADIUS } from '../constants/theme';
 import RipplePressable from './cart/RipplePressable';
+import ThreeDotsLoader from './ThreeDotsLoader';
 
 export interface PrimaryButtonProps {
   title: string;
   onPress: () => void;
   disabled?: boolean;
   loading?: boolean;
+  isLoading?: boolean;
   badge?: string | number | null;
   leftIcon?: React.ReactNode;
   rightText?: string;
@@ -28,14 +35,15 @@ export interface PrimaryButtonProps {
 
 /**
  * Componente canônico de Botão Primário do Batata Top.
- * Garante fidelidade ao token COLORS.primary, altura uniforme mais fina (44px)
- * e largura generosa, com elementos internos brancos.
+ * Garante fidelidade ao token COLORS.primary, efeito Ripple amarelo escuro (COLORS.accent)
+ * originado rigorosamente nas coordenadas do toque e transição suave para estado de carregamento.
  */
 export default function PrimaryButton({
   title,
   onPress,
   disabled = false,
   loading = false,
+  isLoading,
   badge = null,
   leftIcon,
   rightText,
@@ -45,7 +53,32 @@ export default function PrimaryButton({
   fullWidth = false,
   accessibilityLabel,
 }: PrimaryButtonProps) {
-  const isActionDisabled = disabled || loading;
+  const isBusy = loading || !!isLoading;
+  const isActionDisabled = disabled || isBusy;
+
+  // Transição de loading suave na UI thread
+  const loadingProgress = useSharedValue(isBusy ? 1 : 0);
+
+  useEffect(() => {
+    loadingProgress.value = withTiming(isBusy ? 1 : 0, {
+      duration: 250,
+      easing: Easing.inOut(Easing.quad),
+    });
+  }, [isBusy, loadingProgress]);
+
+  const animatedContentStyle = useAnimatedStyle(() => {
+    return {
+      opacity: 1 - loadingProgress.value,
+      transform: [{ scale: 1 - loadingProgress.value * 0.05 }],
+    };
+  });
+
+  const animatedLoaderStyle = useAnimatedStyle(() => {
+    return {
+      opacity: loadingProgress.value,
+      transform: [{ scale: 0.8 + loadingProgress.value * 0.2 }],
+    };
+  });
 
   return (
     <RipplePressable
@@ -57,36 +90,52 @@ export default function PrimaryButton({
       ]}
       onPress={onPress}
       disabled={isActionDisabled}
-      rippleColor="rgba(0, 0, 0, 0.18)"
+      rippleColor="rgba(181, 134, 10, 0.45)"
+      accessibilityRole="button"
+      accessibilityState={{ disabled: isActionDisabled, busy: isBusy }}
       accessibilityLabel={accessibilityLabel || title}
     >
-      {loading ? (
-        <ActivityIndicator color={COLORS.white} size="small" />
-      ) : spaceBetween ? (
-        <View style={styles.spaceBetweenContainer}>
-          <View style={styles.leftGroup}>
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.loaderContainer, animatedLoaderStyle]}
+      >
+        <ThreeDotsLoader color={COLORS.white} dotSize={7} gap={6} />
+      </Animated.View>
+
+      <Animated.View
+        style={[
+          styles.contentWrapper,
+          spaceBetween && styles.spaceBetweenWrapper,
+          animatedContentStyle,
+        ]}
+        pointerEvents={isBusy ? 'none' : 'auto'}
+      >
+        {spaceBetween ? (
+          <View style={styles.spaceBetweenContainer}>
+            <View style={styles.leftGroup}>
+              {leftIcon && <View style={styles.leftIconContainer}>{leftIcon}</View>}
+              <Text style={[styles.title, textStyle]}>{title}</Text>
+            </View>
+            {badge != null && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{badge}</Text>
+              </View>
+            )}
+            {rightText && <Text style={[styles.rightText, textStyle]}>{rightText}</Text>}
+          </View>
+        ) : (
+          <>
             {leftIcon && <View style={styles.leftIconContainer}>{leftIcon}</View>}
             <Text style={[styles.title, textStyle]}>{title}</Text>
-          </View>
-          {badge != null && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{badge}</Text>
-            </View>
-          )}
-          {rightText && <Text style={[styles.rightText, textStyle]}>{rightText}</Text>}
-        </View>
-      ) : (
-        <>
-          {leftIcon && <View style={styles.leftIconContainer}>{leftIcon}</View>}
-          <Text style={[styles.title, textStyle]}>{title}</Text>
-          {badge != null && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{badge}</Text>
-            </View>
-          )}
-          {rightText && <Text style={[styles.rightText, textStyle]}>{rightText}</Text>}
-        </>
-      )}
+            {badge != null && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{badge}</Text>
+              </View>
+            )}
+            {rightText && <Text style={[styles.rightText, textStyle]}>{rightText}</Text>}
+          </>
+        )}
+      </Animated.View>
     </RipplePressable>
   );
 }
@@ -94,14 +143,31 @@ export default function PrimaryButton({
 const styles = StyleSheet.create({
   button: {
     backgroundColor: COLORS.primary,
-    height: 44, // Mais fino (menos altura), elegante e não gordinho
-    paddingHorizontal: 24, // Mais largo pros lados
+    height: 44,
+    paddingHorizontal: 24,
     borderRadius: RADIUS.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
     overflow: 'hidden',
+    position: 'relative',
+  },
+  loaderContainer: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
+  contentWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    zIndex: 1,
+  },
+  spaceBetweenWrapper: {
+    width: '100%',
   },
   fullWidth: {
     width: '100%',

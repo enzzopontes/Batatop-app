@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS } from '../constants/theme';
 import { getAddressLabelText } from '../utils/addressHelpers';
 import SwipeableBottomSheetModal from './SwipeableBottomSheetModal';
+import RipplePressable from './cart/RipplePressable';
 
 export default function AddressModal({ visible, address, onClose, onEdit, onDelete }) {
   const addressRef = useRef(address);
@@ -31,19 +32,19 @@ export default function AddressModal({ visible, address, onClose, onEdit, onDele
       <Text style={am.title}>{labelText}</Text>
 
       <View style={am.actionsRow}>
-        <Pressable style={am.actionBox} onPress={onDelete}>
+        <RipplePressable style={am.actionBox} onPress={onDelete} rippleColor="rgba(181, 134, 10, 0.35)">
           <Ionicons name="trash-outline" size={18} color={COLORS.text} />
           <Text style={am.actionText}>Excluir</Text>
-        </Pressable>
-        <Pressable style={am.actionBox} onPress={onEdit}>
+        </RipplePressable>
+        <RipplePressable style={am.actionBox} onPress={onEdit} rippleColor="rgba(181, 134, 10, 0.35)">
           <Ionicons name="pencil-outline" size={18} color={COLORS.text} />
           <Text style={am.actionText}>Editar</Text>
-        </Pressable>
+        </RipplePressable>
       </View>
 
-      <Pressable style={am.cancelBtn} onPress={onClose}>
+      <RipplePressable style={am.cancelBtn} onPress={onClose} rippleColor="rgba(181, 134, 10, 0.2)">
         <Text style={am.cancelText}>Cancelar</Text>
-      </Pressable>
+      </RipplePressable>
     </SwipeableBottomSheetModal>
   );
 }

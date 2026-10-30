@@ -20,6 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS } from '../constants/theme';
 import useGeolocationWithMaps from '../hooks/useGeolocationWithMaps';
 import { useModalFade } from '../hooks/useModalFade';
+import ThreeDotsLoader from './ThreeDotsLoader';
 
 const CIDADE_PERMITIDA = 'Iacanga';
 const UF_PERMITIDA = 'SP';
@@ -302,7 +303,7 @@ export default function MapSelector({ initialCoords, onBack, onConfirm }: MapSel
         disabled={geoLoading}
       >
         {geoLoading
-          ? <ActivityIndicator color="#fff" />
+          ? <ThreeDotsLoader color="#fff" dotSize={7} />
           : <Text style={st.confirmFloatingText}>Confirmar endereço de entrega</Text>
         }
       </Pressable>

@@ -1,44 +1,23 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
-import { View, FlatList, Image, StyleSheet, Dimensions, Pressable, Text } from 'react-native';
+import { View, FlatList, StyleSheet, Dimensions, Pressable, Text, Image as RNImage } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { useRouter } from 'expo-router';
-import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { COLORS, SPACING, RADIUS } from '../constants/theme';
 import { fetchHighlightCouponBanners } from '../utils/homeCoupons';
+import { cartStore } from '../utils/cartStore';
+import { showSuccessAlert } from './ThemedAlert';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-const ITEM_WIDTH = SCREEN_WIDTH * 0.72;
+// Largura otimizada para o padrão iFood (destaque com espiada sutil do próximo banner)
+const ITEM_WIDTH = Math.round(SCREEN_WIDTH * 0.84);
 const ITEM_SPACING = SPACING[3];
 const SIDE_PADDING = (SCREEN_WIDTH - ITEM_WIDTH) / 2;
 const SNAP_INTERVAL = ITEM_WIDTH + ITEM_SPACING;
-const FRAME_PADDING = SPACING[2];
-const INNER_WIDTH = ITEM_WIDTH - FRAME_PADDING * 2;
 const AUTOPLAY_INTERVAL = 10000;
-const MAX_BANNER_HEIGHT = 260;
-
-const STATIC_BANNER_IMAGES = [
-  require('../assets/banners/banner1.png'),
-  require('../assets/banners/banner2.png'),
-  require('../assets/banners/banner3.png'),
-  require('../assets/banners/banner4.png'),
-  require('../assets/banners/banner5.png'),
-  require('../assets/banners/banner6.png'),
-];
-
-const STATIC_BANNERS = STATIC_BANNER_IMAGES.map((source, idx) => {
-  const { width, height } = Image.resolveAssetSource(source);
-  return {
-    id: `static-banner-${idx}`,
-    type: 'static',
-    source,
-    height: Math.min(INNER_WIDTH / (width / height), MAX_BANNER_HEIGHT),
-  };
-});
-
-const DEFAULT_BANNER_HEIGHT = Math.max(...STATIC_BANNERS.map((b) => b.height));
-const FRAME_HEIGHT = DEFAULT_BANNER_HEIGHT + FRAME_PADDING * 2;
+// Altura inicial baseada no padrão 16:9
+const INITIAL_BANNER_HEIGHT = Math.round(ITEM_WIDTH / (16 / 9));
 
 export default function BannerCarousel() {
   const router = useRouter();
@@ -47,31 +26,51 @@ export default function BannerCarousel() {
   const indexRef = useRef(0);
   const [activeIndex, setActiveIndex] = useState(0);
   const [couponBanners, setCouponBanners] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [dynamicHeight, setDynamicHeight] = useState(INITIAL_BANNER_HEIGHT);
 
   useEffect(() => {
     let mounted = true;
-    fetchHighlightCouponBanners().then((items) => {
-      if (mounted && Array.isArray(items) && items.length > 0) {
-        const formatted = items.map((c) => ({
-          id: `coupon-banner-${c.id}`,
-          type: 'coupon',
-          coupon: c,
-          uri: c.banner_image_url,
-          height: DEFAULT_BANNER_HEIGHT,
-        }));
-        setCouponBanners(formatted);
-      }
-    });
+    fetchHighlightCouponBanners()
+      .then((items) => {
+        if (mounted && Array.isArray(items)) {
+          const formatted = items
+            .filter((c) => Boolean(c.banner_image_url))
+            .map((c) => ({
+              id: c.id,
+              uri: c.banner_image_url,
+              badge_label: c.badge_label || c.coupon?.badge_label || null,
+              coupon: c.coupon || null,
+            }));
+          setCouponBanners(formatted);
+
+          // Auto-adapta a altura do container à proporção real da imagem enviada
+          const firstImage = formatted[0]?.uri;
+          if (firstImage) {
+            RNImage.getSize(
+              firstImage,
+              (w, h) => {
+                if (mounted && w > 0 && h > 0) {
+                  const ratio = w / h;
+                  // Harmonização: limita entre 1.3 (mais vertical) e 2.6 (mais panorâmico)
+                  const clampedRatio = Math.max(1.3, Math.min(2.6, ratio));
+                  const autoHeight = Math.round(ITEM_WIDTH / clampedRatio);
+                  setDynamicHeight(autoHeight);
+                }
+              },
+              () => {}
+            );
+          }
+        }
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+
     return () => {
       mounted = false;
     };
   }, []);
-
-  const allBanners = useMemo(() => {
-    if (!couponBanners.length) return STATIC_BANNERS;
-    // Intercala banners de cupons dinâmicos com os estáticos
-    return [...couponBanners, ...STATIC_BANNERS];
-  }, [couponBanners]);
 
   const clearAutoplay = useCallback(() => {
     if (intervalRef.current) {
@@ -82,15 +81,15 @@ export default function BannerCarousel() {
 
   const startAutoplay = useCallback(() => {
     clearAutoplay();
-    if (allBanners.length <= 1) return;
+    if (couponBanners.length <= 1) return;
     intervalRef.current = setInterval(() => {
-      const nextIndex = (indexRef.current + 1) % allBanners.length;
+      const nextIndex = (indexRef.current + 1) % couponBanners.length;
       flatListRef.current?.scrollToOffset({
         offset: nextIndex * SNAP_INTERVAL,
         animated: true,
       });
     }, AUTOPLAY_INTERVAL);
-  }, [clearAutoplay, allBanners.length]);
+  }, [clearAutoplay, couponBanners.length]);
 
   useEffect(() => {
     startAutoplay();
@@ -114,24 +113,29 @@ export default function BannerCarousel() {
   };
 
   const handleBannerPress = async (item) => {
-    if (item.type === 'coupon' && item.coupon?.code) {
+    const coupon = item.coupon;
+    if (coupon && (coupon.code || coupon.id)) {
       try {
-        await Clipboard.setStringAsync(item.coupon.code);
+        cartStore.setCoupon(coupon);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      } catch {
-        // clipboard fallback
+        showSuccessAlert('Seu cupom foi aplicado!', 'Sucesso');
+      } catch (err) {
+        console.warn('Erro ao aplicar cupom do banner:', err);
       }
-      router.push('/cupons');
     }
   };
 
+  if (loading || couponBanners.length === 0) {
+    return null;
+  }
+
   return (
     <View style={s.wrapper}>
-      <View style={{ height: FRAME_HEIGHT, overflow: 'hidden' }}>
+      <View style={{ height: dynamicHeight, overflow: 'hidden' }}>
         <FlatList
           ref={flatListRef}
-          data={allBanners}
-          keyExtractor={(item) => item.id}
+          data={couponBanners}
+          keyExtractor={(item) => String(item.id)}
           horizontal
           showsHorizontalScrollIndicator={false}
           decelerationRate="fast"
@@ -142,57 +146,35 @@ export default function BannerCarousel() {
           onMomentumScrollEnd={handleMomentumScrollEnd}
           renderItem={({ item }) => (
             <Pressable
-              style={s.slide}
+              style={[s.slide, { height: dynamicHeight }]}
               onPress={() => handleBannerPress(item)}
-              activeOpacity={item.type === 'coupon' ? 0.9 : 1}
+              activeOpacity={item.coupon ? 0.88 : 1}
             >
-              <View style={s.frame}>
-                {item.type === 'coupon' ? (
-                  <>
-                    <ExpoImage
-                      source={{ uri: item.uri }}
-                      style={StyleSheet.absoluteFillObject}
-                      contentFit="cover"
-                      blurRadius={20}
-                    />
-                    <ExpoImage
-                      source={{ uri: item.uri }}
-                      style={{ width: INNER_WIDTH, height: item.height, borderRadius: RADIUS.lg }}
-                      contentFit="cover"
-                      cachePolicy="memory-disk"
-                    />
-                    {item.coupon?.badge_label ? (
-                      <View style={s.badgeWrap}>
-                        <Text style={s.badgeText}>{item.coupon.badge_label}</Text>
-                      </View>
-                    ) : null}
-                  </>
-                ) : (
-                  <>
-                    <Image
-                      source={item.source}
-                      style={StyleSheet.absoluteFillObject}
-                      resizeMode="cover"
-                      blurRadius={25}
-                    />
-                    <Image
-                      source={item.source}
-                      style={{ width: INNER_WIDTH, height: item.height, borderRadius: RADIUS.lg }}
-                      resizeMode="contain"
-                    />
-                  </>
-                )}
+              <View style={[s.frame, { height: dynamicHeight }]}>
+                <ExpoImage
+                  source={{ uri: item.uri }}
+                  style={StyleSheet.absoluteFillObject}
+                  contentFit="cover"
+                  cachePolicy="memory-disk"
+                />
+                {item.badge_label ? (
+                  <View style={s.badgeWrap}>
+                    <Text style={s.badgeText}>{item.badge_label}</Text>
+                  </View>
+                ) : null}
               </View>
             </Pressable>
           )}
         />
       </View>
 
-      <View style={s.dotsRow}>
-        {allBanners.map((_, i) => (
-          <View key={`dot-${i}`} style={[s.dot, i === activeIndex && s.dotActive]} />
-        ))}
-      </View>
+      {couponBanners.length > 1 && (
+        <View style={s.dotsRow}>
+          {couponBanners.map((_, i) => (
+            <View key={`dot-${i}`} style={[s.dot, i === activeIndex && s.dotActive]} />
+          ))}
+        </View>
+      )}
     </View>
   );
 }
@@ -205,17 +187,14 @@ const s = StyleSheet.create({
     width: ITEM_WIDTH,
     marginRight: ITEM_SPACING,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   frame: {
     width: '100%',
-    height: FRAME_HEIGHT,
     borderRadius: RADIUS.xl,
-    backgroundColor: COLORS.backgroundElevated,
-    padding: FRAME_PADDING,
-    alignItems: 'center',
-    justifyContent: 'center',
     overflow: 'hidden',
     position: 'relative',
+    backgroundColor: '#F3F4F6',
   },
   badgeWrap: {
     position: 'absolute',

@@ -5,7 +5,6 @@ import {
   StyleSheet,
   Pressable,
   TouchableOpacity,
-  Image,
   ActivityIndicator,
   Alert,
   Dimensions,
@@ -13,6 +12,7 @@ import {
   StatusBar,
   AppState,
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
@@ -26,6 +26,7 @@ import { getEffectiveSession } from '../../utils/authSession';
 import { setPendingCartIntent } from '../../utils/pendingCartIntent';
 import { requestAuthSheet } from '../../utils/authSheetRequest';
 import { COLORS, SHADOWS, RADIUS } from '../../constants/theme';
+import { ProdutoDetalhesSkeleton } from '../../components/Skeleton';
 import useAddressVerification from '../../hooks/useAddressVerification';
 import { useFooterInsets } from '../../hooks/useFooterInsets';
 import AddressVerificationModal from '../../components/AddressVerificationModal';
@@ -523,9 +524,9 @@ export default function ProdutoDetail() {
 
   if (loading) {
     return (
-      <View style={s.loadingContainer}>
+      <View style={{ flex: 1, backgroundColor: COLORS.background }}>
         <StatusBar barStyle="dark-content" />
-        <ActivityIndicator size="large" color={COLORS.accent} />
+        <ProdutoDetalhesSkeleton />
       </View>
     );
   }
@@ -550,10 +551,11 @@ export default function ProdutoDetail() {
 
         {/* Imagem hero */}
         <View style={s.imageContainer}>
-          <Image
+          <ExpoImage
             source={resolveImage(produto.imagem, produto.categoria)}
             style={s.image}
-            resizeMode="cover"
+            contentFit="cover"
+            cachePolicy="memory-disk"
             onError={() => setUseFallback(true)}
           />
 
@@ -658,10 +660,11 @@ export default function ProdutoDetail() {
                       </Text>
                     </View>
                     <View style={s.bebidaRight}>
-                      <Image
+                      <ExpoImage
                         source={resolveImage(bebida.image_url, bebida.category)}
                         style={s.bebidaImagem}
-                        resizeMode="contain"
+                        contentFit="contain"
+                        cachePolicy="memory-disk"
                       />
                       <View style={[s.adicionalQtyContainer, qty > 0 && s.adicionalQtyContainerAtivo]}>
                         {qty > 0 && (

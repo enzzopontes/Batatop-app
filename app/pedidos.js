@@ -24,6 +24,7 @@ import { supabase } from '../supabaseConfig';
 import { getEffectiveSession, subscribeAuthUiChange } from '../utils/authSession';
 import { useTabBarHeight } from './_layout';
 import HelpModal from '../components/HelpModal';
+import { PedidosListSkeleton } from '../components/Skeleton';
 import OrderFeedbackModal from '../components/orders/OrderFeedbackModal';
 import { ThemedAlertHost, showThemedAlert } from '../components/ThemedAlert';
 import { cartStore } from '../utils/cartStore';
@@ -741,10 +742,7 @@ export default function PedidosScreen() {
       <View style={styles.screen}>
         <StatusBar barStyle="dark-content" backgroundColor="#FFF" />
         <MinimalHeader />
-        <View style={s.centered}>
-          <ActivityIndicator size="large" color="#FFB800" />
-          <Text style={s.loadingText}>Carregando seus pedidos...</Text>
-        </View>
+        <PedidosListSkeleton />
       </View>
     );
   }

@@ -1,4 +1,5 @@
 import { View, Text, ScrollView, StyleSheet, Pressable, Image, ActivityIndicator } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useState, useEffect, useCallback } from 'react';
@@ -13,6 +14,7 @@ import { requestAuthSheet } from '../../utils/authSheetRequest';
 import ProfileAccordionItem from '../../components/ProfileAccordionItem';
 import ProfileSuccessToast from '../../components/ProfileSuccessToast';
 import { isAdminUser, checkIsAdmin } from '../../utils/isAdmin';
+import { ProfileSkeleton } from '../../components/Skeleton';
 
 // Precisa ser IGUAL à SAVED_USER_KEY de components/AuthBottomSheet.tsx
 const SAVED_USER_KEY = '@batatatop:savedUser';
@@ -53,9 +55,13 @@ export default function Profile() {
         const instantAdmin = isAdminUser(u);
         setIsAdmin(instantAdmin);
         if (!instantAdmin) {
-          checkIsAdmin(u.id).then(res => {
-            setIsAdmin(res);
-          });
+          checkIsAdmin(u.id)
+            .then(res => {
+              setIsAdmin(res);
+            })
+            .catch(err => {
+              console.error('Erro ao verificar status de admin:', err);
+            });
         }
         // Badge de notificações não lidas (broadcast + específicas do
         // usuário) — falha aqui não pode travar o resto do perfil.
@@ -131,7 +137,11 @@ export default function Profile() {
     setLogoutModalVisible(false);
     // Sem scope = 'global' (padrão): revoga a sessão de verdade no servidor.
     // Aqui é o logout de verdade, então isso é o comportamento certo.
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch (signOutError) {
+      console.error('Erro ao deslogar do Supabase:', signOutError);
+    }
     try {
       await AsyncStorage.multiRemove([SAVED_USER_KEY, SOFT_LOGOUT_KEY]);
     } catch (e) {
@@ -159,11 +169,7 @@ export default function Profile() {
   };
 
   if (loading) {
-    return (
-      <View style={s.loadingContainer}>
-        <ActivityIndicator size="large" color="#FFB800" />
-      </View>
-    );
+    return <ProfileSkeleton />;
   }
 
   if (!user) {
@@ -273,9 +279,10 @@ export default function Profile() {
             sem e-mail/CPF aqui; isso mora em "Dados da conta" agora) */}
         <View style={s.profileHeaderRow}>
           <View style={s.avatarWrapper}>
-            <Image
+            <ExpoImage
               source={{ uri: user?.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/png?seed=${user?.email || 'Guest'}` }}
               style={s.avatarImage}
+              cachePolicy="memory-disk"
             />
           </View>
           <Text style={s.userName} numberOfLines={1}>

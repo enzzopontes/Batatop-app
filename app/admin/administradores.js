@@ -1,3 +1,4 @@
+import ThreeDotsLoader from '../../components/ThreeDotsLoader';
 import {
   View, Text, ScrollView, StyleSheet, Pressable,
   ActivityIndicator, Alert, TextInput, RefreshControl,
@@ -8,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../supabaseConfig';
 import { isAdminUser, checkIsAdmin } from '../../utils/isAdmin';
+import { AdminListSkeleton } from '../../components/Skeleton';
 
 const OWNER_EMAILS = ['enzzobaraldo2008@gmail.com', 'maraysis9010@gmail.com'];
 
@@ -212,11 +214,7 @@ export default function AdminAdministradores() {
   const teamCount = admins.length - ownersCount;
 
   if (checkingAdmin) {
-    return (
-      <View style={[s.loadingContainer, { paddingTop: insets.top }]}>
-        <ActivityIndicator size="large" color="#C1440E" />
-      </View>
-    );
+    return <AdminListSkeleton count={3} />;
   }
 
   return (
@@ -297,7 +295,7 @@ export default function AdminAdministradores() {
               disabled={submitting || !newEmail.trim()}
             >
               {submitting ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
+                <ThreeDotsLoader color="#FFFFFF" dotSize={7} />
               ) : (
                 <>
                   <Ionicons name="key-outline" size={16} color="#FFFFFF" />
@@ -348,7 +346,7 @@ export default function AdminAdministradores() {
         {/* Admin List */}
         {loading ? (
           <View style={s.emptyContainer}>
-            <ActivityIndicator size="small" color="#C1440E" />
+            <ThreeDotsLoader color="#C1440E" dotSize={6} />
             <Text style={s.emptySub}>Sincronizando administradores...</Text>
           </View>
         ) : filteredAdmins.length === 0 ? (
@@ -432,7 +430,7 @@ export default function AdminAdministradores() {
                         hitSlop={6}
                       >
                         {isRemoving ? (
-                          <ActivityIndicator size="small" color="#DC2626" />
+                          <ThreeDotsLoader color="#DC2626" dotSize={6} />
                         ) : (
                           <Ionicons name="trash-outline" size={16} color="#DC2626" />
                         )}

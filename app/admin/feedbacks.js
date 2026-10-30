@@ -1,3 +1,4 @@
+import ThreeDotsLoader from '../../components/ThreeDotsLoader';
 import {
   View, Text, ScrollView, StyleSheet, Pressable,
   ActivityIndicator, Alert, RefreshControl, Linking,
@@ -9,6 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { supabase } from '../../supabaseConfig';
+import { AdminListSkeleton } from '../../components/Skeleton';
 
 export default function AdminFeedbacks() {
   const router = useRouter();
@@ -160,12 +162,12 @@ export default function AdminFeedbacks() {
           <Text style={s.headerSub}>Monitore a satisfação dos clientes</Text>
         </View>
         <Pressable onPress={loadFeedbacks} style={s.refreshBtn} hitSlop={8}>
-          {refreshing ? <ActivityIndicator size="small" color="#FCBB00" /> : <Ionicons name="refresh-outline" size={22} color="#1A1A1A" />}
+          {refreshing ? <ThreeDotsLoader color="#FCBB00" dotSize={5} /> : <Ionicons name="refresh-outline" size={22} color="#1A1A1A" />}
         </Pressable>
       </View>
 
       {loading ? (
-        <View style={s.center}><ActivityIndicator size="large" color="#FCBB00" /></View>
+        <AdminListSkeleton count={4} />
       ) : (
         <ScrollView
           contentContainerStyle={s.listContent}

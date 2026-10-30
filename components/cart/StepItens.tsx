@@ -1,4 +1,5 @@
 import React from 'react';
+import { Image as ExpoImage } from 'expo-image';
 import {
   View,
   Text,
@@ -123,10 +124,11 @@ export default function StepItens({
           return (
             <View key={itemId} style={styles.itemCard}>
               <View style={styles.itemImageWrapper}>
-                <Image
+                <ExpoImage
                   source={{ uri: resolveItemImage(item.imagem) }}
                   style={styles.itemImage}
-                  resizeMode="cover"
+                  contentFit="cover"
+                  cachePolicy="memory-disk"
                 />
                 {/* Lápis de edição com área de toque mínima 44x44 */}
                 <RipplePressable

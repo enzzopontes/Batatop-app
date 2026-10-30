@@ -2,18 +2,19 @@ import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
-  Image,
   Pressable,
   StyleSheet,
   ActivityIndicator,
   FlatList,
   Linking,
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../supabaseConfig';
 import { COLORS, TYPOGRAPHY, SPACING } from '../constants/theme';
+import { NotificationsSkeleton } from '../components/Skeleton';
 
 /**
  * Notifications ("Notificações")
@@ -104,7 +105,8 @@ export default function NotificationsScreen() {
             { user_id: userId, notification_id: item.id, read_at: now },
             { onConflict: 'user_id,notification_id' },
           )
-          .then(() => {});
+          .then(() => {})
+          .catch((err) => console.warn('[Notifications] Erro ao marcar leitura:', err));
       }
 
       // Específica: mantém read_at na própria linha — compatibilidade com
@@ -114,7 +116,8 @@ export default function NotificationsScreen() {
           .from('notifications')
           .update({ read_at: now })
           .eq('id', item.id)
-          .then(() => {});
+          .then(() => {})
+          .catch((err) => console.warn('[Notifications] Erro ao atualizar notificação:', err));
       }
 
       setItems((prev) =>
@@ -141,9 +144,7 @@ export default function NotificationsScreen() {
       </View>
 
       {loading ? (
-        <View style={s.centerFill}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-        </View>
+        <NotificationsSkeleton />
       ) : items.length === 0 ? (
         <View style={s.centerFill}>
           <Ionicons name="notifications-outline" size={40} color={COLORS.textMuted} />
@@ -154,6 +155,10 @@ export default function NotificationsScreen() {
           data={items}
           keyExtractor={(item) => item.id}
           showsVerticalScrollIndicator={false}
+          initialNumToRender={8}
+          maxToRenderPerBatch={8}
+          windowSize={5}
+          removeClippedSubviews={true}
           renderItem={({ item }) => {
             const isRead = !!(item.read_at || item.notification_reads?.[0]?.read_at);
             return (
@@ -165,7 +170,11 @@ export default function NotificationsScreen() {
 
                 <View style={s.iconBox}>
                   {item.icon_url ? (
-                    <Image source={{ uri: item.icon_url }} style={s.iconImage} />
+                    <ExpoImage
+                      source={{ uri: item.icon_url }}
+                      style={s.iconImage}
+                      cachePolicy="memory-disk"
+                    />
                   ) : (
                     <View style={s.iconFallback}>
                       <Ionicons name="megaphone-outline" size={22} color={COLORS.primary} />

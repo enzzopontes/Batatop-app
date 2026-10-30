@@ -375,6 +375,7 @@ const styles = StyleSheet.create({
     left: 16,
     right: 16,
     zIndex: 999999,
+    elevation: 999999,
     alignItems: 'center',
   },
   banner: {
@@ -384,7 +385,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 10,
-    elevation: 10,
+    elevation: 999999,
   },
   bannerInner: {
     flexDirection: 'row',

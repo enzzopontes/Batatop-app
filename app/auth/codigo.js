@@ -1,3 +1,4 @@
+import ThreeDotsLoader from '../../components/ThreeDotsLoader';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
@@ -377,7 +378,7 @@ export default function CodigoScreen() {
               ))}
             </View>
 
-            {loading && <ActivityIndicator color={COLORS.primary} style={{ marginBottom: SPACING[4] }} />}
+            {loading && <ThreeDotsLoader color={COLORS.primary} dotSize={7} style={{ marginBottom: SPACING[4] }} />}
 
             {showResendLink ? (
               <TouchableOpacity onPress={() => setHelpVisible(true)}>
@@ -421,7 +422,7 @@ export default function CodigoScreen() {
               onPress={handleEmailContinue}
             >
               {emailSaving ? (
-                <ActivityIndicator color={COLORS.text} />
+                <ThreeDotsLoader color={COLORS.text} dotSize={7} />
               ) : (
                 <Text style={[styles.btnFilledText, !isEmailValid && styles.btnTextDisabled]}>
                   Continuar
@@ -457,7 +458,7 @@ export default function CodigoScreen() {
               onPress={handleNameContinue}
             >
               {nameSaving ? (
-                <ActivityIndicator color={COLORS.text} />
+                <ThreeDotsLoader color={COLORS.text} dotSize={7} />
               ) : (
                 <Text style={[styles.btnFilledText, !isNameValid && styles.btnTextDisabled]}>
                   Continuar

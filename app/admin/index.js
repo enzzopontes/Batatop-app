@@ -1,3 +1,4 @@
+import ThreeDotsLoader from '../../components/ThreeDotsLoader';
 import {
   View,
   Text,
@@ -19,6 +20,9 @@ import { supabase } from '../../supabaseConfig';
 import { isAdminUser, checkIsAdmin } from '../../utils/isAdmin';
 import { syncAdminPushRegistration } from '../../utils/pushNotifications';
 import { COLORS, TYPOGRAPHY, RADIUS, SHADOWS } from '../../constants/theme';
+import { AdminDashboardSkeleton } from '../../components/Skeleton';
+import { ThemedAlertHost } from '../../components/ThemedAlert';
+import SwipeableBottomSheetModal from '../../components/SwipeableBottomSheetModal';
 
 const DAYS_OF_WEEK = [
   { key: 0, id: 'dom', label: 'Domingo', short: 'Dom' },
@@ -409,11 +413,7 @@ export default function AdminDashboard() {
   };
 
   if (loading && !storeStatus) {
-    return (
-      <View style={s.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
-    );
+    return <AdminDashboardSkeleton />;
   }
 
   const val = storeStatus?.setting_value || {};
@@ -659,6 +659,18 @@ export default function AdminDashboard() {
             <Ionicons name="chevron-forward" size={18} color={COLORS.textMuted} />
           </Pressable>
 
+          {/* Campanhas Push */}
+          <Pressable style={s.menuItemCard} onPress={() => router.push('/admin/campanhas')}>
+            <View style={[s.menuItemIcon, { backgroundColor: '#FEF3C7' }]}>
+              <Ionicons name="megaphone" size={20} color="#D97706" />
+            </View>
+            <View style={s.menuItemTextCol}>
+              <Text style={s.menuItemTitle}>Campanhas & Push</Text>
+              <Text style={s.menuItemDesc}>Notificações em massa com cupom e preview iFood</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={COLORS.textMuted} />
+          </Pressable>
+
           {/* Imagens */}
           <Pressable style={s.menuItemCard} onPress={() => router.push('/admin/imagens')}>
             <View style={[s.menuItemIcon, { backgroundColor: '#EFF6FF' }]}>
@@ -722,30 +734,30 @@ export default function AdminDashboard() {
       </ScrollView>
 
       {/* Modal: Horários de Funcionamento (Business Hours) */}
-      <Modal
+      <SwipeableBottomSheetModal
         visible={scheduleModalOpen}
-        animationType="slide"
-        transparent
         onRequestClose={() => setScheduleModalOpen(false)}
+        backdropColor="rgba(0,0,0,0.5)"
+        contentStyle={[s.sheet, { height: '85%', maxHeight: '85%' }]}
+        scrollable
       >
-        <View style={s.modalOverlay}>
-          <View style={s.modalContainer}>
-            <View style={s.modalHeader}>
-              <View style={s.modalHeaderIconBg}>
-                <Ionicons name="calendar" size={20} color={COLORS.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.modalTitle}>Horários de Funcionamento</Text>
-                <Text style={s.modalSubtitle}>Abertura e fechamento automatizados</Text>
-              </View>
-              <Pressable
-                onPress={() => setScheduleModalOpen(false)}
-                style={s.modalCloseBtn}
-                hitSlop={8}
-              >
-                <Ionicons name="close" size={20} color={COLORS.text} />
-              </Pressable>
+        <View style={s.modalContainer}>
+          <View style={s.modalHeader}>
+            <View style={s.modalHeaderIconBg}>
+              <Ionicons name="calendar" size={20} color={COLORS.primary} />
             </View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.modalTitle}>Horários de Funcionamento</Text>
+              <Text style={s.modalSubtitle}>Abertura e fechamento automatizados</Text>
+            </View>
+            <Pressable
+              onPress={() => setScheduleModalOpen(false)}
+              style={s.modalCloseBtn}
+              hitSlop={8}
+            >
+              <Ionicons name="close" size={20} color={COLORS.text} />
+            </Pressable>
+          </View>
 
             <ScrollView style={s.modalScroll} showsVerticalScrollIndicator={false}>
               {/* Horários Gerais */}
@@ -860,7 +872,7 @@ export default function AdminDashboard() {
                 disabled={isSavingSchedule}
               >
                 {isSavingSchedule ? (
-                  <ActivityIndicator size="small" color={COLORS.white} />
+                  <ThreeDotsLoader color="#FFFFFF" dotSize={7} />
                 ) : (
                   <>
                     <Ionicons name="save-outline" size={16} color={COLORS.white} />
@@ -869,31 +881,30 @@ export default function AdminDashboard() {
                 )}
               </Pressable>
             </View>
+            <ThemedAlertHost />
           </View>
-        </View>
-      </Modal>
+        </SwipeableBottomSheetModal>
 
       {/* Modal: Configurar Taxa de Entrega */}
-      <Modal
+      <SwipeableBottomSheetModal
         visible={feeModalOpen}
-        animationType="fade"
-        transparent
         onRequestClose={() => setFeeModalOpen(false)}
+        backdropColor="rgba(0,0,0,0.5)"
+        contentStyle={s.sheet}
       >
-        <View style={s.modalOverlay}>
-          <View style={[s.modalContainer, { maxHeight: 320 }]}>
-            <View style={s.modalHeader}>
-              <View style={[s.modalHeaderIconBg, { backgroundColor: '#FEF3C7' }]}>
-                <Ionicons name="cash" size={20} color={COLORS.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.modalTitle}>Taxa de Entrega</Text>
-                <Text style={s.modalSubtitle}>Ajuste o valor padrão da taxa de delivery</Text>
-              </View>
-              <Pressable onPress={() => setFeeModalOpen(false)} style={s.modalCloseBtn} hitSlop={8}>
-                <Ionicons name="close" size={20} color={COLORS.text} />
-              </Pressable>
+        <View style={[s.modalContainer, { maxHeight: 320 }]}>
+          <View style={s.modalHeader}>
+            <View style={[s.modalHeaderIconBg, { backgroundColor: '#FEF3C7' }]}>
+              <Ionicons name="cash" size={20} color={COLORS.primary} />
             </View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.modalTitle}>Taxa de Entrega</Text>
+              <Text style={s.modalSubtitle}>Ajuste o valor padrão da taxa de delivery</Text>
+            </View>
+            <Pressable onPress={() => setFeeModalOpen(false)} style={s.modalCloseBtn} hitSlop={8}>
+              <Ionicons name="close" size={20} color={COLORS.text} />
+            </Pressable>
+          </View>
 
             <View style={{ padding: 18 }}>
               <Text style={s.inputLabel}>Valor da Taxa (R$):</Text>
@@ -945,15 +956,15 @@ export default function AdminDashboard() {
                 disabled={isSavingFee}
               >
                 {isSavingFee ? (
-                  <ActivityIndicator size="small" color={COLORS.white} />
+                  <ThreeDotsLoader color="#FFFFFF" dotSize={7} />
                 ) : (
                   <Text style={s.modalSaveBtnText}>Confirmar Taxa</Text>
                 )}
               </Pressable>
             </View>
+            <ThemedAlertHost />
           </View>
-        </View>
-      </Modal>
+        </SwipeableBottomSheetModal>
     </View>
   );
 }
@@ -1345,6 +1356,12 @@ const s = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.45)',
     justifyContent: 'flex-end',
+  },
+  sheet: {
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    overflow: 'hidden',
   },
   modalContainer: {
     backgroundColor: COLORS.white,

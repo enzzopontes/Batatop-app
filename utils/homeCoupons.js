@@ -92,9 +92,30 @@ export function formatCouponsForHome(rawCoupons) {
 export async function fetchHighlightCouponBanners() {
   try {
     const now = new Date().toISOString();
+
+    // 1. Prioridade: busca na entidade dedicada home_banners com join no cupom
+    const { data: homeBannersData, error: homeBannersErr } = await supabase
+      .from('home_banners')
+      .select('id, image_url, title, display_order, coupons (id, code, title, description, badge_label, discount_value, discount_type, min_order_value, active, expires_at)')
+      .eq('is_active', true)
+      .order('display_order', { ascending: false })
+      .order('created_at', { ascending: false });
+
+    if (!homeBannersErr && Array.isArray(homeBannersData) && homeBannersData.length > 0) {
+      return homeBannersData.map((b) => ({
+        id: `banner-${b.id}`,
+        banner_image_url: b.image_url,
+        title: b.title || b.coupons?.title || null,
+        code: b.coupons?.code || null,
+        badge_label: b.coupons?.badge_label || null,
+        coupon: b.coupons?.active ? b.coupons : null,
+      }));
+    }
+
+    // 2. Retrocompatibilidade: busca cupons com is_banner_highlight ativo
     const { data, error } = await supabase
       .from('coupons')
-      .select('id, code, title, description, banner_image_url, badge_label, discount_value, discount_type, min_order_value')
+      .select('id, code, title, description, banner_image_url, badge_label, discount_value, discount_type, min_order_value, active, expires_at')
       .eq('active', true)
       .eq('is_banner_highlight', true)
       .not('banner_image_url', 'is', null)
@@ -107,7 +128,15 @@ export async function fetchHighlightCouponBanners() {
       console.warn('Erro ao buscar banners de cupons:', error);
       return [];
     }
-    return data || [];
+
+    return (data || []).map((c) => ({
+      id: `coupon-${c.id}`,
+      banner_image_url: c.banner_image_url,
+      title: c.title,
+      code: c.code,
+      badge_label: c.badge_label,
+      coupon: c,
+    }));
   } catch (err) {
     console.warn('Falha em fetchHighlightCouponBanners:', err);
     return [];

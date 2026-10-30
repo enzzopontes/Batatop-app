@@ -1,3 +1,4 @@
+import ThreeDotsLoader from '../../components/ThreeDotsLoader';
 import {
   View, Text, ScrollView, StyleSheet, Pressable,
   ActivityIndicator, Alert, Modal, Share,
@@ -7,6 +8,9 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets, SafeAreaProvider } from 'react-native-safe-area-context';
 import { supabase } from '../../supabaseConfig';
+import { AdminDashboardSkeleton } from '../../components/Skeleton';
+import { ThemedAlertHost } from '../../components/ThemedAlert';
+import SwipeableBottomSheetModal from '../../components/SwipeableBottomSheetModal';
 
 // Mapeia os dados do Supabase pro app (idêntico ao pedidos.js)
 const mapOrderData = (o) => {
@@ -325,13 +329,13 @@ export default function AdminCaixa() {
             <Ionicons name="share-outline" size={20} color="#4B5563" />
           </Pressable>
           <Pressable onPress={() => { setRefreshing(true); loadData(); }} style={s.actionBtn} hitSlop={8}>
-            {refreshing ? <ActivityIndicator size="small" color="#E3A008" /> : <Ionicons name="refresh-outline" size={20} color="#E3A008" />}
+            {refreshing ? <ThreeDotsLoader color="#E3A008" dotSize={5} /> : <Ionicons name="refresh-outline" size={20} color="#E3A008" />}
           </Pressable>
         </View>
       </View>
 
       {loading ? (
-        <View style={s.center}><ActivityIndicator size="large" color="#E3A008" /></View>
+        <AdminDashboardSkeleton />
       ) : (
         <ScrollView contentContainerStyle={s.listContent} showsVerticalScrollIndicator={false}>
           {/* Stats Cards Modernos */}
@@ -519,20 +523,25 @@ export default function AdminCaixa() {
       )}
 
       {/* Modal Detalhes Estilo iFood */}
-      <Modal visible={detailsVisible} animationType="slide" statusBarTranslucent navigationBarTranslucent presentationStyle="pageSheet" onRequestClose={() => setDetailsVisible(false)}>
-        <SafeAreaProvider>
-          {selectedOrder && (
-            <View style={s.modalContainer}>
-              {/* Header Âmbar */}
-              <View style={s.modalHeader}>
-                <View>
-                  <Text style={s.modalTitle}>Pedido #{selectedOrder.orderNumber}</Text>
-                  <Text style={s.modalSub}>Entregue · {selectedOrder.deliveryType === 'delivery' ? 'ENTREGA' : 'RETIRADA'}</Text>
-                </View>
-                <Pressable onPress={() => setDetailsVisible(false)} style={s.modalCloseBtn}>
-                  <Ionicons name="close" size={20} color="#FFF" />
-                </Pressable>
+      <SwipeableBottomSheetModal
+        visible={detailsVisible}
+        onRequestClose={() => setDetailsVisible(false)}
+        backdropColor="rgba(0,0,0,0.5)"
+        contentStyle={[s.sheet, { height: '88%', maxHeight: '88%' }]}
+        scrollable
+      >
+        {selectedOrder && (
+          <View style={s.modalContainer}>
+            {/* Header Âmbar */}
+            <View style={s.modalHeader}>
+              <View>
+                <Text style={s.modalTitle}>Pedido #{selectedOrder.orderNumber}</Text>
+                <Text style={s.modalSub}>Entregue · {selectedOrder.deliveryType === 'delivery' ? 'ENTREGA' : 'RETIRADA'}</Text>
               </View>
+              <Pressable onPress={() => setDetailsVisible(false)} style={s.modalCloseBtn}>
+                <Ionicons name="close" size={20} color="#FFF" />
+              </Pressable>
+            </View>
 
               <ScrollView contentContainerStyle={s.modalBody}>
                 <InfoRow icon="call-outline" label="WhatsApp" value={selectedOrder.customerPhone} />
@@ -595,10 +604,10 @@ export default function AdminCaixa() {
                   <Text style={s.deleteBtnText}>Excluir Pedido do Caixa</Text>
                 </Pressable>
               </ScrollView>
+              <ThemedAlertHost />
             </View>
           )}
-        </SafeAreaProvider>
-      </Modal>
+      </SwipeableBottomSheetModal>
     </View>
   );
 }
@@ -755,6 +764,12 @@ const s = StyleSheet.create({
   orderDiscount: { fontSize: 9, fontWeight: '700', color: '#059669' },
   deleteBtn: { padding: 4 },
 
+  sheet: {
+    backgroundColor: '#F8FAFC',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+  },
   modalContainer: { flex: 1, backgroundColor: '#F8FAFC' },
   modalHeader: { backgroundColor: '#E3A008', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20 },
   modalTitle: { fontSize: 20, fontWeight: '900', color: '#FFF' },

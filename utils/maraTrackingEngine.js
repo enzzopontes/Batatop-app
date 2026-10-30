@@ -477,8 +477,11 @@ export function stopMaraTracking() {
     clearInterval(heartbeatInterval);
     heartbeatInterval = null;
   }
-  // deliveryTimers para pedidos que já atingiram a trava de chegada (25s dentro dos 40m)
-  // são irreversíveis e continuam rodando em memória mesmo ao parar o GPS.
+  // deliveryTimers: cancela todos os timers pendentes em memória ao parar
+  for (const timer of deliveryTimers.values()) {
+    clearTimeout(timer);
+  }
+  deliveryTimers.clear();
   arrivalTracking.clear();
 
   isEngineRunning = false;

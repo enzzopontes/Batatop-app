@@ -4,9 +4,8 @@ dist/
 build/
 
 # env files
-.env
 .env*
-.env.local
+!.env.example
 *.pem
 
 # Local tooling & IDE
@@ -15,5 +14,6 @@ build/
 
 # Google & Firebase credentials
 *-firebase-adminsdk-*.json
+device-streaming-*.json
 google-services.json
 credentials.json

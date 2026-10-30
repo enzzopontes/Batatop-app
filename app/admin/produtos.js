@@ -1,3 +1,4 @@
+import ThreeDotsLoader from '../../components/ThreeDotsLoader';
 import {
   View, Text, ScrollView, StyleSheet, Pressable,
   ActivityIndicator, Alert, Modal, TextInput,
@@ -9,6 +10,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets, SafeAreaProvider } from 'react-native-safe-area-context';
 import { supabase } from '../../supabaseConfig';
 import * as Haptics from 'expo-haptics';
+import { AdminListSkeleton } from '../../components/Skeleton';
+import { ThemedAlertHost } from '../../components/ThemedAlert';
+import SwipeableBottomSheetModal from '../../components/SwipeableBottomSheetModal';
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://eucwoxjmjfqylyrqunwk.supabase.co';
 
@@ -441,9 +445,7 @@ export default function AdminProdutos() {
 
       {/* Lista */}
       {loading ? (
-        <View style={s.center}>
-          <ActivityIndicator size="large" color="#EA1D2C" />
-        </View>
+        <AdminListSkeleton count={5} />
       ) : (
         <ScrollView contentContainerStyle={s.listContent}>
           {activeTab === 'adicionais' ? (
@@ -503,20 +505,20 @@ export default function AdminProdutos() {
       )}
 
       {/* Modal Produto */}
-      <Modal
+      <SwipeableBottomSheetModal
         visible={prodModalVisible}
-        animationType="slide"
-        presentationStyle="pageSheet"
         onRequestClose={() => setProdModalVisible(false)}
+        backdropColor="rgba(0,0,0,0.5)"
+        contentStyle={[s.sheet, { height: '92%', maxHeight: '92%' }]}
+        scrollable
       >
-        <SafeAreaProvider>
-          <View style={s.modalContainer}>
-            <View style={s.modalHeader}>
-              <Text style={s.modalTitle}>{editingProduct ? 'Editar Produto' : 'Novo Produto'}</Text>
-              <Pressable onPress={() => setProdModalVisible(false)} style={s.modalCloseBtn}>
-                <Ionicons name="close" size={20} color="#1A1A1A" />
-              </Pressable>
-            </View>
+        <View style={s.modalContainer}>
+          <View style={s.modalHeader}>
+            <Text style={s.modalTitle}>{editingProduct ? 'Editar Produto' : 'Novo Produto'}</Text>
+            <Pressable onPress={() => setProdModalVisible(false)} style={s.modalCloseBtn}>
+              <Ionicons name="close" size={20} color="#1A1A1A" />
+            </Pressable>
+          </View>
             <ScrollView contentContainerStyle={s.modalBody}>
               <Field
                 label="Nome *"
@@ -624,7 +626,7 @@ export default function AdminProdutos() {
                 disabled={saving}
               >
                 {saving ? (
-                  <ActivityIndicator color="#FFF" />
+                  <ThreeDotsLoader color="#FFFFFF" dotSize={7} />
                 ) : (
                   <Text style={s.saveBtnText}>
                     {editingProduct ? 'Salvar Alterações' : 'Criar Produto'}
@@ -632,25 +634,24 @@ export default function AdminProdutos() {
                 )}
               </Pressable>
             </ScrollView>
+            <ThemedAlertHost />
           </View>
-        </SafeAreaProvider>
-      </Modal>
+      </SwipeableBottomSheetModal>
 
       {/* Modal Adicional */}
-      <Modal
+      <SwipeableBottomSheetModal
         visible={adicModalVisible}
-        animationType="slide"
-        presentationStyle="formSheet"
         onRequestClose={() => setAdicModalVisible(false)}
+        backdropColor="rgba(0,0,0,0.5)"
+        contentStyle={[s.sheet, { height: '72%', maxHeight: '72%' }]}
       >
-        <SafeAreaProvider>
-          <View style={s.modalContainer}>
-            <View style={s.modalHeader}>
-              <Text style={s.modalTitle}>{editingAdic ? 'Editar Adicional' : 'Novo Adicional'}</Text>
-              <Pressable onPress={() => setAdicModalVisible(false)} style={s.modalCloseBtn}>
-                <Ionicons name="close" size={20} color="#1A1A1A" />
-              </Pressable>
-            </View>
+        <View style={s.modalContainer}>
+          <View style={s.modalHeader}>
+            <Text style={s.modalTitle}>{editingAdic ? 'Editar Adicional' : 'Novo Adicional'}</Text>
+            <Pressable onPress={() => setAdicModalVisible(false)} style={s.modalCloseBtn}>
+              <Ionicons name="close" size={20} color="#1A1A1A" />
+            </Pressable>
+          </View>
             <View style={s.modalBody}>
               <Field
                 label="Nome *"
@@ -711,15 +712,15 @@ export default function AdminProdutos() {
                 disabled={saving}
               >
                 {saving ? (
-                  <ActivityIndicator color="#FFF" />
+                  <ThreeDotsLoader color="#FFFFFF" dotSize={7} />
                 ) : (
                   <Text style={s.saveBtnText}>{editingAdic ? 'Salvar' : 'Criar Adicional'}</Text>
                 )}
               </Pressable>
             </View>
+            <ThemedAlertHost />
           </View>
-        </SafeAreaProvider>
-      </Modal>
+      </SwipeableBottomSheetModal>
     </View>
   );
 }
@@ -1009,6 +1010,12 @@ const s = StyleSheet.create({
   adicPrice: { fontSize: 12, fontWeight: '800', color: '#D97706', marginTop: 1 },
 
   // Modals
+  sheet: {
+    backgroundColor: '#F8F9FA',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+  },
   modalContainer: { flex: 1, backgroundColor: '#F8F9FA' },
   modalHeader: {
     flexDirection: 'row',

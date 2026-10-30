@@ -1,6 +1,8 @@
 import { Stack, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
+import { AdminDashboardSkeleton } from '../../components/Skeleton';
+import { ThemedAlertHost } from '../../components/ThemedAlert';
 import { getEffectiveSession } from '../../utils/authSession';
 import { isAdminUser, checkIsAdmin } from '../../utils/isAdmin';
 import { COLORS } from '../../constants/theme';
@@ -37,19 +39,22 @@ export default function AdminLayout() {
 
   if (!authorized) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+      <View style={{ flex: 1, backgroundColor: COLORS.backgroundElevated }}>
+        <AdminDashboardSkeleton />
       </View>
     );
   }
 
   return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-        contentStyle: { backgroundColor: COLORS.backgroundElevated },
-      }}
-    />
+    <View style={{ flex: 1, backgroundColor: COLORS.backgroundElevated }}>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: COLORS.backgroundElevated },
+        }}
+      />
+      <ThemedAlertHost />
+    </View>
   );
 }
 

@@ -1,3 +1,4 @@
+import ThreeDotsLoader from '../../components/ThreeDotsLoader';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, Pressable,
@@ -6,10 +7,13 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets, SafeAreaProvider } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../../supabaseConfig';
 import * as Haptics from 'expo-haptics';
+import { AdminListSkeleton } from '../../components/Skeleton';
+import { ThemedAlertHost } from '../../components/ThemedAlert';
+import SwipeableBottomSheetModal from '../../components/SwipeableBottomSheetModal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -248,12 +252,7 @@ export default function AdminPromocoes() {
       </View>
 
       {loading ? (
-        <View style={s.center}>
-          <ActivityIndicator size="large" color="#FFB800" />
-          <Text style={{ marginTop: 12, color: '#6B7280', fontWeight: '700', fontSize: 13 }}>
-            Carregando campanhas...
-          </Text>
-        </View>
+        <AdminListSkeleton count={3} />
       ) : (
         <ScrollView contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false}>
           
@@ -506,7 +505,7 @@ export default function AdminPromocoes() {
             disabled={saving}
           >
             {saving ? (
-              <ActivityIndicator color="#FFF" />
+              <ThreeDotsLoader color="#FFFFFF" dotSize={7} />
             ) : (
               <>
                 <Ionicons name="cloud-upload-outline" size={20} color="#FFF" />
@@ -521,11 +520,12 @@ export default function AdminPromocoes() {
       {/* ─────────────────────────────────────────────────────────────
           MODAL 1: CONFIGURAÇÃO DA SUPER PROMOÇÃO
       ─────────────────────────────────────────────────────────────── */}
-      <Modal
+      <SwipeableBottomSheetModal
         visible={isSuperModalVisible}
-        animationType="slide"
-        presentationStyle="pageSheet"
         onRequestClose={() => setIsSuperModalVisible(false)}
+        backdropColor="rgba(0,0,0,0.5)"
+        contentStyle={[s.sheet, { height: '90%', maxHeight: '90%' }]}
+        scrollable
       >
         <View style={s.modalContainer}>
           <View style={s.modalHeader}>
@@ -669,17 +669,19 @@ export default function AdminPromocoes() {
               <Text style={s.modalSaveText}>Salvar Alterações</Text>
             </Pressable>
           </View>
+          <ThemedAlertHost />
         </View>
-      </Modal>
+      </SwipeableBottomSheetModal>
 
       {/* ─────────────────────────────────────────────────────────────
           MODAL 2: CONFIGURAÇÃO DA PROMOÇÃO DE ITENS ESPECÍFICOS
       ─────────────────────────────────────────────────────────────── */}
-      <Modal
+      <SwipeableBottomSheetModal
         visible={isItemModalVisible}
-        animationType="slide"
-        presentationStyle="pageSheet"
         onRequestClose={() => setIsItemModalVisible(false)}
+        backdropColor="rgba(0,0,0,0.5)"
+        contentStyle={[s.sheet, { height: '90%', maxHeight: '90%' }]}
+        scrollable
       >
         <View style={s.modalContainer}>
           <View style={s.modalHeader}>
@@ -860,8 +862,9 @@ export default function AdminPromocoes() {
               <Text style={s.modalSaveText}>Salvar Produtos e Banner</Text>
             </Pressable>
           </View>
+          <ThemedAlertHost />
         </View>
-      </Modal>
+      </SwipeableBottomSheetModal>
 
     </View>
   );
@@ -1085,6 +1088,12 @@ const s = StyleSheet.create({
   masterSaveBtnText: { color: '#FFF', fontWeight: '900', fontSize: 14 },
 
   // Modais
+  sheet: {
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+  },
   modalContainer: { flex: 1, backgroundColor: '#FFF' },
   modalHeader: {
     flexDirection: 'row',

@@ -1,3 +1,4 @@
+import ThreeDotsLoader from '../../components/ThreeDotsLoader';
 import React, { useState } from 'react';
 import {
   View,
@@ -154,7 +155,7 @@ export default function RegisterScreen() {
               disabled={loading}
             >
               {loading ? (
-                <ActivityIndicator color="#333" />
+                <ThreeDotsLoader color="#FFFFFF" dotSize={7} />
               ) : (
                 <Text style={styles.registerButtonText}>Criar minha conta</Text>
               )}

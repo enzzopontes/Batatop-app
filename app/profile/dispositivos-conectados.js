@@ -7,6 +7,7 @@ import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import { supabase } from '../../supabaseConfig';
 import { COLORS, TYPOGRAPHY, SPACING } from '../../constants/theme';
+import { SettingsListSkeleton } from '../../components/Skeleton';
 
 /**
  * DispositivosConectados
@@ -78,9 +79,7 @@ export default function DispositivosConectados() {
       </View>
 
       {loading ? (
-        <View style={s.centerFill}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-        </View>
+        <SettingsListSkeleton count={2} />
       ) : (
         <View style={s.content}>
           <Text style={s.title}>Sua conta foi conectada nestes dispositivos</Text>

@@ -3,6 +3,7 @@ import { useRouter, usePathname } from 'expo-router';
 import { useRef, useEffect } from 'react';
 import { useCart } from '../utils/cartStore';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS } from '../constants/theme';
+import RipplePressable from './cart/RipplePressable';
 
 const LOGO = require('../assets/logo.png');
 
@@ -81,9 +82,10 @@ export default function CartBar({ tabBarHeight, isAuthVisible = false }) {
           </View>
         </View>
 
-        <Pressable style={s.cta} onPress={() => router.push('/cart')}>
+        <RipplePressable style={s.cta} onPress={() => router.push('/cart')}>
+
           <Text style={s.ctaText}>Ver sacola</Text>
-        </Pressable>
+        </RipplePressable>
       </View>
     </Animated.View>
   );

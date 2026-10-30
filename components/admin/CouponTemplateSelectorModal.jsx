@@ -1,6 +1,9 @@
-import { Modal, View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import SwipeableBottomSheetModal from '../SwipeableBottomSheetModal';
+import { ThemedAlertHost } from '../ThemedAlert';
 import { COLORS, RADIUS, SPACING, SHADOWS } from '../../constants/theme';
 import { COUPON_TEMPLATES } from '../../constants/couponTemplates';
 
@@ -10,6 +13,7 @@ export default function CouponTemplateSelectorModal({
   onSelectTemplate,
   onSelectScratch,
 }) {
+  const insets = useSafeAreaInsets();
   const handleSelect = (template) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onSelectTemplate(template);
@@ -21,26 +25,26 @@ export default function CouponTemplateSelectorModal({
   };
 
   return (
-    <Modal
+    <SwipeableBottomSheetModal
       visible={visible}
-      animationType="slide"
-      transparent
       onRequestClose={onClose}
+      backdropColor="rgba(0,0,0,0.5)"
+      contentStyle={[s.sheet, { height: '88%', maxHeight: '88%' }]}
+      scrollable
     >
-      <View style={s.overlay}>
-        <View style={s.sheet}>
-          {/* Header */}
-          <View style={s.header}>
-            <View>
-              <Text style={s.title}>Como quer criar o cupom?</Text>
-              <Text style={s.subtitle}>Escolha uma ideia de sucesso ou configure do zero</Text>
-            </View>
-            <Pressable onPress={onClose} style={s.closeBtn}>
-              <Ionicons name="close" size={20} color={COLORS.text} />
-            </Pressable>
+      <View style={s.contentWrapper}>
+        {/* Header */}
+        <View style={s.header}>
+          <View>
+            <Text style={s.title}>Como quer criar o cupom?</Text>
+            <Text style={s.subtitle}>Escolha uma ideia de sucesso ou configure do zero</Text>
           </View>
+          <Pressable onPress={onClose} style={s.closeBtn}>
+            <Ionicons name="close" size={20} color={COLORS.text} />
+          </Pressable>
+        </View>
 
-          <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
             {/* Opção Criar do Zero */}
             <Pressable style={s.scratchCard} onPress={handleScratch}>
               <View style={s.scratchIconBox}>
@@ -114,24 +118,21 @@ export default function CouponTemplateSelectorModal({
               </Pressable>
             ))}
           </ScrollView>
+          <ThemedAlertHost />
         </View>
-      </View>
-    </Modal>
+    </SwipeableBottomSheetModal>
   );
 }
 
 const s = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
   sheet: {
     backgroundColor: COLORS.background,
     borderTopLeftRadius: RADIUS['2xl'],
     borderTopRightRadius: RADIUS['2xl'],
-    maxHeight: '88%',
-    paddingBottom: SPACING[6],
+    overflow: 'hidden',
+  },
+  contentWrapper: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',

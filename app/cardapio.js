@@ -10,12 +10,13 @@ import {
   ScrollView,
   Animated,
 } from 'react-native';
-import { useState, useRef, useEffect, memo } from 'react';
+import { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image as ExpoImage } from 'expo-image';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../constants/theme';
+import { CardapioGridSkeleton } from '../components/Skeleton';
 import { useProductRanking } from '../hooks/useProductRanking';
 import { useBuscarProdutos } from '../hooks/useProdutos';
 import { useCart } from '../utils/cartStore';
@@ -237,6 +238,9 @@ export default function Cardapio() {
     setTabAtiva((prev) => (prev === atual ? prev : atual));
   };
 
+  const renderBuscadoItem = useCallback(({ item }) => <ProdutoCard produto={item} />, []);
+  const keyExtractorBuscado = useCallback((item) => String(item.id), []);
+
   return (
     <View style={s.screen}>
 
@@ -308,18 +312,20 @@ export default function Cardapio() {
       {buscando ? (
         // busca ativa: some com as seções e mostra resultado em grade, igual antes
         lBusca ? (
-          <View style={s.center}>
-            <ActivityIndicator size="large" color={COLORS.primary} />
-          </View>
+          <CardapioGridSkeleton count={4} />
         ) : (
           <FlatList
             data={buscados}
-            keyExtractor={(item) => String(item.id)}
-            renderItem={({ item }) => <ProdutoCard produto={item} />}
+            keyExtractor={keyExtractorBuscado}
+            renderItem={renderBuscadoItem}
             numColumns={2}
             columnWrapperStyle={s.row}
             contentContainerStyle={s.listContent}
             showsVerticalScrollIndicator={false}
+            initialNumToRender={6}
+            maxToRenderPerBatch={6}
+            windowSize={5}
+            removeClippedSubviews={true}
             ListEmptyComponent={
               <View style={s.center}>
                 <Ionicons name="storefront-outline" size={44} color={COLORS.border} />
@@ -330,9 +336,7 @@ export default function Cardapio() {
           />
         )
       ) : loading ? (
-        <View style={s.center}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-        </View>
+        <CardapioGridSkeleton count={6} />
       ) : (
         // sem busca: rola descendo e as seções vão aparecendo, batata sempre
         // primeiro, cada uma ordenada do produto mais pedido pro menos pedido

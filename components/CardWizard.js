@@ -23,6 +23,7 @@ import Animated, {
   Extrapolation,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import ThreeDotsLoader from './ThreeDotsLoader';
 import { useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
 import { Ionicons, FontAwesome } from '@expo/vector-icons';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS } from '../constants/theme';
@@ -505,7 +506,7 @@ export default function CardWizard({ cardType, existingCardsCount, addCard, savi
             disabled={savingCard || validatingCard}
           >
             {(savingCard && isLastStep) || validatingCard ? (
-              <ActivityIndicator color={COLORS.white} />
+              <ThreeDotsLoader color={COLORS.white} dotSize={7} />
             ) : (
               <Text style={s.btnPrimaryText}>{isLastStep ? 'Salvar Cartão' : 'Próximo'}</Text>
             )}

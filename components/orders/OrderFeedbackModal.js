@@ -1,3 +1,4 @@
+import ThreeDotsLoader from '../ThreeDotsLoader';
 /**
  * components/orders/OrderFeedbackModal.js
  *
@@ -276,7 +277,7 @@ export default function OrderFeedbackModal({
               disabled={submitting}
             >
               {submitting ? (
-                <ActivityIndicator color="#1F1B16" />
+                <ThreeDotsLoader color="#1F1B16" dotSize={7} />
               ) : (
                 <Text style={styles.submitBtnText}>Enviar avaliação</Text>
               )}

@@ -15,11 +15,12 @@ import {
   AppState,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../../constants/theme';
+import { PedidoDetalhesSkeleton } from '../../components/Skeleton';
 import { usePedidos } from '../../hooks/usePedidos';
 import { supabase } from '../../supabaseConfig';
 import { checkPixStatus, createPixPayment } from '../../utils/mercadoPago';
@@ -31,6 +32,7 @@ import { useModalFade } from '../../hooks/useModalFade';
 import { useSafeAreaInsets, SafeAreaProvider } from 'react-native-safe-area-context';
 import { notifyAdminNewOrder } from '../../utils/notifyNewOrder';
 import { STORE_ADDRESS } from '../../constants/store';
+import ThreeDotsLoader from '../../components/ThreeDotsLoader';
 
 import AnimatedReanimated, {
   useSharedValue,
@@ -42,11 +44,12 @@ import AnimatedReanimated, {
   Easing,
   interpolate,
   Extrapolation,
+  cancelAnimation,
 } from 'react-native-reanimated';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// ─── Efeito de Confete Estilo InfinitePay (Explosão do Centro pros Lados) ─────
+// ─── Efeito de Confete Estilo InfinitePay (Canhão Central + Queda Sinuosa) ───
 const CONFETTI_COLORS = [
   '#FFB800', // Dourado Batata Top
   '#16A34A', // Verde Aprovação
@@ -62,61 +65,125 @@ const CONFETTI_COLORS = [
 
 const CONFETTI_COUNT = 72;
 
+const randSign = () => (Math.random() > 0.5 ? 1 : -1);
+
+// Resolve a velocidade vertical inicial (px/s) para que, sob gravidade + arrasto
+// linear do ar, a peça suba exatamente `rise` px até o ápice.
+// Altura do ápice: h(v0) = τ·v0 − vt·τ·ln(1 + v0/vt)  (convexa e crescente em v0)
+// Newton-Raphson com número FIXO de iterações (sem loop aberto): partindo de um
+// chute à direita da raiz, a convexidade garante convergência monotônica.
+const LAUNCH_SOLVER_ITERATIONS = 8;
+function solveLaunchVelocity(rise, tau, terminalVel) {
+  let v = rise / tau + terminalVel * 3;
+  for (let k = 0; k < LAUNCH_SOLVER_ITERATIONS; k++) {
+    const f = tau * v - terminalVel * tau * Math.log(1 + v / terminalVel) - rise;
+    const df = (tau * v) / (terminalVel + v);
+    if (df <= 0) break;
+    const next = v - f / df;
+    if (!(next > 0) || Math.abs(next - v) < 0.01) {
+      v = next > 0 ? next : v;
+      break;
+    }
+    v = next;
+  }
+  return v;
+}
+
 function generateConfettiPieces(width, height) {
+  // Canhão: ponto único no centro exato da tela (todas as peças nascem aqui)
   const originX = width * 0.5;
-  const originY = height * 0.44;
+  const originY = height * 0.5;
+  // Meia-largura máxima do feixe durante a subida (coluna estreita, sem leque)
+  const beamHalfWidth = width * 0.018;
 
   return Array.from({ length: CONFETTI_COUNT }).map((_, i) => {
-    // Metade espalha para o lado esquerdo e metade para o lado direito
-    const isLeft = i % 2 === 0;
-    const sideSign = isLeft ? -1 : 1;
+    // Leque estratificado de -1 (borda esquerda) a +1 (borda direita), sem buracos
+    const u = ((i + Math.random()) / CONFETTI_COUNT) * 2 - 1;
+    const lateral = Math.sign(u) * Math.pow(Math.abs(u), 0.85);
 
-    // Distribui uniformemente pelo leque do centro para as bordas
-    const band = Math.floor(i / 2) / (CONFETTI_COUNT / 2);
-    const spreadFactor = 0.06 + Math.pow(band, 0.85) * 0.40 + (Math.random() - 0.5) * 0.05;
-    const spreadX = sideSign * width * spreadFactor;
+    // Formatos: tiras de papel (maioria), quadrados e círculos
+    const shapeRoll = Math.random();
+    const shape = shapeRoll < 0.5 ? 'rect' : shapeRoll < 0.8 ? 'square' : 'circle';
 
-    // Peças internas sobem mais alto formando um arco/domo
-    const archBoost = 1 - Math.min(1, Math.abs(spreadFactor) * 1.15);
-    const peakLift = height * (0.20 + archBoost * 0.13 + Math.random() * 0.06);
-    const fallTotal = height * (0.36 + Math.random() * 0.16);
+    // "Peso" da peça: tiras freiam mais no ar e caem mais devagar que círculos
+    const dragTau =
+      (shape === 'circle' ? 0.34 : shape === 'square' ? 0.31 : 0.28) + Math.random() * 0.05;
+    const terminalVel =
+      height * ((shape === 'circle' ? 0.58 : shape === 'square' ? 0.5 : 0.44) + Math.random() * 0.1);
 
+    // Vetor de subida: centro sobe até o topo (~4-6% da altura); peças destinadas às
+    // bordas param um pouco antes, desenhando o "chapéu" do cogumelo na abertura
+    const rise = height * (0.44 - 0.12 * lateral * lateral + (Math.random() - 0.5) * 0.05);
+    const launchVy = solveLaunchVelocity(rise, dragTau, terminalVel);
+    const apexTime = dragTau * Math.log(1 + launchVy / terminalVel);
+
+    // Espalhamento atrasado: só começa nos últimos 20% do tempo de subida
+    const spreadStart = apexTime * 0.8;
+    const spreadTau = 0.2 + Math.random() * 0.08;
+    const targetX = lateral * width * 0.52;
+    const beamX = lateral * beamHalfWidth;
+
+    // Oscilação de descida (folha/cobra): tiras balançam mais largo e mais lento
+    const flutterAmp =
+      shape === 'rect'
+        ? 22 + Math.random() * 18
+        : shape === 'square'
+          ? 16 + Math.random() * 14
+          : 8 + Math.random() * 8;
+    const flutterFreq = shape === 'rect' ? 1.1 + Math.random() * 0.5 : 1.4 + Math.random() * 0.6;
+    const flutterPhase = Math.random() * Math.PI * 2;
+    const tiltMax = shape === 'rect' ? 38 : shape === 'square' ? 28 : 0;
+
+    // Rotação: giro forte no disparo, freado pelo ar, + tombamento contínuo na queda
+    const burstSpinZ = randSign() * (200 + Math.random() * 220);
+    const driftSpinZ = randSign() * (20 + Math.random() * 40);
+    const burstFlipX = randSign() * (180 + Math.random() * 180);
+    const flipRateX = randSign() * (1.2 + Math.random() * 1.4);
+    const flipRateY = randSign() * (0.4 + Math.random() * 0.6);
+
+    // Tempos mantidos idênticos ao original
     const duration = 2150 + Math.floor(Math.random() * 450);
     const delay = Math.floor(Math.random() * 90);
-    const snakeAmp = 36 + Math.random() * 30;
-    const snakeCycles = 1.7 + Math.random() * 0.9;
-    const swingPhase = Math.random() * Math.PI * 2;
 
-    const color = CONFETTI_COLORS[i % CONFETTI_COLORS.length];
-    const shape = i % 3 === 0 ? 'rect' : i % 3 === 1 ? 'square' : 'circle';
-    const size = 8 + Math.floor(Math.random() * 5);
-    const spinZ = (Math.random() > 0.5 ? 1 : -1) * (180 + Math.random() * 240);
-    const spinX = (Math.random() > 0.5 ? 1 : -1) * (360 + Math.random() * 360);
-    const spinY = (Math.random() > 0.5 ? 1 : -1) * (360 + Math.random() * 360);
+    const color = CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)];
+    const size =
+      shape === 'rect'
+        ? 6 + Math.floor(Math.random() * 3)
+        : shape === 'square'
+          ? 8 + Math.floor(Math.random() * 4)
+          : 7 + Math.floor(Math.random() * 3);
 
     return {
       id: i,
       startX: originX,
       startY: originY,
-      spreadX,
-      peakLift,
-      fallTotal,
+      beamX,
+      targetX,
+      spreadStart,
+      spreadTau,
+      launchVy,
+      dragTau,
+      terminalVel,
+      apexTime,
+      flutterAmp,
+      flutterFreq,
+      flutterPhase,
+      tiltMax,
+      burstSpinZ,
+      driftSpinZ,
+      burstFlipX,
+      flipRateX,
+      flipRateY,
       duration,
       color,
       shape,
       size,
       delay,
-      spinZ,
-      spinX,
-      spinY,
-      snakeAmp,
-      snakeCycles,
-      swingPhase,
     };
   });
 }
 
-function ConfettiPiece({ piece, active }) {
+const ConfettiPiece = memo(function ConfettiPiece({ piece, active }) {
   const progress = useSharedValue(0);
 
   useEffect(() => {
@@ -127,51 +194,73 @@ function ConfettiPiece({ piece, active }) {
         withTiming(1, { duration: piece.duration, easing: Easing.linear })
       );
     } else {
+      cancelAnimation(progress);
       progress.value = 0;
     }
+    // Limpeza: interrompe a animação nativa se a peça desmontar no meio do voo
+    return () => {
+      cancelAnimation(progress);
+    };
   }, [active, piece.delay, piece.duration, progress]);
 
+  // Worklet puro (thread de UI): só aritmética O(1) por frame, sem loops nem alocação extra
   const animatedStyle = useAnimatedStyle(() => {
     const p = progress.value;
-    // 1. Explosão inicial do centro para cima e abertura pros lados (~0.45s)
-    const riseProgress = 1 - Math.pow(1 - Math.min(p / 0.21, 1), 2.2);
-    const spreadProgress = 1 - Math.pow(1 - Math.min(p / 0.26, 1), 1.9);
+    // Tempo físico real em segundos (progress linear × duração da peça)
+    const t = (p * piece.duration) / 1000;
+    const tau = piece.dragTau;
+    const vt = piece.terminalVel;
+    const dragDecay = 1 - Math.exp(-t / tau);
 
-    // 2. Descida suave escorregando de um lado pro outro que nem cobra (~1.6s a 2.0s)
-    const fallP = Math.max(0, (p - 0.16) / 0.84);
-    const snakeEnvelope = Math.min(1, fallP * 3.2);
-    const snakeAngle = fallP * piece.snakeCycles * Math.PI * 2 + piece.swingPhase;
-    const snakeSlideX = Math.sin(snakeAngle) * piece.snakeAmp * snakeEnvelope;
+    // 1. Feixe vertical unificado: balística com arrasto linear a partir do ponto único
+    //    y(t) = (v0 + vt)·τ·(1 − e^(−t/τ)) − vt·t   (positivo = para cima)
+    const lift = (piece.launchVy + vt) * tau * dragDecay - vt * t;
+    const beamX = piece.beamX * dragDecay;
 
-    // Leve sustentação nas curvas laterais para dar sensação de escorregar no ar
-    const glideStepY = Math.sin(snakeAngle * 2) * 8 * snakeEnvelope;
-    const fallDistance = piece.fallTotal * Math.pow(fallP, 1.18) + glideStepY;
+    // 2. Explosão atrasada no topo: o eixo X fica retido até spreadStart e então abre
+    //    em leque com arrasto próprio (impulso lateral forte que satura em targetX)
+    const spreadT = t - piece.spreadStart;
+    const spreadX = spreadT > 0 ? piece.targetX * (1 - Math.exp(-spreadT / piece.spreadTau)) : 0;
 
-    const currentX = piece.startX + piece.spreadX * spreadProgress + snakeSlideX;
-    const currentY = piece.startY - piece.peakLift * riseProgress + fallDistance;
+    // 3. Queda sinuosa (cobra/folha): oscilação só nasce após o ápice, na velocidade terminal
+    const fallT = t - piece.apexTime;
+    let flutterX = 0;
+    let flutterY = 0;
+    let tiltDeg = 0;
+    if (fallT > 0) {
+      const flutterEnv = 1 - Math.exp(-fallT / 0.35);
+      const flutterAngle = fallT * piece.flutterFreq * Math.PI * 2 + piece.flutterPhase;
+      const swing = piece.flutterAmp * flutterEnv;
+      flutterX = Math.sin(flutterAngle) * swing;
+      // Sustentação nas pontas do balanço (sobe levemente) e mergulho no meio da curva
+      flutterY = Math.cos(flutterAngle * 2) * swing * 0.2;
+      // Inclinação acompanha a velocidade lateral do balanço (derivada do seno)
+      tiltDeg = Math.cos(flutterAngle) * piece.tiltMax * flutterEnv;
+    }
 
-    // Inclinação lateral acompanhando a curva da cobrinha escorregando
-    const snakeTiltDeg = Math.cos(snakeAngle) * 28 * snakeEnvelope;
+    const currentX = piece.startX + beamX + spreadX + flutterX;
+    const currentY = piece.startY - lift + flutterY;
 
-    // 3. Se desfaz suavemente no ar após ~1.5s-2s na tela
+    // 4. Fade final completo antes do desmonte do overlay (3020ms)
     const opacity = interpolate(
       p,
-      [0, 0.05, 0.70, 0.88, 1],
-      [0, 1, 1, 0.45, 0],
+      [0, 0.03, 0.78, 0.95, 1],
+      [0, 1, 1, 0, 0],
       Extrapolation.CLAMP
     );
     const scale = interpolate(
       p,
-      [0, 0.08, 0.72, 1],
-      [0.25, 1.12, 1.0, 0.45],
+      [0, 0.06, 0.14, 1],
+      [0.3, 1.15, 1.0, 0.9],
       Extrapolation.CLAMP
     );
-    const rotateZ = `${p * piece.spinZ + snakeTiltDeg}deg`;
-    const rotateX = `${p * piece.spinX}deg`;
-    const rotateY = `${p * piece.spinY}deg`;
+    const rotateZ = `${piece.burstSpinZ * dragDecay + piece.driftSpinZ * t + tiltDeg}deg`;
+    const rotateX = `${piece.burstFlipX * dragDecay + piece.flipRateX * 360 * t}deg`;
+    const rotateY = `${piece.flipRateY * 360 * t}deg`;
 
     return {
       transform: [
+        { perspective: 800 },
         { translateX: currentX },
         { translateY: currentY },
         { rotateZ },
@@ -197,24 +286,40 @@ function ConfettiPiece({ piece, active }) {
           top: 0,
           left: 0,
           width: piece.size,
-          height: isRect ? piece.size * 2 : piece.size,
+          height: isRect ? piece.size * 2.2 : piece.size,
           backgroundColor: piece.color,
-          borderRadius: isCircle ? piece.size / 2 : 2,
+          borderRadius: isCircle ? piece.size / 2 : isRect ? 1.5 : 2,
           zIndex: 99998,
         },
         animatedStyle,
       ]}
     />
   );
-}
+});
 
-function ConfettiExplosion({ active }) {
+// memo: re-renders da tela (realtime do pedido, setPedido pós-Pix) não re-renderizam as 72 peças
+const ConfettiExplosion = memo(function ConfettiExplosion({ active }) {
+  // Física pré-calculada uma única vez na montagem da tela, fora do momento do pagamento
   const pieces = useMemo(
     () => generateConfettiPieces(SCREEN_WIDTH, SCREEN_HEIGHT),
     []
   );
+  // Interrompido localmente se o app for para segundo plano durante a explosão.
+  // Não altera showConfetti do pai: os timers de 420ms/3020ms seguem intactos.
+  const [interrupted, setInterrupted] = useState(false);
 
-  if (!active) return null;
+  useEffect(() => {
+    if (!active) {
+      setInterrupted(false);
+      return undefined;
+    }
+    const sub = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'background') setInterrupted(true);
+    });
+    return () => sub.remove();
+  }, [active]);
+
+  if (!active || interrupted) return null;
 
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
@@ -223,7 +328,7 @@ function ConfettiExplosion({ active }) {
       ))}
     </View>
   );
-}
+});
 
 // ─── Componente de Bolinha Pulsante (Efeito Radar iFood) ─────────────────────
 
@@ -1227,9 +1332,9 @@ export default function DetalhesPedido() {
   // ── Loading ──────────────────────────────────────────────────────────────────
   if ((initialLoading && !pedido) || (!pedido && !erro)) {
     return (
-      <View style={s.centered}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={s.loadingText}>Carregando pedido...</Text>
+      <View style={{ flex: 1, backgroundColor: COLORS.backgroundLight }}>
+        <StatusBar barStyle="dark-content" />
+        <PedidoDetalhesSkeleton />
       </View>
     );
   }
@@ -1395,7 +1500,7 @@ export default function DetalhesPedido() {
               disabled={confirmingDelivered}
             >
               {confirmingDelivered ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
+                <ThreeDotsLoader color="#FFFFFF" dotSize={7} />
               ) : (
                 <>
                   <Ionicons name="checkmark-done" size={18} color="#FFFFFF" />
@@ -1467,7 +1572,7 @@ export default function DetalhesPedido() {
               >
                 {generatingPix ? (
                   <>
-                    <ActivityIndicator size="small" color="#FFB800" />
+                    <ThreeDotsLoader color="#FFB800" dotSize={7} />
                     <Text style={s.qrFallbackTitle}>Gerando QR Code Pix...</Text>
                     <Text style={s.qrFallbackSub}>Aguarde alguns instantes</Text>
                   </>
@@ -1711,7 +1816,7 @@ export default function DetalhesPedido() {
               disabled={cancelling}
             >
               {cancelling ? (
-                <ActivityIndicator size="small" color="#DC2626" />
+                <ThreeDotsLoader color="#DC2626" dotSize={7} />
               ) : (
                 <>
                   <Ionicons name="close-circle-outline" size={18} color="#DC2626" />

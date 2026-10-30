@@ -40,9 +40,10 @@ export default function CartScreen() {
     ) {
       isRedirectingRef.current = true;
       router.replace('/');
+      // Disparado com pequeno delay para ser exibido pelo ThemedAlertHost global do _layout após transição da rota
       setTimeout(() => {
         showErrorAlert('Sua sacola ficou vazia.', 'Sem itens no pedido');
-      }, 250);
+      }, 300);
     }
   }, [flow.items.length, flow.step, flow.submitting, flow.orderCompleted, flow.isOrderFinishingRef, router]);
 

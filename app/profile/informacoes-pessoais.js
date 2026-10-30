@@ -1,3 +1,4 @@
+import ThreeDotsLoader from '../../components/ThreeDotsLoader';
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -5,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../../supabaseConfig';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS } from '../../constants/theme';
+import { FormFieldsSkeleton } from '../../components/Skeleton';
 import { showThemedAlert, ThemedAlertHost } from '../../components/ThemedAlert';
 
 // Máscara 000.000.000-00 enquanto digita.
@@ -129,8 +131,8 @@ export default function InformacoesPessoais() {
 
   if (loading) {
     return (
-      <SafeAreaView style={s.loadingContainer} edges={['top']}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+      <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.white }} edges={['top']}>
+        <FormFieldsSkeleton count={3} />
       </SafeAreaView>
     );
   }
@@ -202,7 +204,7 @@ export default function InformacoesPessoais() {
           onPress={handleUpdate}
         >
           {saving ? (
-            <ActivityIndicator color={COLORS.text} />
+            <ThreeDotsLoader color={COLORS.text} dotSize={7} />
           ) : (
             <Text style={[s.btnFilledText, !canSave && s.btnTextDisabled]}>Atualizar</Text>
           )}

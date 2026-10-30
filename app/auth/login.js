@@ -1,3 +1,4 @@
+import ThreeDotsLoader from '../../components/ThreeDotsLoader';
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
@@ -395,7 +396,7 @@ export default function LoginScreen() {
                 disabled={googleLoading || loading}
               >
                 {googleLoading ? (
-                  <ActivityIndicator color={COLORS.text} size="small" />
+                  <ThreeDotsLoader color={COLORS.text} dotSize={7} />
                 ) : (
                   <>
                     <Ionicons name="logo-google" size={20} color={COLORS.text} style={styles.googleIcon} />
@@ -535,8 +536,18 @@ export default function LoginScreen() {
                 <>
                   <Text style={styles.termsText}>
                     Ao continuar, você concorda com os{' '}
-                    <Text style={styles.termsLink}>Termos de Uso</Text> e confirma que leu nossa{' '}
-                    <Text style={styles.termsLink}>Política de Privacidade do Batata Top</Text>.
+                    <Text
+                      style={styles.termsLink}
+                      onPress={() => router.push({ pathname: '/ajuda/artigo/termos-de-uso', params: { headerTitle: 'TERMOS DE USO' } })}
+                    >
+                      Termos de Uso
+                    </Text> e confirma que leu nossa{' '}
+                    <Text
+                      style={styles.termsLink}
+                      onPress={() => router.push({ pathname: '/ajuda/artigo/declaracao-de-privacidade', params: { headerTitle: 'DECLARAÇÃO DE PRIVACIDADE' } })}
+                    >
+                      Política de Privacidade do Batata Top
+                    </Text>.
                   </Text>
                 </>
               )}
@@ -549,7 +560,7 @@ export default function LoginScreen() {
                 disabled={!isFooterValid || footerLoading}
               >
                 {footerLoading ? (
-                  <ActivityIndicator color={isFooterValid ? COLORS.text : '#AAAAAA'} />
+                  <ThreeDotsLoader color={isFooterValid ? "#FFFFFF" : "#AAAAAA"} dotSize={7} />
                 ) : (
                   <Text
                     style={[

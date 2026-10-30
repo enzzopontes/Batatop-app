@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../constants/theme';
 import SwipeableBottomSheetModal from './SwipeableBottomSheetModal';
+import PrimaryButton from './PrimaryButton';
 
 type Props = {
   visible: boolean;
@@ -47,9 +48,11 @@ export default function NoAddressModal({ visible, onClose, onCadastrar }: Props)
         Cadastre um endereço de entrega pra continuar com o seu pedido.
       </Text>
 
-      <Pressable style={s.button} onPress={onCadastrar}>
-        <Text style={s.buttonText}>Cadastrar endereço</Text>
-      </Pressable>
+      <PrimaryButton
+        title="Cadastrar endereço"
+        onPress={onCadastrar}
+        fullWidth
+      />
     </SwipeableBottomSheetModal>
   );
 }

@@ -801,7 +801,10 @@ export function useCheckoutFlow() {
                 .from('profiles')
                 .update({ cpf: cardCpf.replace(/\D/g, '') })
                 .eq('id', session.user.id)
-                .then(() => {});
+                .then(
+                  () => {},
+                  (err) => console.warn('[useCheckoutFlow] Erro profiles.update cpf:', err)
+                );
             }
 
             cardResult = await chargeWithSavedCard({
@@ -896,9 +899,12 @@ export function useCheckoutFlow() {
         supabase
           .from('profiles')
           .upsert({ id: session.user.id, phone: phoneToSave }, { onConflict: 'id' })
-          .then(({ error }) => {
-            if (error) console.warn('[useCheckoutFlow] Falha ao atualizar telefone em profiles:', error);
-          });
+          .then(
+            ({ error }) => {
+              if (error) console.warn('[useCheckoutFlow] Falha ao atualizar telefone em profiles:', error);
+            },
+            (err) => console.warn('[useCheckoutFlow] Erro profiles.upsert:', err)
+          );
 
         supabase.auth
           .updateUser({

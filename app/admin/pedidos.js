@@ -1,3 +1,4 @@
+import ThreeDotsLoader from '../../components/ThreeDotsLoader';
 import {
   View, Text, ScrollView, StyleSheet, Pressable,
   ActivityIndicator, RefreshControl, Modal, Linking, Share, Platform,
@@ -12,7 +13,9 @@ import * as Haptics from 'expo-haptics';
 import { startMaraTracking, stopMaraTracking, subscribeTrackingStatus } from '../../utils/maraTrackingEngine';
 import { playNewOrderSound } from '../../utils/notificationSound';
 import { syncAdminPushRegistration } from '../../utils/pushNotifications';
-import { showThemedAlert } from '../../components/ThemedAlert';
+import { showThemedAlert, ThemedAlertHost } from '../../components/ThemedAlert';
+import SwipeableBottomSheetModal from '../../components/SwipeableBottomSheetModal';
+import { AdminListSkeleton } from '../../components/Skeleton';
 
 // ─── Design Tokens Batata Top / iFood Gestor ────────────────────────
 const COLORS = {
@@ -485,7 +488,7 @@ export default function AdminPedidos() {
           disabled={togglingTracking}
         >
           {togglingTracking ? (
-            <ActivityIndicator size="small" color="#FFF" />
+            <ThreeDotsLoader color="#FFF" dotSize={7} />
           ) : (
             <Ionicons
               name={trackingState.isRunning ? 'stop' : 'navigate'}
@@ -547,10 +550,7 @@ export default function AdminPedidos() {
 
       {/* Lista de Pedidos */}
       {loading ? (
-        <View style={s.center}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={s.loadingText}>Carregando pedidos do dia...</Text>
-        </View>
+        <AdminListSkeleton count={4} />
       ) : (
         <ScrollView
           style={s.list}
@@ -809,7 +809,7 @@ function ActionBtn({ label, icon, color, outline, loading, onPress }) {
       disabled={loading}
     >
       {loading ? (
-        <ActivityIndicator size="small" color={outline ? color : '#FFF'} />
+        <ThreeDotsLoader color={outline ? color : '#FFF'} dotSize={7} />
       ) : (
         <>
           <Ionicons name={icon} size={14} color={outline ? color : '#FFF'} />
@@ -834,18 +834,16 @@ function OrderModal({ visible, order, cfg, updatingId, onClose, onStatusChange, 
   };
 
   return (
-    <Modal
+    <SwipeableBottomSheetModal
       visible={visible}
-      animationType="slide"
-      statusBarTranslucent
-      navigationBarTranslucent
-      presentationStyle="pageSheet"
       onRequestClose={onClose}
+      backdropColor="rgba(0,0,0,0.5)"
+      contentStyle={[s.sheet, { height: '92%', maxHeight: '92%' }]}
+      scrollable
     >
-      <SafeAreaProvider>
-        <View style={s.modalContainer}>
-          {/* Header do Modal */}
-          <View style={[s.modalHeader, { backgroundColor: c.color }]}>
+      <View style={s.modalContainer}>
+        {/* Header do Modal */}
+        <View style={[s.modalHeader, { backgroundColor: c.color }]}>
             <View>
               <Text style={s.modalTitle}>Pedido #{order.orderNumber}</Text>
               <View style={s.modalStatusRow}>
@@ -980,7 +978,7 @@ function OrderModal({ visible, order, cfg, updatingId, onClose, onStatusChange, 
                     disabled={updatingId === order.id}
                   >
                     {updatingId === order.id ? (
-                      <ActivityIndicator color="#FFF" />
+                      <ThreeDotsLoader color="#FFF" dotSize={7} />
                     ) : (
                       <>
                         <Ionicons name="flame-outline" size={18} color="#FFF" />
@@ -996,7 +994,7 @@ function OrderModal({ visible, order, cfg, updatingId, onClose, onStatusChange, 
                     disabled={updatingId === order.id}
                   >
                     {updatingId === order.id ? (
-                      <ActivityIndicator color="#FFF" />
+                      <ThreeDotsLoader color="#FFF" dotSize={7} />
                     ) : (
                       <>
                         <Ionicons name="checkmark-circle-outline" size={18} color="#FFF" />
@@ -1012,7 +1010,7 @@ function OrderModal({ visible, order, cfg, updatingId, onClose, onStatusChange, 
                     disabled={updatingId === order.id}
                   >
                     {updatingId === order.id ? (
-                      <ActivityIndicator color="#FFF" />
+                      <ThreeDotsLoader color="#FFF" dotSize={7} />
                     ) : (
                       <>
                         <Ionicons name="bicycle-outline" size={18} color="#FFF" />
@@ -1028,7 +1026,7 @@ function OrderModal({ visible, order, cfg, updatingId, onClose, onStatusChange, 
                     disabled={updatingId === order.id}
                   >
                     {updatingId === order.id ? (
-                      <ActivityIndicator color="#FFF" />
+                      <ThreeDotsLoader color="#FFF" dotSize={7} />
                     ) : (
                       <>
                         <Ionicons name="checkmark-done-outline" size={18} color="#FFF" />
@@ -1053,9 +1051,9 @@ function OrderModal({ visible, order, cfg, updatingId, onClose, onStatusChange, 
               <Text style={s.deleteOrderText}>Excluir Pedido Permanentemente</Text>
             </Pressable>
           </ScrollView>
+          <ThemedAlertHost />
         </View>
-      </SafeAreaProvider>
-    </Modal>
+    </SwipeableBottomSheetModal>
   );
 }
 
@@ -1124,6 +1122,7 @@ function ThermalReceiptModal({ visible, order, onClose, onShare }) {
               <Text style={s.receiptShareBtnText}>Imprimir / Compartilhar</Text>
             </Pressable>
           </View>
+          <ThemedAlertHost />
         </View>
       </View>
     </Modal>
@@ -1408,6 +1407,12 @@ const s = StyleSheet.create({
   actionBtnText: { color: '#FFF', fontSize: 12, fontWeight: '800' },
 
   // Modal de Detalhes
+  sheet: {
+    backgroundColor: COLORS.bg,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+  },
   modalContainer: { flex: 1, backgroundColor: COLORS.bg },
   modalHeader: {
     flexDirection: 'row',
@@ -1659,7 +1664,7 @@ const s = StyleSheet.create({
   // Modal Comanda Térmica
   receiptBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 16,

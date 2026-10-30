@@ -1,3 +1,4 @@
+import ThreeDotsLoader from '../../components/ThreeDotsLoader';
 import {
   View, Text, ScrollView, StyleSheet, Pressable,
   ActivityIndicator, Alert, Image, TextInput, Modal,
@@ -10,6 +11,8 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Clipboard from 'expo-clipboard';
 import { supabase } from '../../supabaseConfig';
 import * as Haptics from 'expo-haptics';
+import { AdminListSkeleton } from '../../components/Skeleton';
+import { ThemedAlertHost } from '../../components/ThemedAlert';
 
 const CATEGORIES = [
   { key: 'all', label: 'Todas' },
@@ -243,7 +246,7 @@ export default function AdminImagens() {
           >
             {uploading ? (
               <View style={s.uploadingRow}>
-                <ActivityIndicator color="#FFF" size="small" />
+                <ThreeDotsLoader color="#FFF" dotSize={7} />
                 <Text style={s.uploadActionBtnText}>Enviando imagem...</Text>
               </View>
             ) : (
@@ -298,11 +301,8 @@ export default function AdminImagens() {
 
         {/* Grid de Imagens */}
         {loading ? (
-          <View style={s.centerLoading}>
-            <ActivityIndicator size="large" color="#E3A008" />
-            <Text style={s.loadingText}>Carregando galeria...</Text>
-          </View>
-        ) : filteredImages.length === 0 ? (
+            <AdminListSkeleton count={4} />
+          ) : filteredImages.length === 0 ? (
           <View style={s.empty}>
             <View style={s.emptyIconContainer}>
               <Ionicons name="images-outline" size={40} color="#D1D5DB" />
@@ -380,7 +380,7 @@ export default function AdminImagens() {
       </ScrollView>
 
       {/* Deletion Confirmation Modal */}
-      <Modal visible={!!imageToDelete} transparent animationType="fade" onRequestClose={() => setImageToDelete(null)}>
+      <Modal visible={!!imageToDelete} transparent statusBarTranslucent animationType="fade" onRequestClose={() => setImageToDelete(null)}>
         <View style={s.modalOverlay}>
           <View style={s.modalContent}>
             <View style={s.modalHeader}>
@@ -430,7 +430,7 @@ export default function AdminImagens() {
                 disabled={isDeleting}
               >
                 {isDeleting ? (
-                  <ActivityIndicator size="small" color="#FFF" />
+                  <ThreeDotsLoader color="#FFF" dotSize={7} />
                 ) : (
                   <>
                     <Ionicons name="trash" size={16} color="#FFF" />
@@ -440,6 +440,7 @@ export default function AdminImagens() {
               </Pressable>
             </View>
           </View>
+          <ThemedAlertHost />
         </View>
       </Modal>
     </View>

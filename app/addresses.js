@@ -1,3 +1,4 @@
+import ThreeDotsLoader from '../components/ThreeDotsLoader';
 /**
  * addresses.js
  * Tela de endereços — página inteira, sem Modal.
@@ -15,9 +16,10 @@ import { useSafeAreaInsets, SafeAreaProvider } from 'react-native-safe-area-cont
 import { useNavContext } from './_layout';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming, Easing } from 'react-native-reanimated';
 import { useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../constants/theme';
+import { AddressesSkeleton, FormFieldsSkeleton } from '../components/Skeleton';
 import { useModalFade } from '../hooks/useModalFade';
 import { useBottomInset } from '../hooks/useBottomInset';
 import { supabase } from '../supabaseConfig';
@@ -123,7 +125,7 @@ function BuscaLogradouroModal({ visible, onClose, onSelect }) {
                 placeholder="Ex: Rua das Flores" placeholderTextColor={COLORS.textMuted}
                 autoFocus onSubmitEditing={buscar} returnKeyType="search" />
               <Pressable style={m.searchBtn} onPress={buscar}>
-                {loading ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="search" size={18} color="#fff" />}
+                {loading ? <ThreeDotsLoader color="#fff" dotSize={6} /> : <Ionicons name="search" size={18} color="#fff" />}
               </Pressable>
             </View>
             {!!error && <View style={m.errorRow}><Ionicons name="alert-circle-outline" size={14} color="#EF4444" /><Text style={m.errorText}>{error}</Text></View>}
@@ -243,31 +245,44 @@ function FavPill({ icon, text, active, onPress, styles }) {
   const [size, setSize] = useState({ w: 0, h: 0 });
   const originX = useSharedValue(0);
   const originY = useSharedValue(0);
+  const rippleRadius = useSharedValue(0);
   const progress = useSharedValue(0);
 
   const handlePressIn = (e) => {
-    originX.value = e.nativeEvent.locationX;
-    originY.value = e.nativeEvent.locationY;
+    const touchX = e.nativeEvent?.locationX ?? (size.w / 2);
+    const touchY = e.nativeEvent?.locationY ?? (size.h / 2);
+    originX.value = touchX;
+    originY.value = touchY;
+
+    const w = size.w > 0 ? size.w : 80;
+    const h = size.h > 0 ? size.h : 36;
+    const dx = Math.max(touchX, w - touchX);
+    const dy = Math.max(touchY, h - touchY);
+    rippleRadius.value = Math.sqrt(dx * dx + dy * dy);
+
     progress.value = 0;
-    progress.value = withTiming(1, { duration: 450 });
+    progress.value = withTiming(1, { duration: 380, easing: Easing.out(Easing.quad) });
   };
 
   const rippleStyle = useAnimatedStyle(() => {
-    const d = Math.max(size.w, size.h) * 2.4;
+    const r = rippleRadius.value;
+    const d = r * 2;
+    const opacity = progress.value <= 0 ? 0 : (1 - progress.value) * 0.95;
     return {
+      position: 'absolute',
       width: d,
       height: d,
-      borderRadius: d / 2,
-      left: originX.value - d / 2,
-      top: originY.value - d / 2,
-      opacity: 1 - progress.value,
+      borderRadius: r,
+      left: originX.value - r,
+      top: originY.value - r,
+      opacity,
       transform: [{ scale: progress.value }],
     };
   });
 
   return (
     <Pressable
-      style={[styles.favPill, active && styles.favPillOn]}
+      style={[styles.favPill, active && styles.favPillOn, rp.overflow]}
       onPress={onPress}
       onPressIn={handlePressIn}
       onLayout={(e) => setSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
@@ -280,7 +295,8 @@ function FavPill({ icon, text, active, onPress, styles }) {
 }
 
 const rp = StyleSheet.create({
-  ripple: { position: 'absolute', backgroundColor: COLORS.primary },
+  overflow: { overflow: 'hidden' },
+  ripple: { position: 'absolute', backgroundColor: 'rgba(181, 134, 10, 0.45)' },
 });
 
 // Field — componente estável (fora do AddressForm para não perder foco do TextInput a cada tecla)
@@ -417,7 +433,7 @@ function AddressForm({ onSave, onCancel, saving, initialValues }) {
             placeholder="00000-000" placeholderTextColor={COLORS.textMuted}
             keyboardType="numeric" maxLength={9} editable={!semCep}
           />
-          {cepLoading && !semCep && <ActivityIndicator size="small" color={COLORS.primary} style={ff.cepLoader} />}
+          {cepLoading && !semCep && <ThreeDotsLoader color={COLORS.primary} dotSize={5} style={ff.cepLoader} />}
         </View>
         {!!cepError && !semCep && <Text style={ff.fieldError}>{cepError}</Text>}
 
@@ -458,7 +474,7 @@ function AddressForm({ onSave, onCancel, saving, initialValues }) {
         </Pressable>
         <Pressable style={[ff.saveBtn, (saving || verifying) && { opacity: 0.7 }]} onPress={handleSave} disabled={saving || verifying}>
           {(saving || verifying)
-            ? <ActivityIndicator size="small" color="#fff" />
+            ? <ThreeDotsLoader color="#fff" dotSize={7} />
             : <View style={ff.saveBtnInner}><Ionicons name="checkmark" size={15} color="#fff" /><Text style={ff.saveText}>Salvar</Text></View>
           }
         </Pressable>
@@ -677,7 +693,7 @@ function AddressDetailsForm({ initialValues, onAdjustMarker, onSave, onBack, sav
           disabled={saving}
         >
           {saving
-            ? <ActivityIndicator color={isFormValid ? '#fff' : COLORS.textMuted} />
+            ? <ThreeDotsLoader color={isFormValid ? '#fff' : COLORS.textMuted} dotSize={7} />
             : <Text style={[df.submitText, !isFormValid && df.submitTextDisabled]}>{simplified ? 'Salvar endereço' : 'Ver batatas'}</Text>
           }
         </Pressable>
@@ -735,7 +751,7 @@ function LoggedInAddressesList({
         showsVerticalScrollIndicator={false}
       >
         {loading ? (
-          <View style={s.loader}><ActivityIndicator color={COLORS.primary} size="large" /></View>
+          <AddressesSkeleton />
         ) : addresses.length === 0 ? (
           <View style={s.empty}>
             <Ionicons name="location-outline" size={40} color={COLORS.border} />
@@ -1199,7 +1215,7 @@ export default function Addresses() {
             </View>
 
             {loading ? (
-              <View style={s.loader}><ActivityIndicator color={COLORS.primary} size="large" /></View>
+              <FormFieldsSkeleton count={4} />
             ) : (
               <AddressForm
                 onSave={handleSave}

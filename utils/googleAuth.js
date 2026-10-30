@@ -1,7 +1,6 @@
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { supabase } from '../supabaseConfig';
 import { SOFT_LOGOUT_KEY, emitAuthUiChange } from './authSession';
 
@@ -9,11 +8,32 @@ WebBrowser.maybeCompleteAuthSession();
 
 const SAVED_USER_KEY = '@batatatop:savedUser';
 
-GoogleSignin.configure({
-  webClientId:
-    process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ||
-    '620439334147-48i6mgc0ois3a83tppme6pkd7thii358.apps.googleusercontent.com',
-});
+let GoogleSignin = null;
+let statusCodes = {
+  SIGN_IN_CANCELLED: 'SIGN_IN_CANCELLED',
+  IN_PROGRESS: 'IN_PROGRESS',
+  PLAY_SERVICES_NOT_AVAILABLE: 'PLAY_SERVICES_NOT_AVAILABLE',
+  SIGN_IN_REQUIRED: 'SIGN_IN_REQUIRED',
+};
+let isNativeGoogleAvailable = false;
+
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const gSignin = require('@react-native-google-signin/google-signin');
+  if (gSignin && gSignin.GoogleSignin) {
+    GoogleSignin = gSignin.GoogleSignin;
+    statusCodes = { ...statusCodes, ...(gSignin.statusCodes || {}) };
+    GoogleSignin.configure({
+      webClientId:
+        process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ||
+        '620439334147-48i6mgc0ois3a83tppme6pkd7thii358.apps.googleusercontent.com',
+    });
+    isNativeGoogleAvailable = true;
+  }
+} catch (nativeErr) {
+  // TurboModule nativo não está presente no binário (Expo Go ou dev client sem o módulo nativo compilado)
+  console.log('ℹ️ [GoogleAuth] RNGoogleSignin nativo não disponível no binário. Usando fallback Web OAuth.');
+}
 
 /**
  * Salva sessão de login e atualiza perfil/storage local
@@ -62,6 +82,10 @@ async function finalizeLoginSession(session) {
  * Login nativo com Google Sign-In e fallback para Web OAuth
  */
 export async function signInWithNativeGoogle() {
+  if (!isNativeGoogleAvailable || !GoogleSignin) {
+    return signInWithSocial('google');
+  }
+
   let idToken = null;
   try {
     await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
@@ -76,17 +100,14 @@ export async function signInWithNativeGoogle() {
     }
   } catch (error) {
     if (
-      error.code === statusCodes.SIGN_IN_CANCELLED ||
-      error.code === '13' ||
-      error.message?.includes('cancelled')
+      error?.code === statusCodes?.SIGN_IN_CANCELLED ||
+      error?.code === '13' ||
+      error?.message?.includes('cancelled')
     ) {
       return { success: false, cancelled: true };
     }
-    console.error('❌ [GoogleAuth] Erro no GoogleSignin nativo:', error);
-    return {
-      success: false,
-      error: error.message || `Erro Google (${error.code || 'desconhecido'})`,
-    };
+    console.warn('⚠️ [GoogleAuth] Erro no GoogleSignin nativo, tentando fallback Web OAuth:', error?.message || error);
+    return signInWithSocial('google');
   }
 
   // Token obtido nativamente: autentica no Supabase sem abrir navegador
@@ -220,6 +241,11 @@ export async function signInWithSocial(provider = 'google') {
   }
 }
 
-export const signInWithGoogle = () => signInWithNativeGoogle();
+export const signInWithGoogle = () => {
+  if (isNativeGoogleAvailable && GoogleSignin) {
+    return signInWithNativeGoogle();
+  }
+  return signInWithSocial('google');
+};
 export const signInWithFacebook = () => signInWithSocial('facebook');
 

@@ -1,7 +1,9 @@
+import ThreeDotsLoader from '../../components/ThreeDotsLoader';
 import {
   View, Text, ScrollView, StyleSheet, Pressable,
-  ActivityIndicator, Alert, Modal, TextInput, Switch, Platform,
+  ActivityIndicator, Alert, Modal, TextInput, Switch, Platform, Image,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,6 +14,11 @@ import { checkIsAdmin } from '../../utils/isAdmin';
 import * as Haptics from 'expo-haptics';
 import * as Clipboard from 'expo-clipboard';
 import CouponTemplateSelectorModal from '../../components/admin/CouponTemplateSelectorModal';
+import SwipeableBottomSheetModal from '../../components/SwipeableBottomSheetModal';
+import { AdminListSkeleton } from '../../components/Skeleton';
+import { ThemedAlertHost, showSuccessAlert, showErrorAlert } from '../../components/ThemedAlert';
+import HomeCouponCard from '../../components/HomeCouponCard';
+import { Image as ExpoImage } from 'expo-image';
 
 // ─── Helpers de formatação e geração ────────────────────────────────
 function formatBR(value) {
@@ -134,6 +141,98 @@ export default function AdminCupons() {
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [availableCategories, setAvailableCategories] = useState([]);
   const [copiedId, setCopiedId] = useState(null);
+  const [libraryModalVisible, setLibraryModalVisible] = useState(false);
+  const [libraryImages, setLibraryImages] = useState([]);
+  const [loadingLibrary, setLoadingLibrary] = useState(false);
+  const [libraryCategory, setLibraryCategory] = useState('all'); // 'all' | 'products' | 'banners'
+
+  const loadLibraryImages = useCallback(async () => {
+    try {
+      setLoadingLibrary(true);
+      const list = [];
+
+      // 1. Produtos do cardápio com imagem (bucket Products)
+      const { data: dbProducts } = await supabase
+        .from('products')
+        .select('id, name, image_url, category')
+        .not('image_url', 'is', null);
+
+      if (Array.isArray(dbProducts)) {
+        dbProducts.forEach((p) => {
+          if (!p.image_url) return;
+          const cleanName = p.image_url.replace(/^\/products\//, '');
+          const pubUrl = `https://eucwoxjmjfqylyrqunwk.supabase.co/storage/v1/object/public/Products/${cleanName}`;
+          list.push({
+            id: `prod-${p.id}`,
+            name: p.name,
+            url: pubUrl,
+            previewUri: pubUrl,
+            category: 'products',
+            categoryLabel: p.category ? String(p.category).toUpperCase() : 'CARDÁPIO',
+          });
+        });
+      }
+
+      // 2. Imagens enviadas na galeria (uploaded_images)
+      const { data: dbImages } = await supabase
+        .from('uploaded_images')
+        .select('id, name, mime_type, category, data, uploaded_at')
+        .order('uploaded_at', { ascending: false });
+
+      if (Array.isArray(dbImages)) {
+        dbImages.forEach((img) => {
+          const apiBase = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatopiacanga.com.br';
+          const url = `${apiBase}/api/images/${img.id}`;
+          const previewUri = img.data
+            ? `data:${img.mime_type || 'image/jpeg'};base64,${img.data}`
+            : url;
+
+          list.push({
+            id: `upload-${img.id}`,
+            name: img.name || 'Galeria de Mídia',
+            url: previewUri,
+            previewUri,
+            category: 'banners',
+            categoryLabel: 'GALERIA',
+          });
+        });
+      }
+
+      // 3. Cupons com banner_image_url existente
+      const { data: bannerCoupons } = await supabase
+        .from('coupons')
+        .select('id, code, title, banner_image_url')
+        .not('banner_image_url', 'is', null);
+
+      if (Array.isArray(bannerCoupons)) {
+        bannerCoupons.forEach((c) => {
+          if (!c.banner_image_url) return;
+          if (!list.some(item => item.url === c.banner_image_url)) {
+            list.push({
+              id: `coupon-${c.id}`,
+              name: c.title || c.code || 'Banner Cadastrado',
+              url: c.banner_image_url,
+              previewUri: c.banner_image_url,
+              category: 'banners',
+              categoryLabel: 'BANNERS',
+            });
+          }
+        });
+      }
+
+      setLibraryImages(list);
+    } catch (err) {
+      console.warn('Erro ao carregar biblioteca de imagens:', err);
+    } finally {
+      setLoadingLibrary(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (libraryModalVisible) {
+      loadLibraryImages();
+    }
+  }, [libraryModalVisible, loadLibraryImages]);
 
   const loadCoupons = useCallback(async () => {
     try {
@@ -202,7 +301,9 @@ export default function AdminCupons() {
       maxUsesPerUser: tmpl.suggestedMaxUsesPerUser,
     });
     setForm(initialForm);
-    setModalVisible(true);
+    setTimeout(() => {
+      setModalVisible(true);
+    }, 180);
   };
 
   const handleSelectScratch = () => {
@@ -222,7 +323,9 @@ export default function AdminCupons() {
       maxUsesPerUser: '',
     });
     setForm(initialForm);
-    setModalVisible(true);
+    setTimeout(() => {
+      setModalVisible(true);
+    }, 180);
   };
 
   const openModal = (coupon = null) => {
@@ -302,7 +405,83 @@ export default function AdminCupons() {
     }
   };
 
+  const handlePickBannerImage = async () => {
+    try {
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permissionResult.granted) {
+        Alert.alert('Permissão necessária', 'Precisamos de permissão para acessar sua galeria.');
+        return;
+      }
+
+      const pickerResult = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.8,
+        base64: true,
+      });
+
+      if (pickerResult.canceled) return;
+      const asset = pickerResult.assets[0];
+
+      // Tenta upload direto no bucket coupon-banners
+      const fileName = `banner-${Date.now()}-${Math.random().toString(36).substring(2, 7)}.jpg`;
+      const response = await fetch(asset.uri);
+      const blob = await response.blob();
+
+      const { error: storageErr } = await supabase.storage
+        .from('coupon-banners')
+        .upload(fileName, blob, {
+          contentType: asset.mimeType || 'image/jpeg',
+          upsert: true,
+        });
+
+      if (!storageErr) {
+        const { data: publicData } = supabase.storage
+          .from('coupon-banners')
+          .getPublicUrl(fileName);
+
+        if (publicData?.publicUrl) {
+          updateField({ bannerImageUrl: publicData.publicUrl });
+          showSuccessAlert('Imagem do banner vinculada com sucesso!', 'Pronto');
+          return;
+        }
+      }
+
+      // Fallback para uploaded_images caso storage falhe
+      if (asset.base64) {
+        const id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const { error: uploadErr } = await supabase
+          .from('uploaded_images')
+          .insert({
+            id,
+            name: fileName,
+            data: asset.base64,
+            mime_type: asset.mimeType || 'image/jpeg',
+            category: 'promo',
+            uploaded_at: new Date().toISOString(),
+          });
+
+        if (!uploadErr) {
+          const fallbackUrl = `${process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatop.vercel.app'}/api/images/${id}`;
+          updateField({ bannerImageUrl: fallbackUrl });
+          showSuccessAlert('Imagem vinculada com sucesso!', 'Pronto');
+          return;
+        }
+      }
+
+      updateField({ bannerImageUrl: asset.uri });
+    } catch (err) {
+      console.warn('Erro ao selecionar imagem do banner:', err);
+      Alert.alert('Erro', 'Não foi possível carregar a imagem selecionada.');
+    }
+  };
+
   const handleSave = async () => {
+    if (form.isBannerHighlight && !form.bannerImageUrl?.trim()) {
+      Alert.alert('Atenção', 'Informe a URL da imagem ou escolha da galeria para destacar como banner.');
+      return;
+    }
+
     const valueNum = parseFloat(String(form.value).replace(',', '.'));
     if (isNaN(valueNum) || valueNum <= 0) {
       Alert.alert('Atenção', 'Informe um valor de desconto válido.');
@@ -413,6 +592,25 @@ export default function AdminCupons() {
     }
   };
 
+  const handleToggleBannerHighlight = async (coupon) => {
+    if (!coupon.banner_image_url) {
+      Alert.alert(
+        'Sem imagem de banner',
+        'Este cupom não possui imagem vinculada. Clique em "Editar" para adicionar a imagem do banner primeiro.'
+      );
+      return;
+    }
+    const nextVal = !coupon.is_banner_highlight;
+    try {
+      await supabase.from('coupons').update({ is_banner_highlight: nextVal }).eq('id', coupon.id);
+      setCoupons(prev => prev.map(c => c.id === coupon.id ? { ...c, is_banner_highlight: nextVal } : c));
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      showSuccessAlert(nextVal ? 'Banner ativado no carrossel da Home!' : 'Banner removido do carrossel da Home.', 'Pronto');
+    } catch {
+      Alert.alert('Erro', 'Não foi possível atualizar o status do banner.');
+    }
+  };
+
   const handleToggleActive = async (coupon) => {
     const nextVal = !coupon.active;
     try {
@@ -440,8 +638,12 @@ export default function AdminCupons() {
     ]);
   };
 
+  const [filterTab, setFilterTab] = useState('all'); // 'all' | 'banners' | 'active'
+
   const activeCoupons = coupons.filter(c => c.active);
   const inactiveCoupons = coupons.filter(c => !c.active);
+  const bannerCoupons = coupons.filter(c => Boolean(c.banner_image_url) || c.is_banner_highlight);
+  const activeBannersCount = coupons.filter(c => c.is_banner_highlight && Boolean(c.banner_image_url)).length;
 
   const formatExpiry = (dateStr) => {
     if (!dateStr) return 'Permanente';
@@ -449,11 +651,7 @@ export default function AdminCupons() {
   };
 
   if (checkingAdmin) {
-    return (
-      <View style={[s.container, s.center, { paddingTop: insets.top }]}>
-        <ActivityIndicator size="large" color="#E3A008" />
-      </View>
-    );
+    return <AdminListSkeleton count={4} />;
   }
 
   return (
@@ -465,7 +663,7 @@ export default function AdminCupons() {
         </Pressable>
         <View style={{ flex: 1 }}>
           <Text style={s.headerTitle}>Gestão de Cupons</Text>
-          <Text style={s.headerSub}>{activeCoupons.length} ativo(s) · {inactiveCoupons.length} inativo(s)</Text>
+          <Text style={s.headerSub}>{activeCoupons.length} ativo(s) · {activeBannersCount} banner(s) no ar</Text>
         </View>
         <Pressable style={s.addBtn} onPress={() => openModal()}>
           <Ionicons name="add" size={20} color="#FFF" />
@@ -473,60 +671,169 @@ export default function AdminCupons() {
         </Pressable>
       </View>
 
+      {/* Abas de Navegação / Filtro */}
+      <View style={s.filterTabsRow}>
+        <Pressable
+          style={[s.filterTabBtn, filterTab === 'all' && s.filterTabBtnActive]}
+          onPress={() => setFilterTab('all')}
+        >
+          <Text style={[s.filterTabBtnText, filterTab === 'all' && s.filterTabBtnTextActive]}>
+            Todos ({coupons.length})
+          </Text>
+        </Pressable>
+
+        <Pressable
+          style={[s.filterTabBtn, filterTab === 'banners' && s.filterTabBtnActive]}
+          onPress={() => setFilterTab('banners')}
+        >
+          <Ionicons
+            name="images-outline"
+            size={13}
+            color={filterTab === 'banners' ? '#FFF' : '#C1440E'}
+            style={{ marginRight: 4 }}
+          />
+          <Text style={[s.filterTabBtnText, filterTab === 'banners' && s.filterTabBtnTextActive]}>
+            Banners Home ({activeBannersCount})
+          </Text>
+        </Pressable>
+
+        <Pressable
+          style={[s.filterTabBtn, filterTab === 'active' && s.filterTabBtnActive]}
+          onPress={() => setFilterTab('active')}
+        >
+          <Text style={[s.filterTabBtnText, filterTab === 'active' && s.filterTabBtnTextActive]}>
+            Ativos ({activeCoupons.length})
+          </Text>
+        </Pressable>
+      </View>
+
       {loading ? (
-        <View style={s.center}><ActivityIndicator size="large" color="#E3A008" /></View>
+        <AdminListSkeleton count={4} />
       ) : (
         <ScrollView contentContainerStyle={s.listContent}>
-          {/* Cupons Ativos */}
-          <View style={s.sectionHeaderRow}>
-            <Text style={s.sectionTitle}>Cupons Ativos</Text>
-            <View style={s.badgeCounter}>
-              <Text style={s.badgeCounterText}>{activeCoupons.length}</Text>
-            </View>
-          </View>
-
-          {activeCoupons.length === 0 ? (
-            <View style={s.emptySection}>
-              <Ionicons name="ticket-outline" size={32} color="#D1D5DB" />
-              <Text style={s.emptySectionText}>Nenhum cupom ativo no momento</Text>
-            </View>
-          ) : activeCoupons.map(c => (
-            <TicketCard
-              key={c.id}
-              coupon={c}
-              formatExpiry={formatExpiry}
-              copiedId={copiedId}
-              onCopy={handleCopyCode}
-              onEdit={() => openModal(c)}
-              onDelete={() => handleDelete(c)}
-              onToggle={() => handleToggleActive(c)}
-              onToggleHome={() => handleToggleHome(c)}
-            />
-          ))}
-
-          {/* Cupons Inativos */}
-          {inactiveCoupons.length > 0 && (
+          {filterTab === 'banners' ? (
             <>
-              <View style={[s.sectionHeaderRow, { marginTop: 24 }]}>
-                <Text style={[s.sectionTitle, { color: '#6B7280' }]}>Cupons Inativos</Text>
-                <View style={[s.badgeCounter, { backgroundColor: '#E5E7EB' }]}>
-                  <Text style={[s.badgeCounterText, { color: '#4B5563' }]}>{inactiveCoupons.length}</Text>
+              <View style={s.sectionHeaderRow}>
+                <Text style={s.sectionTitle}>Banners Promocionais da Home</Text>
+                <View style={s.badgeCounter}>
+                  <Text style={s.badgeCounterText}>{bannerCoupons.length}</Text>
                 </View>
               </View>
 
-              {inactiveCoupons.map(c => (
-                <TicketCard
-                  key={c.id}
-                  coupon={c}
-                  formatExpiry={formatExpiry}
-                  copiedId={copiedId}
-                  onCopy={handleCopyCode}
-                  onEdit={() => openModal(c)}
-                  onDelete={() => handleDelete(c)}
-                  onToggle={() => handleToggleActive(c)}
-                  onToggleHome={() => handleToggleHome(c)}
-                />
-              ))}
+              {bannerCoupons.length === 0 ? (
+                <View style={s.emptySection}>
+                  <Ionicons name="images-outline" size={36} color="#D1D5DB" />
+                  <Text style={s.emptySectionText}>Nenhum banner cadastrado</Text>
+                  <Text style={[s.headerSub, { textAlign: 'center', marginTop: 4 }]}>
+                    Edite ou crie um cupom e ative a opção "Destacar como Banner no Carrossel".
+                  </Text>
+                </View>
+              ) : (
+                bannerCoupons.map(c => (
+                  <TicketCard
+                    key={c.id}
+                    coupon={c}
+                    formatExpiry={formatExpiry}
+                    copiedId={copiedId}
+                    onCopy={handleCopyCode}
+                    onEdit={() => openModal(c)}
+                    onDelete={() => handleDelete(c)}
+                    onToggle={() => handleToggleActive(c)}
+                    onToggleHome={() => handleToggleHome(c)}
+                    onToggleBanner={() => handleToggleBannerHighlight(c)}
+                  />
+                ))
+              )}
+            </>
+          ) : filterTab === 'active' ? (
+            <>
+              <View style={s.sectionHeaderRow}>
+                <Text style={s.sectionTitle}>Cupons Ativos</Text>
+                <View style={s.badgeCounter}>
+                  <Text style={s.badgeCounterText}>{activeCoupons.length}</Text>
+                </View>
+              </View>
+
+              {activeCoupons.length === 0 ? (
+                <View style={s.emptySection}>
+                  <Ionicons name="ticket-outline" size={32} color="#D1D5DB" />
+                  <Text style={s.emptySectionText}>Nenhum cupom ativo no momento</Text>
+                </View>
+              ) : (
+                activeCoupons.map(c => (
+                  <TicketCard
+                    key={c.id}
+                    coupon={c}
+                    formatExpiry={formatExpiry}
+                    copiedId={copiedId}
+                    onCopy={handleCopyCode}
+                    onEdit={() => openModal(c)}
+                    onDelete={() => handleDelete(c)}
+                    onToggle={() => handleToggleActive(c)}
+                    onToggleHome={() => handleToggleHome(c)}
+                    onToggleBanner={() => handleToggleBannerHighlight(c)}
+                  />
+                ))
+              )}
+            </>
+          ) : (
+            <>
+              {/* Cupons Ativos */}
+              <View style={s.sectionHeaderRow}>
+                <Text style={s.sectionTitle}>Cupons Ativos</Text>
+                <View style={s.badgeCounter}>
+                  <Text style={s.badgeCounterText}>{activeCoupons.length}</Text>
+                </View>
+              </View>
+
+              {activeCoupons.length === 0 ? (
+                <View style={s.emptySection}>
+                  <Ionicons name="ticket-outline" size={32} color="#D1D5DB" />
+                  <Text style={s.emptySectionText}>Nenhum cupom ativo no momento</Text>
+                </View>
+              ) : (
+                activeCoupons.map(c => (
+                  <TicketCard
+                    key={c.id}
+                    coupon={c}
+                    formatExpiry={formatExpiry}
+                    copiedId={copiedId}
+                    onCopy={handleCopyCode}
+                    onEdit={() => openModal(c)}
+                    onDelete={() => handleDelete(c)}
+                    onToggle={() => handleToggleActive(c)}
+                    onToggleHome={() => handleToggleHome(c)}
+                    onToggleBanner={() => handleToggleBannerHighlight(c)}
+                  />
+                ))
+              )}
+
+              {/* Cupons Inativos */}
+              {inactiveCoupons.length > 0 && (
+                <>
+                  <View style={[s.sectionHeaderRow, { marginTop: 24 }]}>
+                    <Text style={[s.sectionTitle, { color: '#6B7280' }]}>Cupons Inativos</Text>
+                    <View style={[s.badgeCounter, { backgroundColor: '#E5E7EB' }]}>
+                      <Text style={[s.badgeCounterText, { color: '#4B5563' }]}>{inactiveCoupons.length}</Text>
+                    </View>
+                  </View>
+
+                  {inactiveCoupons.map(c => (
+                    <TicketCard
+                      key={c.id}
+                      coupon={c}
+                      formatExpiry={formatExpiry}
+                      copiedId={copiedId}
+                      onCopy={handleCopyCode}
+                      onEdit={() => openModal(c)}
+                      onDelete={() => handleDelete(c)}
+                      onToggle={() => handleToggleActive(c)}
+                      onToggleHome={() => handleToggleHome(c)}
+                      onToggleBanner={() => handleToggleBannerHighlight(c)}
+                    />
+                  ))}
+                </>
+              )}
             </>
           )}
         </ScrollView>
@@ -541,27 +848,32 @@ export default function AdminCupons() {
       />
 
       {/* Modal de Criação / Edição */}
-      <Modal visible={modalVisible} animationType="slide" statusBarTranslucent navigationBarTranslucent presentationStyle="pageSheet" onRequestClose={() => setModalVisible(false)}>
-        <SafeAreaProvider>
-          <View style={s.modalContainer}>
-            <View style={s.modalHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <View style={s.modalIconBg}>
-                  <Ionicons name="ticket" size={18} color="#C1440E" />
-                </View>
-                <View>
-                  <Text style={s.modalTitle}>{editingCoupon ? 'Editar Cupom' : 'Configurar Cupom'}</Text>
-                  {form.templateOrigin !== 'custom' && (
-                    <Text style={s.modalSub}>
-                      Template: {form.badgeLabel || 'Ideia Guia'}
-                    </Text>
-                  )}
-                </View>
+      <SwipeableBottomSheetModal
+        visible={modalVisible}
+        onRequestClose={() => setModalVisible(false)}
+        backdropColor="rgba(0,0,0,0.5)"
+        contentStyle={[s.sheet, { height: '92%', maxHeight: '92%' }]}
+        scrollable
+      >
+        <View style={s.modalContainer}>
+          <View style={s.modalHeader}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View style={s.modalIconBg}>
+                <Ionicons name="ticket" size={18} color="#C1440E" />
               </View>
-              <Pressable onPress={() => setModalVisible(false)} style={s.modalCloseBtn}>
-                <Ionicons name="close" size={22} color="#1A1A1A" />
-              </Pressable>
+              <View>
+                <Text style={s.modalTitle}>{editingCoupon ? 'Editar Cupom' : 'Configurar Cupom'}</Text>
+                {form.templateOrigin !== 'custom' && (
+                  <Text style={s.modalSub}>
+                    Template: {form.badgeLabel || 'Ideia Guia'}
+                  </Text>
+                )}
+              </View>
             </View>
+            <Pressable onPress={() => setModalVisible(false)} style={s.modalCloseBtn}>
+              <Ionicons name="close" size={22} color="#1A1A1A" />
+            </Pressable>
+          </View>
 
             <ScrollView contentContainerStyle={s.modalBody}>
               {/* Tipo + Valor */}
@@ -655,6 +967,92 @@ export default function AdminCupons() {
                   thumbColor="#FFF"
                 />
               </View>
+
+              {/* Destacar como Banner no Carrossel */}
+              <View style={s.switchCard}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={s.switchCardLabel}>Destacar como Banner no Carrossel</Text>
+                  <Text style={s.switchCardSub}>Vincular imagem promocional de destaque na Home</Text>
+                </View>
+                <Switch
+                  value={form.isBannerHighlight}
+                  onValueChange={v => updateField({ isBannerHighlight: v })}
+                  trackColor={{ false: '#E5E7EB', true: '#E3A008' }}
+                  thumbColor="#FFF"
+                />
+              </View>
+
+              {form.isBannerHighlight && (
+                <View style={s.bannerConfigBox}>
+                  <Text style={s.bannerHintText}>
+                    💡 Proporção recomendada: 16:9 (ex: 1080×608 ou 720×405) ou 2:1 (ex: 1000×500). A caixa da Home se adapta à proporção real da imagem sem bordas pretas.
+                  </Text>
+                  <Text style={s.fieldLabel}>URL da Imagem do Banner *</Text>
+                  <TextInput
+                    style={s.input}
+                    placeholder="https://... ou escolha da galeria"
+                    value={form.bannerImageUrl}
+                    onChangeText={v => updateField({ bannerImageUrl: v })}
+                    autoCapitalize="none"
+                    placeholderTextColor="#9CA3AF"
+                  />
+
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                    <Pressable
+                      style={[s.bannerPickBtn, { flex: 1, marginTop: 0 }]}
+                      onPress={() => setLibraryModalVisible(true)}
+                    >
+                      <Ionicons name="images-outline" size={16} color="#C1440E" style={{ marginRight: 6 }} />
+                      <Text style={s.bannerPickBtnText}>Banco de Imagens</Text>
+                    </Pressable>
+
+                    <Pressable
+                      style={[s.bannerPickBtn, { flex: 1, marginTop: 0 }]}
+                      onPress={handlePickBannerImage}
+                    >
+                      <Ionicons name="cloud-upload-outline" size={16} color="#C1440E" style={{ marginRight: 6 }} />
+                      <Text style={s.bannerPickBtnText}>Subir da Galeria</Text>
+                    </Pressable>
+                  </View>
+
+                  <Text style={[s.fieldLabel, { marginTop: 12 }]}>Selo / Badge (opcional)</Text>
+                  <TextInput
+                    style={s.input}
+                    placeholder="Ex: MAIS PEDIDA, 50% OFF, LIMITADO"
+                    value={form.badgeLabel}
+                    onChangeText={v => updateField({ badgeLabel: v })}
+                    placeholderTextColor="#9CA3AF"
+                  />
+
+                  <Text style={[s.fieldLabel, { marginTop: 12 }]}>Prioridade na Home (0 a 100)</Text>
+                  <TextInput
+                    style={s.input}
+                    placeholder="0"
+                    value={form.homePriority}
+                    onChangeText={v => updateField({ homePriority: v })}
+                    keyboardType="number-pad"
+                    placeholderTextColor="#9CA3AF"
+                  />
+
+                  {Boolean(form.bannerImageUrl) && (
+                    <View style={s.bannerPreviewWrap}>
+                      <Text style={s.fieldLabel}>Pré-visualização do Banner</Text>
+                      <View style={s.bannerPreviewContainer}>
+                        <Image
+                          source={{ uri: form.bannerImageUrl }}
+                          style={s.bannerPreviewImage}
+                          resizeMode="cover"
+                        />
+                        {Boolean(form.badgeLabel) && (
+                          <View style={s.bannerPreviewBadge}>
+                            <Text style={s.bannerPreviewBadgeText}>{form.badgeLabel}</Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  )}
+                </View>
+              )}
 
               {/* Validade / Permanente */}
               <View style={s.switchCard}>
@@ -770,22 +1168,30 @@ export default function AdminCupons() {
                 placeholderTextColor="#9CA3AF"
               />
 
-              {/* Preview em tempo real */}
+              {/* Preview em tempo real com o Design da Home */}
               {form.value.trim() !== '' && (
                 <View style={s.ticketPreviewWrapper}>
-                  <Text style={s.fieldLabel}>Pré-visualização do Ticket</Text>
-                  <View style={s.previewCard}>
-                    <View style={s.previewHeader}>
-                      <View style={s.previewTag}>
-                        <Ionicons name="pricetag" size={12} color="#C1440E" />
-                        <Text style={s.previewTagText}>{preview.code}</Text>
-                      </View>
-                      <Text style={s.previewBadgeValue}>{preview.title}</Text>
-                    </View>
-                    <Text style={s.previewDesc}>{preview.description}</Text>
-                    {!!preview.minOrderText && (
-                      <Text style={s.previewMinOrder}>{preview.minOrderText}</Text>
-                    )}
+                  <Text style={s.fieldLabel}>Pré-visualização (Design da Home)</Text>
+                  <View style={{ alignItems: 'center', marginVertical: 8 }}>
+                    <HomeCouponCard
+                      coupon={{
+                        codigo: preview.code,
+                        valor: formatBR(form.value),
+                        unidade: form.type === 'percentage' ? '%' : 'R$',
+                        descricaoDesconto: preview.description,
+                        raw: {
+                          code: preview.code,
+                          discount_value: parseFloat(String(form.value).replace(',', '.')) || 0,
+                          discount_type: form.type,
+                          min_order_value: parseFloat(String(form.minOrderValue).replace(',', '.')) || null,
+                          expires_at: form.isPermanent ? null : form.expiresAt?.toISOString(),
+                          title: preview.title,
+                          description: preview.description,
+                          badge_label: form.badgeLabel || null,
+                        },
+                      }}
+                      onCardPress={() => {}}
+                    />
                   </View>
                 </View>
               )}
@@ -797,7 +1203,7 @@ export default function AdminCupons() {
                 disabled={saving}
               >
                 {saving ? (
-                  <ActivityIndicator color="#FFF" />
+                  <ThreeDotsLoader color="#FFFFFF" dotSize={7} />
                 ) : (
                   <Text style={s.saveBtnText}>
                     {editingCoupon ? 'Salvar Alterações' : 'Criar Cupom'}
@@ -805,17 +1211,126 @@ export default function AdminCupons() {
                 )}
               </Pressable>
             </ScrollView>
+            <ThemedAlertHost />
           </View>
-        </SafeAreaProvider>
+      </SwipeableBottomSheetModal>
+
+      {/* Modal Seletor do Banco de Imagens do App */}
+      <Modal
+        visible={libraryModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setLibraryModalVisible(false)}
+      >
+        <View style={s.libraryModalOverlay}>
+          <View style={s.libraryModalContent}>
+            <View style={s.libraryModalHeader}>
+              <View>
+                <Text style={s.libraryModalTitle}>Banco de Imagens do App</Text>
+                <Text style={s.libraryModalSub}>Toque em uma imagem para vinculá-la ao banner</Text>
+              </View>
+              <Pressable
+                onPress={() => setLibraryModalVisible(false)}
+                style={s.libraryModalCloseBtn}
+              >
+                <Ionicons name="close" size={20} color="#1A1A1A" />
+              </Pressable>
+            </View>
+
+            {/* Abas de Categorias da Biblioteca */}
+            <View style={s.libraryTabsRow}>
+              <Pressable
+                style={[s.libraryTabBtn, libraryCategory === 'all' && s.libraryTabBtnActive]}
+                onPress={() => setLibraryCategory('all')}
+              >
+                <Text style={[s.libraryTabBtnText, libraryCategory === 'all' && s.libraryTabBtnTextActive]}>
+                  Todas ({libraryImages.length})
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={[s.libraryTabBtn, libraryCategory === 'products' && s.libraryTabBtnActive]}
+                onPress={() => setLibraryCategory('products')}
+              >
+                <Text style={[s.libraryTabBtnText, libraryCategory === 'products' && s.libraryTabBtnTextActive]}>
+                  Cardápio ({libraryImages.filter(i => i.category === 'products').length})
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={[s.libraryTabBtn, libraryCategory === 'banners' && s.libraryTabBtnActive]}
+                onPress={() => setLibraryCategory('banners')}
+              >
+                <Text style={[s.libraryTabBtnText, libraryCategory === 'banners' && s.libraryTabBtnTextActive]}>
+                  Galeria & Banners ({libraryImages.filter(i => i.category === 'banners').length})
+                </Text>
+              </Pressable>
+            </View>
+
+            {loadingLibrary ? (
+              <View style={s.libraryLoading}>
+                <ActivityIndicator size="small" color="#C1440E" />
+                <Text style={s.libraryLoadingText}>Carregando imagens do catálogo...</Text>
+              </View>
+            ) : libraryImages.length === 0 ? (
+              <View style={s.libraryEmpty}>
+                <Ionicons name="images-outline" size={40} color="#D1D5DB" />
+                <Text style={s.libraryEmptyText}>Nenhuma imagem encontrada no banco.</Text>
+                <Text style={s.libraryEmptySub}>Você pode enviar da sua galeria pelo botão "Subir da Galeria".</Text>
+              </View>
+            ) : (
+              <ScrollView contentContainerStyle={s.libraryGrid} showsVerticalScrollIndicator={false}>
+                {libraryImages
+                  .filter((img) => libraryCategory === 'all' || img.category === libraryCategory)
+                  .map((img) => (
+                    <Pressable
+                      key={img.id}
+                      style={[
+                        s.libraryCard,
+                        form.bannerImageUrl === img.url && s.libraryCardSelected,
+                      ]}
+                      onPress={() => {
+                        updateField({ bannerImageUrl: img.url });
+                        setLibraryModalVisible(false);
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        showSuccessAlert('Imagem vinculada ao banner!', 'Pronto');
+                      }}
+                    >
+                      <ExpoImage
+                        source={{ uri: img.previewUri }}
+                        style={s.libraryCardImg}
+                        contentFit="cover"
+                        cachePolicy="memory-disk"
+                      />
+                      <View style={s.libraryCardInfo}>
+                        <View style={s.libraryCategoryTag}>
+                          <Text style={s.libraryCategoryTagText}>{img.categoryLabel || 'CARDÁPIO'}</Text>
+                        </View>
+                        <Text style={s.libraryCardName} numberOfLines={1}>
+                          {img.name}
+                        </Text>
+                      </View>
+                      {form.bannerImageUrl === img.url && (
+                        <View style={s.libraryCardCheck}>
+                          <Ionicons name="checkmark-circle" size={20} color="#059669" />
+                        </View>
+                      )}
+                    </Pressable>
+                  ))}
+              </ScrollView>
+            )}
+          </View>
+        </View>
       </Modal>
     </View>
   );
 }
 
 // ─── Componente TicketCard (Estilo iFood Portal) ──────────────────────
-function TicketCard({ coupon, formatExpiry, copiedId, onCopy, onEdit, onDelete, onToggle, onToggleHome }) {
+function TicketCard({ coupon, formatExpiry, copiedId, onCopy, onEdit, onDelete, onToggle, onToggleHome, onToggleBanner }) {
   const isActive = coupon.active;
   const isHome = coupon.show_on_home;
+  const isBanner = Boolean(coupon.is_banner_highlight);
   const value = coupon.discount_value;
   const isCopied = copiedId === coupon.id;
 
@@ -837,7 +1352,7 @@ function TicketCard({ coupon, formatExpiry, copiedId, onCopy, onEdit, onDelete, 
             />
           </Pressable>
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             {coupon.badge_label ? (
               <View style={[s.statusPill, { backgroundColor: '#FEF3C7' }]}>
                 <Text style={[s.statusPillText, { color: '#92400E' }]}>{coupon.badge_label}</Text>
@@ -846,7 +1361,13 @@ function TicketCard({ coupon, formatExpiry, copiedId, onCopy, onEdit, onDelete, 
             {isHome ? (
               <View style={[s.statusPill, { backgroundColor: '#FEF3C7', flexDirection: 'row', alignItems: 'center', gap: 3 }]}>
                 <Ionicons name="home" size={10} color="#D97706" />
-                <Text style={[s.statusPillText, { color: '#92400E' }]}>Home</Text>
+                <Text style={[s.statusPillText, { color: '#92400E' }]}>Vitrine</Text>
+              </View>
+            ) : null}
+            {isBanner ? (
+              <View style={[s.statusPill, { backgroundColor: '#DCFCE7', flexDirection: 'row', alignItems: 'center', gap: 3 }]}>
+                <Ionicons name="images" size={10} color="#15803D" />
+                <Text style={[s.statusPillText, { color: '#15803D' }]}>Banner</Text>
               </View>
             ) : null}
             <View style={[s.statusPill, isActive ? s.statusPillActive : s.statusPillInactive]}>
@@ -895,6 +1416,42 @@ function TicketCard({ coupon, formatExpiry, copiedId, onCopy, onEdit, onDelete, 
             </Text>
           </View>
         </View>
+
+        {/* Visualização do Banner anexado ao Cupom */}
+        {coupon.banner_image_url ? (
+          <View style={s.ticketBannerWrap}>
+            <Image
+              source={{ uri: coupon.banner_image_url }}
+              style={s.ticketBannerImg}
+              resizeMode="cover"
+            />
+            <View style={s.ticketBannerInfo}>
+              <View
+                style={[
+                  s.bannerStatusTag,
+                  isBanner ? s.bannerStatusTagActive : s.bannerStatusTagInactive,
+                ]}
+              >
+                <Ionicons
+                  name={isBanner ? "images" : "images-outline"}
+                  size={12}
+                  color={isBanner ? "#15803D" : "#6B7280"}
+                />
+                <Text
+                  style={[
+                    s.bannerStatusTagText,
+                    isBanner ? { color: '#15803D' } : { color: '#6B7280' },
+                  ]}
+                >
+                  {isBanner ? 'No Carrossel da Home' : 'Fora do Carrossel'}
+                </Text>
+              </View>
+              {coupon.badge_label ? (
+                <Text style={s.ticketBannerBadgeText}>Selo: {coupon.badge_label}</Text>
+              ) : null}
+            </View>
+          </View>
+        ) : null}
       </View>
 
       {/* Ticket Cutout Line com Picote Tracejado (iFood Standard) */}
@@ -906,7 +1463,7 @@ function TicketCard({ coupon, formatExpiry, copiedId, onCopy, onEdit, onDelete, 
 
       {/* Footer com Ações */}
       <View style={s.ticketFooter}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1 }}>
           <Pressable
             style={s.toggleBtn}
             onPress={onToggle}
@@ -931,9 +1488,33 @@ function TicketCard({ coupon, formatExpiry, copiedId, onCopy, onEdit, onDelete, 
               color={isHome ? "#D97706" : "#6B7280"}
             />
             <Text style={[s.toggleBtnText, { color: isHome ? "#D97706" : "#6B7280" }]}>
-              {isHome ? 'Na Home' : 'Home'}
+              {isHome ? 'Vitrine' : 'Pôr Vitrine'}
             </Text>
           </Pressable>
+
+          {coupon.banner_image_url ? (
+            <Pressable
+              style={[
+                s.toggleBtn,
+                isBanner && { backgroundColor: '#DCFCE7', borderColor: '#86EFAC' },
+              ]}
+              onPress={onToggleBanner}
+            >
+              <Ionicons
+                name={isBanner ? "images" : "images-outline"}
+                size={15}
+                color={isBanner ? "#15803D" : "#6B7280"}
+              />
+              <Text
+                style={[
+                  s.toggleBtnText,
+                  { color: isBanner ? "#15803D" : "#6B7280" },
+                ]}
+              >
+                {isBanner ? 'Banner No Ar' : 'Pôr Banner'}
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
 
         <View style={s.actionBtnsGroup}>
@@ -1133,6 +1714,12 @@ const s = StyleSheet.create({
   deleteActionBtnText: { fontSize: 12, fontWeight: '700', color: '#DC2626' },
 
   // Modal
+  sheet: {
+    backgroundColor: '#F8F9FA',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+  },
   modalContainer: { flex: 1, backgroundColor: '#F8F9FA' },
   modalHeader: {
     flexDirection: 'row',
@@ -1255,4 +1842,290 @@ const s = StyleSheet.create({
     elevation: 3,
   },
   saveBtnText: { color: '#FFF', fontWeight: '900', fontSize: 15 },
+  bannerConfigBox: {
+    backgroundColor: '#FFFBEB',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1.5,
+    borderColor: '#FDE68A',
+    marginBottom: 14,
+  },
+  bannerPickBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFF',
+    borderWidth: 1.5,
+    borderColor: '#C1440E',
+    borderRadius: 12,
+    height: 44,
+    marginTop: 6,
+    paddingHorizontal: 14,
+  },
+  bannerPickBtnText: {
+    color: '#C1440E',
+    fontWeight: '800',
+    fontSize: 13,
+  },
+  bannerPreviewWrap: {
+    marginTop: 14,
+  },
+  bannerPreviewContainer: {
+    height: 140,
+    borderRadius: 12,
+    overflow: 'hidden',
+    position: 'relative',
+    backgroundColor: '#E5E7EB',
+  },
+  bannerPreviewImage: {
+    width: '100%',
+    height: '100%',
+  },
+  bannerPreviewBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    backgroundColor: '#C1440E',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  bannerPreviewBadgeText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  filterTabsRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#FFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+    gap: 8,
+  },
+  filterTabBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: '#F3F4F6',
+  },
+  filterTabBtnActive: {
+    backgroundColor: '#C1440E',
+  },
+  filterTabBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#4B5563',
+  },
+  filterTabBtnTextActive: {
+    color: '#FFF',
+  },
+  ticketBannerWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+    padding: 8,
+    borderRadius: 10,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    gap: 10,
+  },
+  ticketBannerImg: {
+    width: 76,
+    height: 44,
+    borderRadius: 6,
+    backgroundColor: '#E5E7EB',
+  },
+  ticketBannerInfo: {
+    flex: 1,
+  },
+  bannerStatusTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    gap: 4,
+  },
+  bannerStatusTagActive: {
+    backgroundColor: '#DCFCE7',
+  },
+  bannerStatusTagInactive: {
+    backgroundColor: '#F3F4F6',
+  },
+  bannerStatusTagText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  ticketBannerBadgeText: {
+    fontSize: 10,
+    color: '#6B7280',
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  bannerHintText: {
+    fontSize: 11,
+    color: '#92400E',
+    marginBottom: 8,
+    lineHeight: 16,
+    fontWeight: '500',
+  },
+  libraryModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  libraryModalContent: {
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    maxHeight: '80%',
+    paddingBottom: 24,
+  },
+  libraryModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  libraryModalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1A1A1A',
+  },
+  libraryModalSub: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  libraryModalCloseBtn: {
+    padding: 6,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+  },
+  libraryTabsRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 8,
+    backgroundColor: '#FAFAFA',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  libraryTabBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#E5E7EB',
+  },
+  libraryTabBtnActive: {
+    backgroundColor: '#C1440E',
+  },
+  libraryTabBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#4B5563',
+  },
+  libraryTabBtnTextActive: {
+    color: '#FFF',
+  },
+  libraryLoading: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  libraryLoadingText: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontWeight: '600',
+  },
+  libraryEmpty: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  libraryEmptyText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  libraryEmptySub: {
+    fontSize: 12,
+    color: '#6B7280',
+    textAlign: 'center',
+  },
+  libraryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    padding: 14,
+    gap: 12,
+    justifyContent: 'space-between',
+  },
+  libraryCard: {
+    width: '48%',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFF',
+    overflow: 'hidden',
+    position: 'relative',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  libraryCardSelected: {
+    borderColor: '#059669',
+    backgroundColor: '#F0FDF4',
+  },
+  libraryCardImg: {
+    width: '100%',
+    height: 110,
+    backgroundColor: '#F3F4F6',
+  },
+  libraryCardInfo: {
+    padding: 8,
+  },
+  libraryCategoryTag: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginBottom: 4,
+  },
+  libraryCategoryTagText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#92400E',
+  },
+  libraryCardName: {
+    fontSize: 11,
+    color: '#1F2937',
+    fontWeight: '700',
+  },
+  libraryCardCheck: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    padding: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 2,
+  },
 });
