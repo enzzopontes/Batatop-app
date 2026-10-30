@@ -1,22 +1,16 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../supabaseConfig';
+import { LargeSecureStore } from './largeSecureStore';
+import {
+  ensureLegacyMigration,
+  LEGACY_SOFT_LOGOUT_KEY,
+  SAVED_USER_KEY,
+} from './legacyMigration';
 
-// Precisa ser IGUAL em profile.js e AuthBottomSheet.tsx.
-// Por que existe: nenhum scope de supabase.auth.signOut() (nem 'local')
-// deixa a sessão atual viva no servidor — TODOS revogam o refresh token
-// da sessão atual, só muda se as OUTRAS sessões também são derrubadas.
-// Então "Sim, lembrar minha conta" nunca chama signOut de verdade; ele só
-// liga essa flag, e a UI passa a fingir deslogado enquanto a sessão real
-// do Supabase continua ativa (e se renovando sozinha via autoRefreshToken).
-export const SOFT_LOGOUT_KEY = '@batatatop:softLoggedOut';
+export { SAVED_USER_KEY };
 
-// Pub/sub simples em memória. Necessário porque ligar/desligar o
-// SOFT_LOGOUT_KEY não passa pelo supabase.auth.onAuthStateChange (a sessão
-// real não muda nesse fluxo) — sem isso, telas que já estão montadas hà
-// tempo (o _layout.js raiz, por exemplo, nunca desmonta) não saberiam que
-// precisam reconferir o estado de login depois de um "Sim, lembrar" ou
-// "Continuar como".
 const listeners = new Set();
+let listenerInitialized = false;
 
 export function subscribeAuthUiChange(fn) {
   listeners.add(fn);
@@ -24,61 +18,190 @@ export function subscribeAuthUiChange(fn) {
 }
 
 export function emitAuthUiChange() {
-  listeners.forEach((fn) => fn());
-}
-
-// Sessão "efetiva" pra decisões de UI (mostrar como logado ou não).
-// Retorna null se o soft-logout estiver ligado, mesmo com sessão real ativa.
-export async function getEffectiveSession() {
-  const soft = await AsyncStorage.getItem(SOFT_LOGOUT_KEY);
-  if (soft === 'true') return null;
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) return null;
-
-  // Auto-refresh: se o token já expirou ou vence em menos de 60s, renova silenciosamente
-  if (session.expires_at && session.expires_at * 1000 <= Date.now() + 60000) {
+  listeners.forEach((fn) => {
     try {
-      const { data: refreshed, error } = await supabase.auth.refreshSession();
-      if (!error && refreshed?.session) {
-        return refreshed.session;
-      }
+      fn();
     } catch (e) {
-      console.warn('Falha ao auto-renovar sessão:', e);
+      console.error('[authSession] Erro em listener de auth:', e);
     }
-  }
-
-  return session;
+  });
 }
 
-// Listener central: desliga o soft-logout sozinho sempre que um login DE
-// VERDADE acontece (SIGNED_IN), não importa por onde (email, telefone,
-// google, etc). Sem isso, a flag ligada por "Sim, lembrar" fica presa em
-// 'true' pra sempre, mesmo depois do usuário logar de novo — e telas como
-// profile.js, que checam a flag antes de tudo, continuam mostrando
-// deslogado mesmo com sessão real ativa.
-// Chamar UMA VEZ no _layout.js raiz (fora de qualquer condição).
-let listenerInitialized = false;
+/**
+ * Gate de Inicialização:
+ * Delega diretamente para a migração em memória isolada e síncrona/sem-rede.
+ */
+export function ensureAuthReady() {
+  return ensureLegacyMigration();
+}
 
-export function initAuthStateListener() {
+/**
+ * Obtém a sessão ativa.
+ * C2: Retorna null imediatamente se a flag legada de soft-logout for 'true' (belt-and-braces).
+ * Aguarda a migração terminar antes de ler a sessão.
+ * Se estiver prestes a expirar (<60s), faz auto-refresh silencioso.
+ */
+export async function getEffectiveSession() {
+  await ensureAuthReady();
+
+  try {
+    const soft = await AsyncStorage.getItem(LEGACY_SOFT_LOGOUT_KEY);
+    if (soft === 'true') {
+      return null;
+    }
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return null;
+
+    if (session.expires_at && session.expires_at * 1000 <= Date.now() + 60000) {
+      try {
+        const { data: refreshed, error } = await supabase.auth.refreshSession();
+        if (!error && refreshed?.session) {
+          return refreshed.session;
+        }
+      } catch (e) {
+        console.warn('[authSession] Falha ao renovar sessão:', e);
+      }
+    }
+
+    return session;
+  } catch (err) {
+    console.error('[authSession] Erro ao obter sessão:', err);
+    return null;
+  }
+}
+
+/**
+ * Encerramento de sessão seguro e unificado.
+ *
+ * Parâmetros:
+ * - rememberUser = true ("Lembrar minha conta"):
+ *   Grava savedUser mínimo ({ name, email, provider }, sem phone) e executa signOut({ scope: 'local' }).
+ * - rememberUser = false ("Esquecer conta" / Excluir conta):
+ *   Remove savedUser e executa signOut({ scope: 'global' }).
+ *
+ * Critério de sucesso:
+ * - sucesso = getSession() nulo ao final (após contingência LargeSecureStore),
+ *   independente de falha de transporte no signOut do Supabase.
+ * - detecção offline: error?.name === 'AuthRetryableFetchError' || error?.status === 0 (sem regex).
+ * - "Esquecer conta" offline: retorna { success: true, offline: true, globalRevoked: false }.
+ */
+export async function performLogout(rememberUser = false) {
+  const storageKey = supabase.auth?.storageKey || 'sb-eucwoxjmjfqylyrqunwk-auth-token';
+  let signOutError = null;
+
+  try {
+    if (rememberUser) {
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
+      if (user) {
+        const email = user.email || '';
+        let name = user.user_metadata?.full_name || user.user_metadata?.name;
+        if (!name) {
+          name = email ? email.split('@')[0] : 'Cliente';
+        }
+
+        let provider = null;
+        const existingSavedRaw = await AsyncStorage.getItem(SAVED_USER_KEY);
+        if (existingSavedRaw) {
+          try {
+            const parsed = JSON.parse(existingSavedRaw);
+            if (parsed.provider) provider = parsed.provider;
+          } catch {}
+        }
+        if (!provider) {
+          provider = user.app_metadata?.provider || (email ? 'email' : 'phone');
+        }
+
+        const minimalUserData = { name, email, provider };
+        await AsyncStorage.setItem(SAVED_USER_KEY, JSON.stringify(minimalUserData));
+      }
+
+      try {
+        const { error } = await supabase.auth.signOut({ scope: 'local' });
+        if (error) signOutError = error;
+      } catch (e) {
+        signOutError = e;
+      }
+    } else {
+      await AsyncStorage.removeItem(SAVED_USER_KEY);
+      try {
+        const { error } = await supabase.auth.signOut({ scope: 'global' });
+        if (error) signOutError = error;
+      } catch (e) {
+        signOutError = e;
+      }
+    }
+
+    // Confirmação pós-signOut com getSession() e contingência
+    let { data: verifyData } = await supabase.auth.getSession();
+    if (verifyData?.session) {
+      await LargeSecureStore.removeItem(storageKey);
+      const { data: recheckData } = await supabase.auth.getSession();
+      verifyData = recheckData;
+    }
+
+    const sessionCleared = !verifyData?.session;
+    const isOffline = !!(
+      signOutError?.name === 'AuthRetryableFetchError' ||
+      signOutError?.status === 0
+    );
+
+    if (sessionCleared) {
+      if (isOffline) {
+        return {
+          success: true,
+          offline: true,
+          globalRevoked: false,
+          error: signOutError?.message,
+        };
+      }
+      return {
+        success: true,
+        offline: false,
+        globalRevoked: !rememberUser,
+      };
+    }
+
+    return {
+      success: false,
+      offline: isOffline,
+      globalRevoked: false,
+      error: signOutError?.message || 'Falha ao encerrar sessão localmente',
+    };
+  } catch (err) {
+    console.error('[authSession] Erro crítico durante logout:', err);
+    await LargeSecureStore.removeItem(storageKey).catch(() => {});
+    const isOffline = !!(err?.name === 'AuthRetryableFetchError' || err?.status === 0);
+    const { data: finalCheck } = await supabase.auth.getSession();
+    if (!finalCheck?.session) {
+      return {
+        success: true,
+        offline: isOffline,
+        globalRevoked: false,
+        error: err?.message,
+      };
+    }
+    return {
+      success: false,
+      offline: isOffline,
+      globalRevoked: false,
+      error: err?.message,
+    };
+  } finally {
+    emitAuthUiChange();
+  }
+}
+
+export async function initAuthStateListener() {
   if (listenerInitialized) return;
   listenerInitialized = true;
 
-  // O primeiro evento após assinar é sempre a reidratação da sessão do
-  // AsyncStorage no cold start, não um login real — precisa ser ignorado.
-  let isInitialEvent = true;
+  await ensureAuthReady();
 
-  supabase.auth.onAuthStateChange(async (event, session) => {
-    if (isInitialEvent) {
-      isInitialEvent = false;
-      return;
-    }
-
-      if (event === 'SIGNED_IN' && session) {
-      const soft = await AsyncStorage.getItem(SOFT_LOGOUT_KEY);
-      if (soft === 'true') {
-        await AsyncStorage.setItem(SOFT_LOGOUT_KEY, 'false');
-        emitAuthUiChange();
-      }
+  supabase.auth.onAuthStateChange((event) => {
+    if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+      emitAuthUiChange();
     }
   });
 }
