@@ -16,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../supabaseConfig';
-import { SOFT_LOGOUT_KEY, emitAuthUiChange } from '../utils/authSession';
+import { emitAuthUiChange } from '../utils/authSession';
 import { signInWithGoogle } from '../utils/googleAuth';
 import { ThemedAlertHost, showThemedAlert } from './ThemedAlert';
 import HelpModal from './HelpModal';
@@ -36,7 +36,7 @@ import { COLORS, TYPOGRAPHY, SPACING, RADIUS } from '../constants/theme';
 // (ex: gravar isso depois de um login bem-sucedido em login.js).
 const SAVED_USER_KEY = '@batatatop:savedUser';
 
-type SavedUser = { name: string; email?: string; phone?: string };
+type SavedUser = { name: string; email?: string; provider?: 'google' | 'email' | 'phone' | string };
 
 type AuthBottomSheetProps = {
   visible: boolean;
@@ -282,55 +282,17 @@ export default function AuthBottomSheet({ visible, onClose }: AuthBottomSheetPro
   }
 
   async function handleContinuarComo() {
-    // A sessão real do Supabase NUNCA foi destruída (ver profile.js —
-    // "Sim, lembrar" não chama signOut, só liga o SOFT_LOGOUT_KEY). Então
-    // não tem refresh nem setSession pra fazer aqui: só tirar a flag e
-    // confirmar que a sessão real ainda existe.
-    try {
-      console.log('🚀 ===== handleContinuarComo INICIADO =====', new Date().toISOString());
-
-      await AsyncStorage.setItem(SOFT_LOGOUT_KEY, 'false');
-      console.log('👻 Soft-logout desligado');
-      emitAuthUiChange();
-
-      const { data: { session } } = await supabase.auth.getSession();
-      console.log('1️⃣ Sessão real existe?', !!session);
-
-      if (!session) {
-        // Só acontece se a sessão tiver sido revogada de fato por fora
-        // (ex: usuário clicou "Esquecer conta" em outro aparelho, ou fez
-        // login em outro lugar que derrubou esta sessão). Nesse caso não
-        // tem como continuar sem senha mesmo — cai pro fallback de login.
-        console.log('❌ Sessão real não existe mais — precisa logar de novo');
-        throw new Error('Sessão não encontrada');
-      }
-
-      console.log('✅ Sessão confirmada — navegando pra home...');
+    if (!savedUser) return;
+    if (savedUser.provider === 'google') {
+      await handleGoogle();
+    } else if (savedUser.provider === 'phone') {
       onClose();
-      router.replace('/');
-    } catch (err: unknown) {
-      // err chega como `unknown` (TS estrito) — não dá pra acessar
-      // err.message/.code/.status direto sem antes checar o tipo, senão o
-      // compilador acusa erro. supabase-js lança objetos parecidos com
-      // Error mas às vezes com .code/.status extras, então fazemos um
-      // narrowing manual em vez de simplesmente tipar como `any`.
-      const errObj = err as { message?: unknown; code?: unknown; status?: unknown } | null;
-      console.error('❌ ❌ ❌ ERRO em handleContinuarComo:', {
-        message: errObj?.message,
-        code: errObj?.code,
-        status: errObj?.status,
-        fullError: err,
-      });
-
-      console.log('📵 Fallback: Abrindo login de novo');
+      router.push('/auth/telefone');
+    } else if (savedUser.email) {
       onClose();
-      if (savedUser?.phone) {
-        console.log('📞 → Redirecionando para /auth/login (celular indisponível)');
-        router.push('/auth/login');
-      } else {
-        console.log('📧 → Abrindo /auth/login');
-        router.push({ pathname: '/auth/login', params: { email: savedUser?.email || '' } });
-      }
+      router.push({ pathname: '/auth/login', params: { email: savedUser.email } });
+    } else {
+      handleAcessarOutraConta();
     }
   }
 
@@ -475,7 +437,7 @@ export default function AuthBottomSheet({ visible, onClose }: AuthBottomSheetPro
                   <View style={styles.foundLoginTextCol}>
                     <Text style={styles.foundLoginLabel}>Encontramos seu último login</Text>
                     <Text style={styles.foundLoginValue} numberOfLines={1}>
-                      {savedUser.email || savedUser.phone}
+                      {savedUser.email || savedUser.name}
                     </Text>
                   </View>
                 </View>

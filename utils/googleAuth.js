@@ -2,7 +2,7 @@ import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../supabaseConfig';
-import { SOFT_LOGOUT_KEY, emitAuthUiChange } from './authSession';
+import { emitAuthUiChange } from './authSession';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -43,11 +43,8 @@ async function finalizeLoginSession(session) {
     throw new Error('Sessão não identificada após o login.');
   }
 
-  // Desliga soft-logout e notifica a UI (seção 11 do CLAUDE.md)
-  await AsyncStorage.setItem(SOFT_LOGOUT_KEY, 'false');
   emitAuthUiChange();
 
-  // Persiste dados para "Continuar como [nome]"
   const user = session.user;
   const name =
     user.user_metadata?.full_name ||
@@ -56,22 +53,12 @@ async function finalizeLoginSession(session) {
     'Cliente';
   const email = user.email || '';
 
-  let phone = user.phone || user.user_metadata?.phone || '';
-  if (!phone && user.id) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('telefone')
-      .eq('id', user.id)
-      .maybeSingle();
-    phone = profile?.telefone || '';
-  }
-
   await AsyncStorage.setItem(
     SAVED_USER_KEY,
     JSON.stringify({
       name,
       email,
-      phone,
+      provider: 'google',
     })
   );
 

@@ -133,12 +133,8 @@ export default function HelpArticleScreen() {
             style: 'destructive',
             onPress: async () => {
               try {
-                const { supabase } = require('../../../supabaseConfig');
-                const { SOFT_LOGOUT_KEY, emitAuthUiChange } = require('../../../utils/authSession');
-
-                await supabase.auth.signOut();
-                await AsyncStorage.multiRemove(['@batatatop:savedUser', SOFT_LOGOUT_KEY]);
-                emitAuthUiChange();
+                const { performLogout } = require('../../../utils/authSession');
+                await performLogout(false);
 
                 Alert.alert(
                   'Conta Bloqueada',

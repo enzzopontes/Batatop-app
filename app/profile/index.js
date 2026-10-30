@@ -1,23 +1,19 @@
-import { View, Text, ScrollView, StyleSheet, Pressable, Image, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Pressable, Image, ActivityIndicator, Alert } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useState, useEffect, useCallback } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../supabaseConfig';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../../constants/theme';
 import { useScrollHandler } from '../_layout';
-import { SOFT_LOGOUT_KEY, emitAuthUiChange, getEffectiveSession } from '../../utils/authSession';
+import { getEffectiveSession, performLogout } from '../../utils/authSession';
 import LogoutRememberModal from '../../components/LogoutRememberModal';
 import { requestAuthSheet } from '../../utils/authSheetRequest';
 import ProfileAccordionItem from '../../components/ProfileAccordionItem';
 import ProfileSuccessToast from '../../components/ProfileSuccessToast';
 import { isAdminUser, checkIsAdmin } from '../../utils/isAdmin';
 import { ProfileSkeleton } from '../../components/Skeleton';
-
-// Precisa ser IGUAL à SAVED_USER_KEY de components/AuthBottomSheet.tsx
-const SAVED_USER_KEY = '@batatatop:savedUser';
 
 export default function Profile() {
   const router = useRouter();
@@ -94,62 +90,26 @@ export default function Profile() {
 
   const handleRememberAccount = async () => {
     setLogoutModalVisible(false);
-    console.log('🚪 ===== handleRememberAccount INICIADO =====', new Date().toISOString());
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const u = session?.user;
-
-      if (u?.id) {
-        // Query profiles pra dados completos (telefone + full_name)
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('telefone, full_name')
-          .eq('id', u.id)
-          .maybeSingle();
-
-        // Monta userData só pra exibição ("Continuar como [nome]") — não
-        // guarda mais refreshToken: a sessão real nunca é destruída, então
-        // não tem token nenhum pra restaurar depois.
-        const userData = {
-          name: profile?.full_name || u?.user_metadata?.full_name || 'Usuário',
-          email: u?.email || '',
-          phone: profile?.telefone || '',
-        };
-
-        await AsyncStorage.setItem(SAVED_USER_KEY, JSON.stringify(userData));
-      }
-    } catch (e) {
-      console.error('Erro ao guardar sessão pra lembrar conta:', e);
+    const res = await performLogout(true);
+    if (!res?.success && !res?.offline) {
+      Alert.alert('Erro', res?.error || 'Não foi possível desconectar a sessão com segurança.');
+      return;
     }
-
-    // ⚠️ NÃO chama supabase.auth.signOut() aqui — qualquer scope revoga a
-    // sessão atual no servidor, o que mataria o próprio acesso que
-    // "Continuar como" precisa reaproveitar depois. Em vez disso, só liga
-    // a flag de logout visual; a sessão real do Supabase continua ativa e
-    // sendo renovada sozinha em background (autoRefreshToken: true).
-    await AsyncStorage.setItem(SOFT_LOGOUT_KEY, 'true');
-    console.log('👻 Soft-logout ativado — sessão real do Supabase continua viva');
-    emitAuthUiChange();
     router.replace('/');
   };
 
   const handleForgetAccount = async () => {
     setLogoutModalVisible(false);
-    // Sem scope = 'global' (padrão): revoga a sessão de verdade no servidor.
-    // Aqui é o logout de verdade, então isso é o comportamento certo.
-    try {
-      await supabase.auth.signOut();
-    } catch (signOutError) {
-      console.error('Erro ao deslogar do Supabase:', signOutError);
+    const res = await performLogout(false);
+    if (res?.offline) {
+      Alert.alert(
+        'Aviso',
+        'Sua sessão foi encerrada neste aparelho. Como não havia conexão com a internet, os acessos em outros aparelhos não puderam ser revogados agora.'
+      );
     }
-    try {
-      await AsyncStorage.multiRemove([SAVED_USER_KEY, SOFT_LOGOUT_KEY]);
-    } catch (e) {
-      console.error('Erro ao limpar usuário local:', e);
-    }
-    emitAuthUiChange();
     router.replace('/');
   };
+
 
   // Página que só faz sentido logado: se não tiver `user`, abre o
   // AuthBottomSheet em vez de navegar. Usado por Notificações e Endereços

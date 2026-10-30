@@ -60,7 +60,7 @@ export default function RegisterScreen() {
       setLoading(false);
     } else {
       showThemedAlert('Sucesso', 'Conta criada com sucesso! Verifique seu e-mail para confirmar o cadastro.', [
-        { text: 'OK', onPress: () => router.replace('/auth/login') }
+        { text: 'OK', onPress: () => router.replace({ pathname: '/auth/login', params: { email } }) }
       ]);
     }
   };

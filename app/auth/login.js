@@ -11,12 +11,13 @@ import {
   Pressable,
   Animated as RNAnimated,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
 import Animated, { useAnimatedStyle, interpolate, Extrapolation } from 'react-native-reanimated';
 import { supabase } from '../../supabaseConfig';
+import { performLogout } from '../../utils/authSession';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SHADOWS, RADIUS } from '../../constants/theme';
 import { ThemedAlertHost, showThemedAlert, hideThemedAlert } from '../../components/ThemedAlert';
@@ -59,40 +60,28 @@ const isValidCpf = (digits) => {
 // Salva o essencial pra tela "continuar como [nome]" reconhecer o
 // usuário na próxima vez que o app abrir (mesmo depois de sair/reinstalar
 // e logar de novo).
-const persistSavedUser = async ({ name, email, userId }) => {
+const persistSavedUser = async ({ name, email }) => {
   try {
-    // Query profiles pra pegar telefone
-    let phone = '';
-    if (userId) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('telefone')
-        .eq('id', userId)
-        .maybeSingle();
-      phone = profile?.telefone || '';
-    }
-
     const userData = {
       name,
       email,
-      phone,
+      provider: 'email',
     };
 
     await AsyncStorage.setItem(SAVED_USER_KEY, JSON.stringify(userData));
   } catch (e) {
-    // Falha em salvar não deve travar o login — só significa que o
-    // "continuar como" não vai aparecer da próxima vez.
     console.log('Falha ao salvar savedUser:', e);
   }
 };
 
 export default function LoginScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const insets = useSafeAreaInsets();
 
   // 'email' → tela 1 | 'code' → tela 2 | 'name' → tela 3 (só usuário novo)
   const [step, setStep] = useState('email');
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState((typeof params.email === 'string' ? params.email : '') || '');
   const [emailFocused, setEmailFocused] = useState(false);
   const emailRef = useRef(null);
   const [loading, setLoading] = useState(false);
@@ -317,7 +306,7 @@ export default function LoginScreen() {
       // que o código é confirmado — nome/CPF são só um passo posterior.
       // Sem o signOut abaixo, sair daqui deixava a sessão ativa e a pessoa
       // aparecia logada na Home sem nunca ter preenchido o nome (obrigatório).
-      await supabase.auth.signOut();
+      await performLogout(false);
       router.replace('/');
     } else if (step === 'code') {
       setStep('email');

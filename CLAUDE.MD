@@ -557,99 +557,45 @@ useEffect(() => {
 
 ---
 
-## 11. Padrão: "Continuar como [nome]" / Soft-Logout
+## 11. Padrão: Sessão Segura (LargeSecureStore) e Logout Real com "Lembrar Conta"
 
-Usado no fluxo "Sim, lembrar minha conta" (`app/profile.js`) + "Continuar como {nome}" (`components/AuthBottomSheet.tsx`, Estado B). Documentado aqui porque a causa raiz é contra-intuitiva e fácil de reintroduzir.
+Substituiu o antigo "soft-logout" por autenticação segura com criptografia autenticada em hardware e signOut real no Supabase.
 
-### O bug original
+### Arquitetura de Armazenamento: `LargeSecureStore` (`utils/largeSecureStore.js`)
+- **Problema de limite de 2KB:** O Supabase armazena sessão completa (JWT + Refresh Token + metadados) que ultrapassa os 2KB suportados com segurança pelo `SecureStore` puro no Android.
+- **Padrão LargeSecureStore com AEAD:**
+  - A chave mestra simétrica AES-256 (32 bytes gerados via hardware com `expo-crypto.getRandomBytes(32)`) é protegida no `expo-secure-store` com `keychainAccessible: AFTER_FIRST_UNLOCK`.
+  - O payload da sessão é cifrado com **AES-256-GCM** (@noble/ciphers/aes) usando um nonce fresco de 12 bytes (`expo-crypto.getRandomBytes(12)`) por escrita.
+  - O ciphertext autenticado com a tag GCM é armazenado no `AsyncStorage` sob o prefixo `enc_`.
+  - **Serialização por chave (`withKeyLock`):** Fila de promises FIFO garante que leituras e escritas concorrentes (ex: refresh de token vs render de tela) nunca colidam.
+  - **Conversão UTF-8 pura:** Não depende de `TextEncoder` ou `TextDecoder` globais do runtime Hermes/JSC. Protegido contra bytes inválidos e loops infinitos.
+  - **Tolerância a falhas e órfãos:** Se a chave do SecureStore for perdida mas existirem dados `enc_`, os dados órfãos são limpos e uma nova chave é gerada limpa para novos logins. Se houver erro transitório de hardware, nenhum dado bom é apagado.
 
-Sintoma: clicar em "Continuar como [nome]" sempre caía no fallback de login (`Invalid Refresh Token: Refresh Token Not Found`), mesmo testando poucos segundos depois do logout — não era expiração de token (refresh token do Supabase **não expira por tempo**, só é invalidado por uso ou revogação).
+### Fluxo de Logout Real: `performLogout(rememberUser)` (`utils/authSession.js`)
+Não existe mais simulação de deslogado via flag local. Todo logout executa `supabase.auth.signOut()` real:
 
-Causa raiz real: **não existe scope de `supabase.auth.signOut()` que deixe a sessão atual viva no servidor.** `scope: 'global'` (padrão) revoga a sessão em *todos* os dispositivos; `scope: 'local'` revoga só a sessão atual — mas revoga. Não tem meio-termo. Um comentário antigo no código dizia que `'local'` "não revoga o token no servidor" — isso está **errado** (checar doc oficial antes de confiar nesse tipo de suposição de novo).
+1. **"Lembrar minha conta" (`performLogout(true)`):**
+   - Resolve o nome do usuário (`user_metadata` com fallback via query rápida a `profiles.full_name`).
+   - Salva em `@batatatop:savedUser` apenas dados mínimos para reconhecimento visual: `{ name, email, provider }` (**ZERO telefone** em estrita conformidade com a LGPD).
+   - Executa `supabase.auth.signOut({ scope: 'local' })`: desloga este dispositivo com segurança, sem revogar sessões ativas do cliente em outros aparelhos.
+   - Confirma com `getSession()`; se restar resíduo, expurga a chave cifrada via `LargeSecureStore.removeItem`.
 
-Ou seja: qualquer `signOut()` chamado no momento do "Sim, lembrar" matava exatamente o refresh token que o app tentaria reusar depois. Reescrever a lógica de refresh/setSession não resolve — o problema é a premissa (guardar um refresh token de uma sessão que você mesmo acabou de revogar).
+2. **"Esquecer conta" / Excluir conta (`performLogout(false)`):**
+   - Remove `@batatatop:savedUser`.
+   - Executa `supabase.auth.signOut({ scope: 'global' })`: revoga todas as sessões do usuário no servidor Supabase.
+   - Expurga chaves residuais de storage e notifica a interface via `emitAuthUiChange()`.
 
-### A solução: soft-logout (não existe logout de verdade aqui)
+3. **Migração Automática de Versões Anteriores (`migrateLegacyAuthState`):**
+   - Executada no boot do app em `initAuthStateListener()` antes de qualquer render ou leitura de sessão.
+   - Detecta usuários que estavam no estado legado de soft-logout (`@batatatop:softLoggedOut === 'true'`), desloga-os de verdade com `signOut({ scope: 'local' })` e preserva o `savedUser` mínimo sem telefone.
+   - Remove a flag legada `@batatatop:softLoggedOut`.
+   - Higieniza `@batatatop:savedUser` antigos apagando telefones pré-existentes gravados em texto puro e inferindo `provider`.
 
-`utils/authSession.js` centraliza:
-- `SOFT_LOGOUT_KEY` — flag local (`AsyncStorage`) que faz a UI **fingir** deslogado.
-- `getEffectiveSession()` — retorna `null` se a flag estiver ligada, senão retorna a sessão real do Supabase.
-- `subscribeAuthUiChange` / `emitAuthUiChange` — pub/sub em memória. Necessário porque ligar/desligar a flag **não** passa por `supabase.auth.onAuthStateChange` (a sessão real nunca muda nesse fluxo) — sem isso, telas que já estão montadas há tempo (o `_layout.js` raiz, que nunca desmonta) não saberiam que precisam reconferir o login.
-- `initAuthStateListener()` — chamada **uma vez** no `_layout.js` raiz. Escuta `SIGNED_IN` real (não importa por onde: e-mail, telefone, Google, etc.) e desliga `SOFT_LOGOUT_KEY` sozinha se estiver ligada. Sem isso, um login de verdade feito enquanto o soft-logout está ativo deixava a flag presa em `'true'` pra sempre, e telas que checam a flag antes de tudo (`profile.js`) continuavam mostrando deslogado mesmo com sessão nova e válida.
-
-**"Sim, lembrar" (`profile.js`, `handleRememberAccount`):** NÃO chama `signOut()`. Só salva `{name, email, phone}` (pra exibir "Continuar como [nome]") em `SAVED_USER_KEY`, liga `SOFT_LOGOUT_KEY`, emite `emitAuthUiChange()`. A sessão real do Supabase continua 100% viva e se renovando sozinha (`autoRefreshToken: true` em `supabaseConfig.js`).
-
-**"Continuar como" (`AuthBottomSheet.tsx`, `handleContinuarComo`):** só desliga `SOFT_LOGOUT_KEY`, emite o evento, confirma com `getEffectiveSession()`/`getSession()` que a sessão real ainda existe, navega. Sem `refreshSession`, sem `setSession` — não tem token nenhum pra restaurar porque nada foi destruído.
-
-**"Esquecer conta" (`profile.js`, `handleForgetAccount`):** esse sim é logout de verdade — `signOut()` padrão (`scope: 'global'`), limpa `SAVED_USER_KEY` **e** `SOFT_LOGOUT_KEY`.
-
-### Bug relacionado: `onAuthStateChange` pisando no soft-logout
-
-Sintoma: `profile.js` respeitava o soft-logout certinho, mas `pedidos.js`, `addresses.js` e `_layout.js` voltavam a mostrar "logado" sozinhos depois de um tempo, mesmo com `SOFT_LOGOUT_KEY` ligada — sem nenhuma ação do usuário.
-
-Causa raiz: essas telas tinham um segundo listener que setava o usuário **direto do `session` recebido no callback** do `onAuthStateChange`, ignorando a flag:
-
-```js
-// ERRADO — ignora o soft-logout
-supabase.auth.onAuthStateChange((_e, session) => setUser(session?.user ?? null));
-```
-
-A sessão real do Supabase se renova sozinha em background (`autoRefreshToken: true`), o que dispara `onAuthStateChange` (ex: evento `TOKEN_REFRESHED`) mesmo com o soft-logout ligado — e esse handler reaplicava a sessão real por cima. `profile.js` nunca teve esse listener direto (só reconfere a flag no `useFocusEffect`), por isso foi o único que ficou certo.
-
-**Correção:** o callback do `onAuthStateChange` nunca deve usar o `session` recebido pra decidir a UI — ele serve só de **gatilho** pra rechamar a função que passa por `getEffectiveSession()`:
-
-```js
-// CERTO — session do callback é só o gatilho, não a fonte de verdade
-const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
-  refreshEffectiveUser(); // função que chama getEffectiveSession() internamente
-});
-```
-
-### Bug relacionado: `SIGNED_IN` falso na reidratação de sessão (cold start) — `utils/authSession.js`
-
-Sintoma: usuário clica em "Sim, lembrar", fecha o app de vez (mata o processo) e abre de novo — esperava ver a tela deslogada e precisar clicar em "Continuar como [nome]", mas o app já abre logado sozinho, sem nenhuma ação.
-
-Causa raiz: `initAuthStateListener()` (chamado uma vez no `_layout.js` raiz) escuta `SIGNED_IN` pra desligar `SOFT_LOGOUT_KEY` quando um login de verdade acontece (ver acima). O problema é que o evento `SIGNED_IN` **não dispara só em login interativo real** — o Supabase também reporta `SIGNED_IN` quando reidrata a sessão persistida do `AsyncStorage` ao iniciar o app, mesmo que o usuário não tenha feito nada. Esse é o **primeiro** evento que o listener recebe depois de assinar `onAuthStateChange`.
-
-Sem tratar isso, todo cold-start com o soft-logout ligado disparava esse `SIGNED_IN` de reidratação, o listener achava que era um login de verdade, desligava a flag sozinho, e a pessoa aparecia logada de novo sem nunca ter tocado em "Continuar como".
-
-**Correção:** ignorar explicitamente o primeiro evento recebido depois de assinar o listener — ele é sempre a reidratação/estado atual, nunca uma transição real:
-
-```js
-export function initAuthStateListener() {
-  if (listenerInitialized) return;
-  listenerInitialized = true;
-
-  // O primeiro evento após assinar é sempre a reidratação da sessão do
-  // AsyncStorage no cold start, não um login real — precisa ser ignorado.
-  let isInitialEvent = true;
-
-  supabase.auth.onAuthStateChange(async (event, session) => {
-    if (isInitialEvent) {
-      isInitialEvent = false;
-      return;
-    }
-
-    if (event === 'SIGNED_IN' && session) {
-      const soft = await AsyncStorage.getItem(SOFT_LOGOUT_KEY);
-      if (soft === 'true') {
-        await AsyncStorage.setItem(SOFT_LOGOUT_KEY, 'false');
-        emitAuthUiChange();
-      }
-    }
-  });
-}
-```
-
-### Checklist pra qualquer tela nova que decide "logado ou não" pra UI
-
-- [ ] Nunca chamar `supabase.auth.getSession()` direto pra gate de UI — usar `getEffectiveSession()` de `utils/authSession.js`.
-- [ ] No `useEffect` de auth, assinar `subscribeAuthUiChange()` além de `onAuthStateChange` (e limpar os dois no cleanup).
-- [ ] **No callback do `onAuthStateChange`, nunca usar o `session` recebido pra setar o usuário/UI diretamente** — ele só deve disparar a função que reaplica a sessão real por cima do soft-logout assim que o token se renova sozinho em background.
-- [x] **Em `initAuthStateListener()`, sempre ignorar o primeiro evento recebido** (`isInitialEvent`) — o Supabase reporta a reidratação da sessão no cold start como `SIGNED_IN`, e sem esse guard o soft-logout é desligado sozinho toda vez que o app abre.
-- [ ] Já aplicado em: `app/_layout.js`, `app/profile.js`, `app/pedidos.js`, `app/addresses.js`, `components/AuthBottomSheet.tsx`, `components/EntrarBanner.tsx`.
-
----
+4. **"Continuar como" no `AuthBottomSheet.tsx`:**
+   - Se `provider === 'google'`: aciona o fluxo Google diretamente com feedback de cancelamento/erro sem fechar o sheet prematuramente.
+   - Se `provider === 'phone'`: redireciona para `/auth/telefone`.
+   - Se `provider === 'email'`: abre `/auth/login` pré-preenchendo o e-mail nos parâmetros.
+   - Se legado sem provider: transita para a seleção de métodos (Estado A) sem prometer login em 1 toque incorreto.
 
 ## 12. Alertas — OBRIGATÓRIO: sempre `ThemedAlert` global
 

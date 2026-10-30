@@ -28,7 +28,7 @@ function formatPhone(value) {
 
 export default function TelefoneScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
+    const insets = useSafeAreaInsets();
   const inputRef = useRef(null);
 
   const [phone, setPhone] = useState('');
@@ -51,7 +51,7 @@ export default function TelefoneScreen() {
     router.replace('/auth/login');
   }, [router]);
 
-  // Foco manual com atraso — autoFocus abre o teclado no meio da
+  // Foco manual com atraso — autoFocus nativo abre o teclado no meio da
   // transição de entrada da tela (Expo Router) e desalinha o layout.
   useEffect(() => {
     const t = setTimeout(() => inputRef.current?.focus(), 300);

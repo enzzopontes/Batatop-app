@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../supabaseConfig';
+import { performLogout } from '../../utils/authSession';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../../constants/theme';
 import { ThemedAlertHost, showThemedAlert, hideThemedAlert, showErrorAlert } from '../../components/ThemedAlert';
 import SwipeableBottomSheetModal from '../../components/SwipeableBottomSheetModal';
@@ -25,9 +26,8 @@ const SAVED_USER_KEY = '@batatatop:savedUser';
 
 // Mesma função de persistência do login.js — mantém "continuar como {nome}"
 // funcionando também pra quem entra por celular.
-const persistSavedUser = async ({ name, phone, email: emailParam }) => {
+const persistSavedUser = async ({ name, email: emailParam }) => {
   try {
-    // Usa o email passado (ex: linkedEmail) se houver; senão busca da sessão.
     let email = emailParam || '';
     if (!email) {
       const { data: { session } } = await supabase.auth.getSession();
@@ -37,7 +37,7 @@ const persistSavedUser = async ({ name, phone, email: emailParam }) => {
     const userData = {
       name,
       email,
-      phone,
+      provider: 'phone',
     };
 
     await AsyncStorage.setItem(SAVED_USER_KEY, JSON.stringify(userData));
@@ -329,7 +329,7 @@ export default function CodigoScreen() {
         style={[styles.backBtn, { top: insets.top + 8 }]}
         onPress={async () => {
           if (step === 'name' || step === 'email') {
-            await supabase.auth.signOut();
+            await performLogout(false);
             router.replace('/');
           } else {
             router.back();
