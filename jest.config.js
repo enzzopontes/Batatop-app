@@ -5,4 +5,8 @@ module.exports = {
   transformIgnorePatterns: [
     'node_modules/(?!(@noble/ciphers)/)',
   ],
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    '/.agents/',
+  ],
 };

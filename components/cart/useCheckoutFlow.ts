@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter, useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../supabaseConfig';
 import { useCart } from '../../utils/cartStore';
 import { getEffectiveSession, subscribeAuthUiChange } from '../../utils/authSession';
@@ -29,8 +28,6 @@ import { MIN_ORDER_VALUE, DELIVERY_FEE, STORE_ADDRESS } from '../../constants/st
 import { showThemedAlert, showErrorAlert } from '../ThemedAlert';
 
 export type CheckoutStep = 'itens' | 'entrega' | 'pagamento';
-
-const SAVED_USER_KEY = '@batatatop:savedUser';
 
 import { mapCartItemsToOrderItems } from '../../utils/orderMapper';
 
@@ -315,21 +312,6 @@ export function useCheckoutFlow() {
         }
       } catch (e) {
         console.warn('[useCheckoutFlow] Falha ao carregar perfil de profiles:', e);
-      }
-
-      // Fallback para AsyncStorage (se não tiver no profiles nem no auth)
-      if (!userPhone) {
-        try {
-          const raw = await AsyncStorage.getItem(SAVED_USER_KEY);
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            if (parsed.phone) {
-              userPhone = String(parsed.phone).trim();
-            }
-          }
-        } catch (e) {
-          console.warn('[useCheckoutFlow] Falha ao carregar dados locais do usuário:', e);
-        }
       }
 
       const formatted = formatPhone(userPhone);
@@ -890,7 +872,7 @@ export function useCheckoutFlow() {
       const finalOrderId = currentOrderId;
       pendingOrderIdRef.current = null;
 
-      // Persiste o telefone no banco de dados atrelado ao usuário (profiles), user_metadata e AsyncStorage
+      // Persiste o telefone no banco de dados atrelado ao usuário (profiles) e user_metadata
       if (session?.user?.id && phone.trim()) {
         const cleanPhone = phone.trim();
         const cleanDigits = cleanPhone.replace(/\D/g, '').replace(/^55/, '');
@@ -909,16 +891,6 @@ export function useCheckoutFlow() {
         supabase.auth
           .updateUser({
             data: { phone: phoneToSave },
-          })
-          .catch(() => {});
-
-        AsyncStorage.getItem(SAVED_USER_KEY)
-          .then((raw) => {
-            try {
-              const parsed = raw ? JSON.parse(raw) : {};
-              parsed.phone = phoneToSave;
-              AsyncStorage.setItem(SAVED_USER_KEY, JSON.stringify(parsed)).catch(() => {});
-            } catch {}
           })
           .catch(() => {});
 
