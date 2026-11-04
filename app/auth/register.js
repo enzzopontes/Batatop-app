@@ -25,12 +25,18 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
   const handleRegister = async () => {
     if (!name || !email || !password || !confirmPassword) {
       showThemedAlert('Erro', 'Por favor, preencha todos os campos.');
+      return;
+    }
+
+    if (!acceptedTerms) {
+      showThemedAlert('Termos e Privacidade', 'Você deve aceitar os Termos de Uso e a Política de Privacidade para criar sua conta.');
       return;
     }
 

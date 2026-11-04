@@ -189,23 +189,31 @@ Se o cupom for válido e atender às condições da promoção, o valor do desco
   {
     id: 'politica-de-cancelamento',
     categoryId: 'politicas',
-    title: 'Política de Cancelamento de Pedidos',
-    shortDesc: 'Regras e prazos para cancelamento de compras.',
+    title: 'Política de Cancelamento e Reembolso',
+    shortDesc: 'Regras de desistência, troca e estorno conforme Art. 49 do CDC.',
     content: `
-Sabemos que, às vezes, imprevistos acontecem e cancelar o pedido pode ser necessário. Para garantir transparência, apresentamos aqui as regras do **Batata Top**:
+A **BatataTop Delivery** (66.599.795 QUEILA LAIS MARQUES DA SILVA, CNPJ: 66.599.795/0001-04) assegura seus direitos em conformidade com o Código de Defesa do Consumidor (Lei Federal nº 8.078/1990):
 
-### 1. Antes do início do preparo
-- Se o pedido ainda estiver aguardando pagamento ou pendente de confirmação, o cancelamento com reembolso total é garantido.
+### 1. Direito de Arrependimento e Cancelamento Antes do Preparo (Art. 49 CDC)
+- Se o seu pedido estiver com o status "Aguardando Confirmação" ou "Pendente" e a cozinha ainda não iniciou a confecção ou separação dos ingredientes perecíveis, o cancelamento com **reembolso integral (100%)** — incluindo a taxa de entrega — é garantido imediatamente.
 
-### 2. Durante o preparo da refeição
-- Como se trata de alimento preparado na hora sob encomenda, se o pedido já estiver em preparo pela cozinha, o cancelamento dependerá da confirmação com a loja.
+### 2. Pedidos em Preparo ou em Rota de Entrega
+- Por se tratar de alimento perecível preparado de forma personalizada sob demanda, não serão aceitos cancelamentos imotivados após o início da produção na cozinha ou saída do entregador.
+- **Exceção de responsabilidade da loja:** Em caso de atraso manifestamente excessivo e não justificado imputável unicamente ao estabelecimento (superior ao dobro do tempo estimado comunicado) ou falta de insumos, o cliente tem direito ao cancelamento imediato e estorno total.
 
-### 3. Durante a entrega
-- A pessoa responsável pela entrega aguardará no endereço informado por tempo razoável. Caso não seja localizado ninguém no local e não haja contato do cliente, o pedido poderá ser considerado entregue ou cancelado sem reembolso devido à perda do alimento.
+### 3. Vício, Produto Incorreto, Avaria ou Falta de Item (Art. 18 CDC)
+Se houver qualquer divergência em relação ao pedido (ingrediente incorreto, item faltante, embalagem danificada):
+- Comunique o suporte pelo app em até 2 horas após o recebimento.
+- Você poderá escolher entre: **(i) reenvio imediato do produto correto sem custo**; **(ii) cupom de crédito integral**; ou **(iii) estorno financeiro**.
 
-### 4. Critérios que permitem Cancelamento / Reembolso:
-- Pedido com ingredientes errados em relação ao solicitado;
-- Problemas comprovados de qualidade no produto no momento do recebimento.
+### 4. Prazos e Formas de Reembolso:
+- **PIX:** Processado via Mercado Pago em até 24 horas úteis diretamente para a conta bancária pagadora.
+- **Cartão de Crédito:** Notificação à administradora em até 48 horas. O crédito é estornado na fatura em até 1 a 2 ciclos de faturamento conforme a instituição financeira.
+
+### 5. Atendimento e Contato
+- WhatsApp Oficial: (14) 99736-1015
+- E-mail Oficial: maraysis9010@gmail.com
+- Sede: Rua Carlos Roberto Crepaldi, 120, Sala, Jardim Alvorada, Iacanga - SP, CEP 17187-074
     `,
   },
   {
@@ -237,12 +245,12 @@ As avaliações no Batata Top têm como objetivo coletar a opinião sincera dos 
     title: 'Termos & Condições de Uso',
     shortDesc: 'Regras gerais de utilização do aplicativo.',
     isRichTerms: true,
-    introText: `Estes Termos regulam o acesso e uso da plataforma mobile Batata Top para pedidos de batatas recheadas, refeições e bebidas preparadas sob demanda no município de Iacanga-SP.\n\nAo criar uma conta ou concluir um pedido, você declara ter lido, compreendido e aceito integralmente estes Termos de Uso.`,
+    introText: `Estes Termos regulam o acesso e uso da plataforma mobile e web BatataTop Delivery, operada por 66.599.795 QUEILA LAIS MARQUES DA SILVA, CNPJ 66.599.795/0001-04, com sede na Rua Carlos Roberto Crepaldi, 120, Sala, Jardim Alvorada, Iacanga - SP, CEP 17187-074.\n\nAo criar uma conta ou concluir um pedido, você declara ter lido, compreendido e aceito integralmente estes Termos de Uso.`,
     highlights: [
       {
         tag: '#SuaResponsabilidade',
         icon: 'heart-outline',
-        content: `A Batata Top preza pelo respeito mútuo. É expressamente proibido desrespeitar, ofender ou ameaçar entregadores, atendentes ou funcionários, tentar fraudar sistemas de cupons promocionais ou fornecer intencionalmente dados falsos.\nO descumprimento destas regras resultará no cancelamento imediato de pedidos e na suspensão ou exclusão da conta.`,
+        content: `A BatataTop Delivery preza pelo respeito mútuo. É expressamente proibido desrespeitar, ofender ou ameaçar entregadores, atendentes ou funcionários, tentar fraudar sistemas de cupons promocionais ou fornecer intencionalmente dados falsos.\nO descumprimento destas regras resultará no cancelamento imediato de pedidos e na suspensão ou exclusão da conta.`,
       },
       {
         tag: '#SeuDireito',
@@ -254,7 +262,7 @@ As avaliações no Batata Top têm como objetivo coletar a opinião sincera dos 
       {
         num: '1',
         title: 'Objeto e Aceitação',
-        body: 'Estes Termos regulam o acesso e uso da plataforma mobile Batata Top para pedidos de batatas recheadas, refeições e bebidas preparadas sob demanda no município de Iacanga-SP. Ao criar uma conta ou concluir um pedido, você declara ter lido, compreendido e aceito integralmente estes Termos de Uso.',
+        body: 'Estes Termos regulam o acesso e uso da plataforma mobile BatataTop Delivery (operada por 66.599.795 QUEILA LAIS MARQUES DA SILVA, CNPJ: 66.599.795/0001-04) para pedidos de batatas recheadas, refeições e bebidas preparadas sob demanda no município de Iacanga-SP. Ao criar uma conta ou concluir um pedido, você declara ter lido, compreendido e aceito integralmente estes Termos de Uso.',
       },
       {
         num: '2',
@@ -264,12 +272,12 @@ As avaliações no Batata Top têm como objetivo coletar a opinião sincera dos 
       {
         num: '3',
         title: 'Pedidos e Modalidades de Recebimento',
-        body: '• Delivery: O entregador levará o pedido até o endereço cadastrado em Iacanga-SP. O cliente deve se atentar ao telefone e acompanhar as notificações de status para receber a refeição.\n• Retirada no Portão de Ferro Preto: O cliente retira o pedido diretamente no endereço da loja (portão de ferro preto) assim que o status do aplicativo indicar "Pronto para retirada".\n• Horários e Disponibilidade: Pedidos estão sujeitos ao horário de funcionamento da cozinha e à disponibilidade diária de estoque e insumos.',
+        body: '• Delivery: O entregador levará o pedido até o endereço cadastrado em Iacanga-SP. O cliente deve se atentar ao telefone e acompanhar as notificações de status para receber a refeição.\n• Retirada no Balcão: O cliente retira o pedido diretamente no endereço da loja assim que o status do aplicativo indicar "Pronto para retirada".\n• Horários e Disponibilidade: Pedidos estão sujeitos ao horário de funcionamento da cozinha e à disponibilidade diária de estoque e insumos.',
       },
       {
         num: '4',
         title: 'Preços, Cupons e Pagamentos',
-        body: '• Valores e taxas: O valor total do pedido, incluindo adicionais, descontos de cupons e taxa de entrega, é exibido no resumo antes da confirmação.\n• Processamento online: Pagamentos por Cartão de Crédito, Débito e PIX são intermediados com segurança pelo Mercado Pago. O Batata Top não armazena dados de cartão em seus servidores.\n• Pagamento na entrega: Quando disponível a opção de pagamento presencial (dinheiro ou maquininha), o valor ou necessidade de troco deve ser especificado no fechamento do pedido.',
+        body: '• Valores e taxas: O valor total do pedido, incluindo adicionais, descontos de cupons e taxa de entrega, é exibido no resumo antes da confirmação.\n• Processamento online: Pagamentos por Cartão de Crédito, Débito e PIX são intermediados com segurança pelo Mercado Pago. O BatataTop não armazena dados de cartão em seus servidores.\n• Pagamento na entrega: Quando disponível a opção de pagamento presencial (dinheiro ou maquininha), o valor ou necessidade de troco deve ser especificado no fechamento do pedido.',
       },
       {
         num: '5',
@@ -279,7 +287,7 @@ As avaliações no Batata Top têm como objetivo coletar a opinião sincera dos 
       {
         num: '6',
         title: 'Conduta do Usuário',
-        body: 'A Batata Top preza pelo respeito mútuo. É expressamente proibido desrespeitar, ofender ou ameaçar entregadores, atendentes ou funcionários; tentar fraudar sistemas de cupons promocionais ou efetuar pagamentos com cartões clonados/roubados; ou fornecer intencionalmente endereços ou dados falsos. O descumprimento resultará no cancelamento imediato de pedidos e na suspensão ou exclusão definitiva da conta.',
+        body: 'A BatataTop Delivery preza pelo respeito mútuo. É expressamente proibido desrespeitar, ofender ou ameaçar entregadores, atendentes ou funcionários; tentar fraudar sistemas de cupons promocionais ou efetuar pagamentos com cartões clonados/roubados; ou fornecer intencionalmente endereços ou dados falsos. O descumprimento resultará no cancelamento imediato de pedidos e na suspensão ou exclusão definitiva da conta.',
       },
       {
         num: '7',
@@ -288,8 +296,8 @@ As avaliações no Batata Top têm como objetivo coletar a opinião sincera dos 
       },
       {
         num: '8',
-        title: 'Atendimento e Suporte',
-        body: 'Em caso de dúvidas, atrasos ou problemas com o pedido:\n• WhatsApp oficial / Suporte no App: (14) 99736-1015\n• E-mail: enzzobaraldo2008@gmail.com\n• Localidade: Iacanga-SP',
+        title: 'Foro e Atendimento ao Consumidor',
+        body: 'Fica eleito o Foro da Comarca de Iacanga - SP para dirimir controvérsias, com expressa ressalva da prerrogativa legal do consumidor de optar pelo foro de seu próprio domicílio residencial (Art. 101, I do CDC).\n\nEm caso de dúvidas:\n• WhatsApp oficial: (14) 99736-1015\n• E-mail: maraysis9010@gmail.com\n• Sede: Rua Carlos Roberto Crepaldi, 120, Sala, Jardim Alvorada, Iacanga - SP, CEP 17187-074',
       },
     ],
   },
@@ -301,16 +309,16 @@ As avaliações no Batata Top têm como objetivo coletar a opinião sincera dos 
     title: 'Declaração de Privacidade',
     shortDesc: 'Como tratamos e protegemos seus dados pessoais sob a LGPD.',
     isRichPrivacy: true,
-    updateDate: '16 de outubro de 2026',
+    updateDate: '4 de novembro de 2026',
     readingTime: '6 minutos',
     content: `
 ### Seus dados são seus.
 
-A proteção da sua privacidade é prioridade absoluta no Batata Top. Assumimos o compromisso de tratar suas informações pessoais com total transparência, segurança e em estrita conformidade com a Lei Geral de Proteção de Dados Pessoais (LGPD — Lei nº 13.709/2018).
+A proteção da sua privacidade é prioridade absoluta no **BatataTop Delivery** (66.599.795 QUEILA LAIS MARQUES DA SILVA, CNPJ: 66.599.795/0001-04, com sede na Rua Carlos Roberto Crepaldi, 120, Sala, Jardim Alvorada, Iacanga - SP, CEP 17187-074). Assumimos o compromisso de tratar suas informações pessoais com total transparência, segurança e em estrita conformidade com a Lei Geral de Proteção de Dados Pessoais (LGPD — Lei nº 13.709/2018).
 
 Esta Declaração de Privacidade descreve como coletamos, utilizamos, armazenamos, compartilhamos e protegemos os seus dados durante o uso do nosso aplicativo de delivery em Iacanga-SP.
 
-Ao utilizar o Batata Top, você concorda com as práticas descritas a seguir.
+Ao utilizar o BatataTop Delivery, você concorda com as práticas descritas a seguir.
 
 ### 1. Que dados coletamos?
 
@@ -320,7 +328,7 @@ Coletamos apenas as informações necessárias para operar o serviço de deliver
 - CPF (opcional): Coletado somente caso você opte por incluí-lo na emissão do documento fiscal ou para cumprimento de obrigações tributárias.
 - Dados de entrega e endereço: Rua, número, complemento, bairro, cidade (Iacanga-SP) e referências fornecidas por você para a localização exata do imóvel.
 - Localização e GPS (opcional): Coordenadas obtidas quando você autoriza a permissão no aparelho, utilizadas exclusivamente em primeiro plano para agilizar a seleção do endereço e exibir a estimativa de entrega no mapa.
-- Dados de pagamento: Todas as cobranças online por PIX e cartão de crédito ou débito são processadas de forma criptografada pelo Mercado Pago. O Batata Top não armazena números de cartão, códigos de segurança (CVV) ou senhas bancárias em seus servidores.
+- Dados de pagamento: Todas as cobranças online por PIX e cartão de crédito ou débito são processadas de forma criptografada pelo Mercado Pago. O BatataTop não armazena números de cartão, códigos de segurança (CVV) ou senhas bancárias em seus servidores.
 - Histórico de pedidos: Produtos adquiridos, complementos, valores, cupons aplicados, datas e horários das compras.
 - Identificadores de dispositivo e acesso: Versão do aplicativo, modelo do dispositivo, endereço IP, logs de acesso (conforme o Marco Civil da Internet) e token de notificação para entrega de avisos no aparelho.
 
@@ -328,26 +336,26 @@ Coletamos apenas as informações necessárias para operar o serviço de deliver
 
 Utilizamos os dados coletados com fundamentos legais legítimos previstos na LGPD:
 
-- Processar e entregar seus pedidos: Preparar os alimentos encomendados e garantir que o entregador chegue com precisão ao seu endereço em Iacanga-SP.
-- Envio de notificações em tempo real: Manter você informado sobre cada status do pedido (recebido, em preparo, saiu para entrega) por meio de notificações push (serviço Expo) ou mensagens operacionais.
+- Processar e entregar seus pedidos: Preparar os alimentos encomendados e garantir que o entregador chegue com precisão ao seu endereço em Iacanga-SP (Execução de Contrato - Art. 7º, V).
+- Envio de notificações em tempo real: Manter você informado sobre cada status do pedido por meio de notificações push ou mensagens operacionais.
 - Suporte e atendimento: Solucionar dúvidas, atender solicitações de suporte, cancelamento ou ajustes em pedidos.
 - Prevenção à fraude e segurança: Identificar atividades suspeitas, validar pagamentos e proteger os clientes e a plataforma contra fraudes eletrônicas.
-- Cumprimento de obrigações legais: Emissão de comprovantes fiscais e guarda obrigatória de registros de conexão nos termos da lei.
+- Cumprimento de obrigações legais: Emissão de notas fiscais e guarda obrigatória de logs por 6 meses nos termos do Art. 15 do Marco Civil da Internet.
 
 ### 3. Compartilhamento de dados
 
-O Batata Top não comercializa, não aluga e não transfere seus dados pessoais para terceiros com finalidade de propaganda ou mala direta. O compartilhamento ocorre apenas quando essencial:
+O BatataTop Delivery não comercializa, não aluga e não transfere seus dados pessoais para terceiros com finalidade de propaganda ou mala direta. O compartilhamento ocorre apenas quando essencial:
 
 - Entregadores parceiros: Recebem unicamente o primeiro nome, telefone de contato e endereço de entrega completo para viabilizar a entrega física da sua refeição.
 - Intermediador de pagamento (Mercado Pago): Envio seguro dos dados da transação para autorização e liquidação dos pagamentos em ambiente criptografado e certificado PCI-DSS.
-- Provedores de infraestrutura: Serviços de hospedagem em nuvem de alto padrão de segurança e serviço de notificações (Expo) para entrega técnica de mensagens.
+- Provedores de infraestrutura (Supabase): Hospedagem em nuvem sob rígidos padrões de segurança e criptografia TLS 1.3.
 - Autoridades competentes: Apenas mediante determinação judicial formal ou exigência legal cabível.
 
 ### 4. Como protegemos e armazenamos seus dados?
 
 - Criptografia de ponta a ponta: Todo o tráfego de dados entre o aplicativo e os nossos servidores opera sob protocolo HTTPS com criptografia SSL/TLS.
 - Acesso controlado: Somente operadores autorizados e vinculados a termos de confidencialidade têm acesso aos dados operacionais necessários ao atendimento.
-- Retenção responsável: Os dados pessoais são mantidos enquanto sua conta estiver ativa ou pelo período necessário para cumprimento de prazos legais e regulatórios vigentes.
+- Retenção responsável: Os dados pessoais são mantidos enquanto sua conta estiver ativa ou pelo período necessário para cumprimento de prazos legais e fiscais vigentes (5 anos para dados fiscais conforme o Código Tributário Nacional).
 
 ### 5. Quais são os seus direitos (LGPD — Art. 18)?
 
@@ -355,6 +363,7 @@ A Lei Geral de Proteção de Dados assegura a você os seguintes direitos:
 
 - Confirmação e acesso: Saber se seus dados são tratados e solicitar acesso às informações cadastradas.
 - Correção de dados: Solicitar a correção de dados incompletos, inexatos ou desatualizados diretamente pelo app.
+- Portabilidade de dados: Obter arquivo estruturado de seus dados pessoais.
 - Revogação de consentimento: Desativar permissões de localização (GPS) ou notificações a qualquer momento nas configurações do seu celular.
 - Eliminação dos dados: Solicitar a exclusão definitiva dos seus dados cadastrais, ressalvadas as informações de guarda legalmente obrigatória.
 
@@ -362,16 +371,17 @@ A Lei Geral de Proteção de Dados assegura a você os seguintes direitos:
 
 Você pode solicitar o encerramento da conta e o expurgo dos seus dados pessoais a qualquer momento:
 
-- Pelo aplicativo: Acesse o menu Perfil e selecione a opção de exclusão de conta ou entre em contato direto pelo suporte.
-- Pelo canal de suporte: Encaminhe sua solicitação com o assunto "Exclusão de Dados — LGPD" contendo seu telefone ou e-mail cadastrado para o nosso atendimento oficial. O processo é analisado e concluído em conformidade com os prazos da legislação brasileira.
+- Pelo aplicativo: Acesse o menu Perfil > Informações Pessoais / Segurança para requerer a exclusão de conta.
+- Pelo canal do DPO: Encaminhe sua solicitação com o assunto "Exclusão de Dados — LGPD" contendo seu telefone ou e-mail cadastrado para maraysis9010@gmail.com.
 
-### 7. Contato do Encarregado de Dados (DPO) e Suporte
+### 7. Encarregada pelo Tratamento de Dados (DPO) e Atendimento
 
 Para esclarecer dúvidas sobre esta Declaração de Privacidade ou exercer seus direitos de titular de dados:
 
-- Encarregado pelo tratamento de dados (DPO): Equipe de Privacidade e Suporte Batata Top
-- E-mail de atendimento: enzzobaraldo2008@gmail.com
-- Atendimento direto em Iacanga-SP: Pelo chat de ajuda no aplicativo ou WhatsApp oficial de suporte da loja.
+- Encarregada pelo tratamento de dados (DPO): Maraysis Pontes Baraldo
+- E-mail oficial do DPO: maraysis9010@gmail.com
+- Prazo de resposta: até 15 dias úteis (Art. 19, II da LGPD)
+- Atendimento direto em Iacanga-SP: Pelo WhatsApp oficial da loja (14) 99736-1015 ou sede na Rua Carlos Roberto Crepaldi, 120, Sala, Jardim Alvorada, Iacanga - SP, CEP 17187-074.
     `,
   },
 ];

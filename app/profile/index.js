@@ -206,10 +206,15 @@ export default function Profile() {
               { label: 'Ajuda', onPress: () => router.push('/ajuda') },
               { label: 'Termos de Uso', onPress: () => router.push({ pathname: '/ajuda/artigo/termos-de-uso', params: { headerTitle: 'TERMOS DE USO' } }) },
               { label: 'Política de Privacidade', onPress: () => router.push({ pathname: '/ajuda/artigo/declaracao-de-privacidade', params: { headerTitle: 'DECLARAÇÃO DE PRIVACIDADE' } }) },
+              { label: 'Política de Reembolso (CDC)', onPress: () => router.push({ pathname: '/ajuda/artigo/politica-de-cancelamento', params: { headerTitle: 'REEMBOLSO E CANCELAMENTO' } }) },
             ]}
           />
 
-          <Text style={sg.versionText}>Batata Top v2.2.0</Text>
+          <View style={{ alignItems: 'center', marginTop: 18, marginBottom: 20 }}>
+            <Text style={sg.versionText}>BatataTop Delivery • Versão 2.2.0</Text>
+            <Text style={[sg.versionText, { marginTop: 4, fontSize: 10, color: '#888' }]}>66.599.795 QUEILA LAIS MARQUES DA SILVA</Text>
+            <Text style={[sg.versionText, { marginTop: 2, fontSize: 10, color: '#888' }]}>CNPJ: 66.599.795/0001-04 • Iacanga - SP</Text>
+          </View>
         </ScrollView>
 
       </View>
@@ -355,10 +360,15 @@ export default function Profile() {
             { label: 'Ajuda', onPress: () => router.push('/ajuda') },
             { label: 'Termos de uso', onPress: () => router.push({ pathname: '/ajuda/artigo/termos-de-uso', params: { headerTitle: 'TERMOS DE USO' } }) },
             { label: 'Políticas de privacidade', onPress: () => router.push({ pathname: '/ajuda/artigo/declaracao-de-privacidade', params: { headerTitle: 'DECLARAÇÃO DE PRIVACIDADE' } }) },
+            { label: 'Política de Reembolso (CDC)', onPress: () => router.push({ pathname: '/ajuda/artigo/politica-de-cancelamento', params: { headerTitle: 'REEMBOLSO E CANCELAMENTO' } }) },
           ]}
         />
 
-        <Text style={s.versionText}>Batata Top v2.2.0</Text>
+        <View style={{ alignItems: 'center', marginTop: 18, marginBottom: 20 }}>
+          <Text style={s.versionText}>BatataTop Delivery • Versão 2.2.0</Text>
+          <Text style={[s.versionText, { marginTop: 4, fontSize: 10, color: '#888' }]}>66.599.795 QUEILA LAIS MARQUES DA SILVA</Text>
+          <Text style={[s.versionText, { marginTop: 2, fontSize: 10, color: '#888' }]}>CNPJ: 66.599.795/0001-04 • Iacanga - SP</Text>
+        </View>
       </ScrollView>
 
       {/* Modal de "lembrar conta" ao sair */}
