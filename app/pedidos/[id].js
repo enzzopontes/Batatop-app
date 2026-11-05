@@ -90,16 +90,22 @@ function solveLaunchVelocity(rise, tau, terminalVel) {
 }
 
 function generateConfettiPieces(width, height) {
-  // Canhão: ponto único no centro exato da tela (todas as peças nascem aqui)
-  const originX = width * 0.5;
-  const originY = height * 0.5;
-  // Meia-largura máxima do feixe durante a subida (coluna estreita, sem leque)
-  const beamHalfWidth = width * 0.018;
+  // Dois canhões nos cantos inferiores em duas rajadas (Bomba 1 e Bomba 2)
+  const halfCount = Math.floor(CONFETTI_COUNT / 2);
+
+
+
+
 
   return Array.from({ length: CONFETTI_COUNT }).map((_, i) => {
-    // Leque estratificado de -1 (borda esquerda) a +1 (borda direita), sem buracos
-    const u = ((i + Math.random()) / CONFETTI_COUNT) * 2 - 1;
-    const lateral = Math.sign(u) * Math.pow(Math.abs(u), 0.85);
+
+    const isBomb2 = i >= halfCount;
+    const isRight = i % 2 === 1;
+    const originX = isRight ? width * 0.98 : width * 0.02;
+    const originY = height * 0.98;
+    const sideDir = isRight ? -1 : 1;
+    const lateralSpread = 0.35 + Math.random() * 0.45;
+
 
     // Formatos: tiras de papel (maioria), quadrados e círculos
     const shapeRoll = Math.random();
@@ -113,15 +119,17 @@ function generateConfettiPieces(width, height) {
 
     // Vetor de subida: centro sobe até o topo (~4-6% da altura); peças destinadas às
     // bordas param um pouco antes, desenhando o "chapéu" do cogumelo na abertura
-    const rise = height * (0.44 - 0.12 * lateral * lateral + (Math.random() - 0.5) * 0.05);
+    const rise = height * (0.64 + (Math.random() - 0.5) * 0.18);
     const launchVy = solveLaunchVelocity(rise, dragTau, terminalVel);
     const apexTime = dragTau * Math.log(1 + launchVy / terminalVel);
 
     // Espalhamento atrasado: só começa nos últimos 20% do tempo de subida
-    const spreadStart = apexTime * 0.8;
-    const spreadTau = 0.2 + Math.random() * 0.08;
-    const targetX = lateral * width * 0.52;
-    const beamX = lateral * beamHalfWidth;
+    const spreadStart = apexTime * 0.7;
+    const spreadTau = 0.22 + Math.random() * 0.08;
+    const totalTravelX = sideDir * width * lateralSpread;
+    const beamX = totalTravelX * 0.35;
+    const targetX = totalTravelX * 0.65;
+
 
     // Oscilação de descida (folha/cobra): tiras balançam mais largo e mais lento
     const flutterAmp =
@@ -143,7 +151,7 @@ function generateConfettiPieces(width, height) {
 
     // Tempos mantidos idênticos ao original
     const duration = 2150 + Math.floor(Math.random() * 450);
-    const delay = Math.floor(Math.random() * 90);
+    const delay = isBomb2 ? 300 + Math.floor(Math.random() * 60) : Math.floor(Math.random() * 60);
 
     const color = CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)];
     const size =
@@ -961,7 +969,7 @@ export default function DetalhesPedido() {
       if (confettiEndTimeoutRef.current) clearTimeout(confettiEndTimeoutRef.current);
       confettiEndTimeoutRef.current = setTimeout(() => {
         setShowConfetti(false);
-      }, 3020);
+      }, 3400);
 
       // 4. Notifica o painel administrativo de novo pedido aprovado
       notifyAdminNewOrder(pedidoRef.current?.id || id).catch(() => {});
