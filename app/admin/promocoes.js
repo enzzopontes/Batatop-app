@@ -14,6 +14,7 @@ import * as Haptics from 'expo-haptics';
 import { AdminListSkeleton } from '../../components/Skeleton';
 import { ThemedAlertHost } from '../../components/ThemedAlert';
 import SwipeableBottomSheetModal from '../../components/SwipeableBottomSheetModal';
+import AdminHomeBannersSection from '../../components/admin/AdminHomeBannersSection';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -497,6 +498,11 @@ export default function AdminPromocoes() {
               </Pressable>
             </View>
           </View>
+
+          {/* ─────────────────────────────────────────────────────────────
+              CARD 3: BANNERS PROMOCIONAIS DA HOME (APP & WEB)
+          ─────────────────────────────────────────────────────────────── */}
+          <AdminHomeBannersSection promoImages={promoImages} />
 
           {/* Sincronização Geral */}
           <Pressable

@@ -3,6 +3,8 @@ import { View, FlatList, StyleSheet, Dimensions, Pressable, Text, Image as RNIma
 import { Image as ExpoImage } from 'expo-image';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import * as Clipboard from 'expo-clipboard';
+import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS } from '../constants/theme';
 import { fetchHighlightCouponBanners } from '../utils/homeCoupons';
 import { cartStore } from '../utils/cartStore';
@@ -112,13 +114,41 @@ export default function BannerCarousel() {
     goToIndex(newIndex);
   };
 
+  // Auto-adapta a altura do container à proporção real da imagem do banner ativo
+  useEffect(() => {
+    const currentImg = couponBanners[activeIndex]?.uri || couponBanners[0]?.uri;
+    if (currentImg) {
+      RNImage.getSize(
+        currentImg,
+        (w, h) => {
+          if (w > 0 && h > 0) {
+            const ratio = w / h;
+            // Harmonização: limita entre 1.3 (mais vertical) e 2.6 (mais panorâmico)
+            const clampedRatio = Math.max(1.3, Math.min(2.6, ratio));
+            const autoHeight = Math.round(ITEM_WIDTH / clampedRatio);
+            setDynamicHeight(autoHeight);
+          }
+        },
+        () => {}
+      );
+    }
+  }, [activeIndex, couponBanners]);
+
   const handleBannerPress = async (item) => {
     const coupon = item.coupon;
     if (coupon && (coupon.code || coupon.id)) {
       try {
         cartStore.setCoupon(coupon);
+        if (coupon.code) {
+          try {
+            await Clipboard.setStringAsync(coupon.code);
+          } catch {}
+        }
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        showSuccessAlert('Seu cupom foi aplicado!', 'Sucesso');
+        showSuccessAlert(
+          `Cupom ${coupon.code || ''} aplicado! Ao entrar na sacola o desconto já estará ativo.`,
+          'Cupom Ativado'
+        );
       } catch (err) {
         console.warn('Erro ao aplicar cupom do banner:', err);
       }
@@ -160,6 +190,14 @@ export default function BannerCarousel() {
                 {item.badge_label ? (
                   <View style={s.badgeWrap}>
                     <Text style={s.badgeText}>{item.badge_label}</Text>
+                  </View>
+                ) : null}
+                {item.coupon?.code ? (
+                  <View style={s.couponTag}>
+                    <Ionicons name="pricetag" size={11} color={COLORS.primary} style={s.couponTagIcon} />
+                    <Text style={s.couponTagText}>
+                      Cupom: <Text style={s.couponTagBold}>{item.coupon.code}</Text> (Toque para aplicar)
+                    </Text>
                   </View>
                 ) : null}
               </View>
@@ -230,5 +268,35 @@ const s = StyleSheet.create({
   dotActive: {
     width: 16,
     backgroundColor: COLORS.primary,
+  },
+  couponTag: {
+    position: 'absolute',
+    bottom: 10,
+    right: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.82)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: RADIUS.full,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 4,
+  },
+  couponTagIcon: {
+    marginRight: 4,
+  },
+  couponTagText: {
+    color: COLORS.white,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  couponTagBold: {
+    color: COLORS.primary,
+    fontWeight: '900',
   },
 });

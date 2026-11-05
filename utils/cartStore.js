@@ -1,4 +1,7 @@
 import { useState, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const COUPON_STORAGE_KEY = '@batata_selected_coupon';
 
 let cart = [];
 const listeners = new Set();
@@ -45,6 +48,25 @@ export const cartStore = {
   setCoupon(coupon) {
     selectedCoupon = coupon;
     couponListeners.forEach((l) => l(selectedCoupon));
+    if (coupon) {
+      AsyncStorage.setItem(COUPON_STORAGE_KEY, JSON.stringify(coupon)).catch(() => {});
+    } else {
+      AsyncStorage.removeItem(COUPON_STORAGE_KEY).catch(() => {});
+    }
+  },
+  async loadSavedCoupon() {
+    try {
+      const raw = await AsyncStorage.getItem(COUPON_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && (parsed.id || parsed.code)) {
+          selectedCoupon = parsed;
+          couponListeners.forEach((l) => l(selectedCoupon));
+          return parsed;
+        }
+      }
+    } catch {}
+    return null;
   },
   addToCart(product) {
     const qty = product.quantidade || product.quantity || 1;
@@ -114,6 +136,9 @@ export const cartStore = {
   }
 };
 
+// Carrega cupom pré-selecionado do AsyncStorage em segundo plano
+cartStore.loadSavedCoupon();
+
 export function useCart() {
   const [items, setItems] = useState(cartStore.getCart());
   const [hideFloating, setHideFloatingState] = useState(cartStore.isFloatingHidden());
@@ -129,6 +154,14 @@ export function useCart() {
 
   useEffect(() => {
     return cartStore.subscribeCoupon(setCouponState);
+  }, []);
+
+  useEffect(() => {
+    if (!coupon && !cartStore.getCoupon()) {
+      cartStore.loadSavedCoupon().then((saved) => {
+        if (saved) setCouponState(saved);
+      });
+    }
   }, []);
 
   return {
