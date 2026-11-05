@@ -21,11 +21,13 @@ import { showSuccessAlert } from '../ThemedAlert';
 export default function AdminHomeBannersSection({ promoImages = [] }) {
   const [banners, setBanners] = useState([]);
   const [coupons, setCoupons] = useState([]);
+  const [dbImages, setDbImages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingBanner, setEditingBanner] = useState(null);
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [showUrlInput, setShowUrlInput] = useState(false);
 
   const [imageUrl, setImageUrl] = useState('');
   const [title, setTitle] = useState('');
@@ -36,7 +38,7 @@ export default function AdminHomeBannersSection({ promoImages = [] }) {
   const loadBannersAndCoupons = useCallback(async () => {
     try {
       setLoading(true);
-      const [{ data: bannersData }, { data: couponsData }] = await Promise.all([
+      const [{ data: bannersData }, { data: couponsData }, { data: uploadedImgs }] = await Promise.all([
         supabase
           .from('home_banners')
           .select(
@@ -49,6 +51,10 @@ export default function AdminHomeBannersSection({ promoImages = [] }) {
           .select('id, code, title, discount_value, discount_type, badge_label, active')
           .eq('active', true)
           .order('created_at', { ascending: false }),
+        supabase
+          .from('uploaded_images')
+          .select('id, name, data, mime_type, category, uploaded_at')
+          .order('uploaded_at', { ascending: false }),
       ]);
 
       setBanners(
@@ -58,6 +64,14 @@ export default function AdminHomeBannersSection({ promoImages = [] }) {
         }))
       );
       setCoupons(couponsData || []);
+
+      const allImgs = (uploadedImgs && uploadedImgs.length > 0) ? uploadedImgs : promoImages;
+      const sortedImgs = [...allImgs].sort((a, b) => {
+        const aIsBanner = (a.name || '').toLowerCase().includes('banner') ? 1 : 0;
+        const bIsBanner = (b.name || '').toLowerCase().includes('banner') ? 1 : 0;
+        return bIsBanner - aIsBanner;
+      });
+      setDbImages(sortedImgs);
     } catch (err) {
       console.warn('Erro ao carregar banners da Home:', err);
     } finally {
@@ -88,6 +102,7 @@ export default function AdminHomeBannersSection({ promoImages = [] }) {
     const nextOrder = banners.length > 0 ? Number(banners[0].display_order || 0) + 1 : 1;
     setDisplayOrder(String(nextOrder));
     setIsActive(true);
+    setShowUrlInput(false);
     setModalVisible(true);
   };
 
@@ -98,6 +113,7 @@ export default function AdminHomeBannersSection({ promoImages = [] }) {
     setCouponId(banner.coupon_id || '');
     setDisplayOrder(String(banner.display_order ?? 0));
     setIsActive(Boolean(banner.is_active));
+    setShowUrlInput(false);
     setModalVisible(true);
   };
 
@@ -331,40 +347,78 @@ export default function AdminHomeBannersSection({ promoImages = [] }) {
           </View>
 
           <ScrollView style={s.modalBody} showsVerticalScrollIndicator={false}>
-            <Text style={s.fieldLabel}>Imagem do Banner (16:9) *</Text>
-            <TextInput
-              style={s.input}
-              placeholder="https://... ou escolha da galeria abaixo"
-              placeholderTextColor="#9CA3AF"
-              value={imageUrl}
-              onChangeText={setImageUrl}
-              autoCapitalize="none"
-            />
+            <View style={s.imageHeaderRow}>
+              <Text style={s.fieldLabel}>Arte do Banner (16:9) *</Text>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <Pressable
+                  style={s.compactActionBtn}
+                  onPress={handlePickFromGallery}
+                  disabled={uploadingImage}
+                >
+                  <Ionicons name="cloud-upload-outline" size={13} color="#C1440E" />
+                  <Text style={s.compactActionText}>
+                    {uploadingImage ? 'Subindo...' : 'Galeria'}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[s.compactActionBtn, showUrlInput && s.compactActionBtnActive]}
+                  onPress={() => setShowUrlInput((v) => !v)}
+                >
+                  <Ionicons name="link-outline" size={13} color="#6B7280" />
+                  <Text style={s.compactActionText}>URL</Text>
+                </Pressable>
+              </View>
+            </View>
 
-            <Pressable
-              style={s.galleryBtn}
-              onPress={handlePickFromGallery}
-              disabled={uploadingImage}
-            >
-              <Ionicons name="cloud-upload-outline" size={17} color="#C1440E" />
-              <Text style={s.galleryBtnText}>
-                {uploadingImage ? 'Enviando imagem...' : 'Escolher da Galeria do Celular'}
-              </Text>
-            </Pressable>
+            {/* Campo compacto de URL externa */}
+            {showUrlInput && (
+              <View style={s.urlInputRow}>
+                <TextInput
+                  style={s.compactUrlInput}
+                  placeholder="Cole o link (https://...)"
+                  placeholderTextColor="#9CA3AF"
+                  value={imageUrl}
+                  onChangeText={setImageUrl}
+                  autoCapitalize="none"
+                />
+                <Pressable onPress={() => setShowUrlInput(false)} style={s.closeUrlBtn}>
+                  <Ionicons name="close" size={16} color="#9CA3AF" />
+                </Pressable>
+              </View>
+            )}
 
-            {promoImages.length > 0 && (
-              <View style={{ marginTop: 10 }}>
-                <Text style={s.subLabel}>Ou escolha do Banco de Imagens:</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 6 }}>
-                  {promoImages.slice(0, 10).map((img) => {
-                    const uri = `data:${img.mime_type || 'image/jpeg'};base64,${img.data}`;
+            {/* Galeria de Banners no Supabase com nomezinho em cima e miniatura embaixo */}
+            {dbImages.length > 0 && (
+              <View style={{ marginTop: 6, marginBottom: 10 }}>
+                <Text style={s.subLabel}>Banners no Supabase (toque para escolher):</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+                  {dbImages.map((img) => {
+                    const uri = img.data ? `data:${img.mime_type || 'image/jpeg'};base64,${img.data}` : `/api/images/${img.id}`;
+                    const isSelected = imageUrl === uri || imageUrl.includes(img.id);
+                    const friendlyName = (img.name || '')
+                      .replace(/\.[^/.]+$/, '')
+                      .replace(/^banner[-_]?\d*[-_]?/i, '')
+                      .replace(/[-_]/g, ' ')
+                      .toUpperCase() || 'BANNER';
+
                     return (
                       <Pressable
                         key={img.id}
-                        onPress={() => setImageUrl(uri)}
-                        style={[s.thumbWrap, imageUrl === uri && s.thumbSelected]}
+                        onPress={() => {
+                          setImageUrl(uri);
+                          if (!title) setTitle(friendlyName);
+                        }}
+                        style={[s.bannerCard, isSelected && s.bannerCardSelected]}
                       >
-                        <Image source={{ uri }} style={s.thumbImg} />
+                        {/* Nomezinho em cima */}
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                          <Text style={[s.bannerCardTitle, isSelected && s.bannerCardTitleSelected]} numberOfLines={1}>
+                            {friendlyName}
+                          </Text>
+                          {isSelected && <Ionicons name="checkmark-circle" size={13} color="#E3A008" />}
+                        </View>
+                        {/* Imagem pequena embaixo */}
+                        <Image source={{ uri }} style={s.bannerCardImg} resizeMode="cover" />
                       </Pressable>
                     );
                   })}
@@ -372,9 +426,19 @@ export default function AdminHomeBannersSection({ promoImages = [] }) {
               </View>
             )}
 
+            {/* Preview da Imagem Selecionada */}
             {Boolean(imageUrl) && (
-              <View style={s.livePreviewWrap}>
-                <Image source={{ uri: imageUrl }} style={s.livePreviewImg} resizeMode="cover" />
+              <View style={s.selectedBar}>
+                <Image source={{ uri: imageUrl }} style={s.selectedBarThumb} resizeMode="cover" />
+                <View style={{ flex: 1 }}>
+                  <Text style={s.selectedBarBadge}>✓ IMAGEM SELECIONADA</Text>
+                  <Text style={s.selectedBarText} numberOfLines={1}>
+                    {title || 'Banner pronto'}
+                  </Text>
+                </View>
+                <Pressable onPress={() => setImageUrl('')}>
+                  <Text style={s.selectedBarTrocar}>Trocar</Text>
+                </Pressable>
               </View>
             )}
 
@@ -634,6 +698,117 @@ const s = StyleSheet.create({
     color: '#111827',
     marginTop: 12,
     marginBottom: 6,
+  },
+  imageHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  compactActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F9FAFB',
+  },
+  compactActionBtnActive: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#E3A008',
+  },
+  compactActionText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  urlInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F3F4F6',
+    padding: 8,
+    borderRadius: 10,
+    marginBottom: 10,
+  },
+  compactUrlInput: {
+    flex: 1,
+    height: 36,
+    backgroundColor: '#FFF',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    fontSize: 12,
+    color: '#111827',
+  },
+  closeUrlBtn: {
+    padding: 4,
+  },
+  bannerCard: {
+    width: 140,
+    marginRight: 10,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+    padding: 6,
+  },
+  bannerCardSelected: {
+    borderColor: '#E3A008',
+    backgroundColor: '#FFFBEB',
+  },
+  bannerCardTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#374151',
+    flex: 1,
+  },
+  bannerCardTitleSelected: {
+    color: '#92400E',
+  },
+  bannerCardImg: {
+    width: '100%',
+    height: 75,
+    borderRadius: 6,
+    backgroundColor: '#F3F4F6',
+  },
+  selectedBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 8,
+    borderRadius: 10,
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: 'rgba(227, 160, 8, 0.4)',
+    marginTop: 6,
+    marginBottom: 6,
+  },
+  selectedBarThumb: {
+    width: 60,
+    height: 34,
+    borderRadius: 6,
+    backgroundColor: '#F3F4F6',
+  },
+  selectedBarText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  selectedBarBadge: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: '#92400E',
+    textTransform: 'uppercase',
+  },
+  selectedBarTrocar: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#DC2626',
+    paddingHorizontal: 6,
   },
   subLabel: {
     fontSize: 11,
