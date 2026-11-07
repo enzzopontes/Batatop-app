@@ -28,6 +28,7 @@ import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../constants/theme
 import { useProductRanking } from '../hooks/useProductRanking';
 import BannerCarousel from '../components/BannerCarousel';
 import CategoriasFlutuantes from '../components/CategoriasFlutuantes';
+import RestaurantHeaderCard from '../components/RestaurantHeaderCard';
 import { CATEGORIAS, handleCategoriaPress } from '../constants/categorias';
 import { fetchHomeCoupons } from '../utils/homeCoupons';
 import HomeCouponCard, { HOME_COUPON_CARD_WIDTH, HOME_COUPON_GAP } from '../components/HomeCouponCard';
@@ -334,6 +335,10 @@ export default function Home() {
         {/* Espaço reservado pro header — fixo, não empurra mais nada */}
         <View style={{ height: headerSpacerHeight }} />
 
+        <View style={s.headerCardWrap}>
+          <RestaurantHeaderCard />
+        </View>
+
         {/* ══════════════════ CATEGORIAS (estilo iFood, grid 3x2) ══════════════════ */}
         <View
           style={[s.section, { paddingTop: SPACING[4] }]}
@@ -488,6 +493,10 @@ export default function Home() {
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   scroll: { flex: 1 },
+  headerCardWrap: {
+    paddingHorizontal: SPACING[6],
+    paddingTop: SPACING[3],
+  },
 
 
 

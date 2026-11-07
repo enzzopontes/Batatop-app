@@ -32,6 +32,7 @@ import { useModalFade } from '../../hooks/useModalFade';
 import { useSafeAreaInsets, SafeAreaProvider } from 'react-native-safe-area-context';
 import { notifyAdminNewOrder } from '../../utils/notifyNewOrder';
 import { STORE_ADDRESS } from '../../constants/store';
+import { loyaltyManager } from '../../components/RestaurantHeaderCard';
 import ThreeDotsLoader from '../../components/ThreeDotsLoader';
 
 import AnimatedReanimated, {
@@ -1103,6 +1104,17 @@ export default function DetalhesPedido() {
         if (isCelebrationPendingRef.current) {
           pendingPaidOrderRef.current = fetched;
           return fetched;
+        }
+
+        if (['delivered', 'concluido', 'concluído'].includes(String(fetched.status || '').toLowerCase())) {
+          loyaltyManager
+            .incrementFromOrder({
+              orderId: fetched.id,
+              orderCreatedAt: fetched.createdAt,
+              orderStatus: fetched.status,
+              userId: fetched.user_id,
+            })
+            .catch(() => {});
         }
 
         setPedido(fetched);

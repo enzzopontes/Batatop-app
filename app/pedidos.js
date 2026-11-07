@@ -29,6 +29,7 @@ import OrderFeedbackModal from '../components/orders/OrderFeedbackModal';
 import { ThemedAlertHost, showThemedAlert } from '../components/ThemedAlert';
 import { cartStore } from '../utils/cartStore';
 import { checkPixStatus } from '../utils/mercadoPago';
+import { loyaltyManager } from '../components/RestaurantHeaderCard';
 import batataDormindo from '../assets/batatadormindo.png';
 
 // ─── Header Minimalista Padrão (Estilo iFood) ─────────────────────────────────
@@ -575,6 +576,18 @@ export default function PedidosScreen() {
       if (res.success) {
         setOrders(res.data);
         await fetchFeedbacks(uid);
+        for (const ord of res.data) {
+          if (['delivered', 'concluido', 'concluído'].includes(String(ord.status || '').toLowerCase())) {
+            loyaltyManager
+              .incrementFromOrder({
+                orderId: ord.id,
+                orderCreatedAt: ord.createdAt,
+                orderStatus: ord.status,
+                userId: uid,
+              })
+              .catch(() => {});
+          }
+        }
       } else if (!silent) {
         showThemedAlert('Erro', 'Não foi possível carregar seus pedidos.');
       }
