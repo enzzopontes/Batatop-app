@@ -717,27 +717,11 @@ export default function RestaurantHeaderCard({
                 </Text>
               </View>
 
-              {/* Coluna Direita: Selo Super Restaurante + Status Aberto/Fechado logo abaixo */}
+              {/* Coluna Direita: Selo Super Restaurante */}
               <View style={s.badgesRightCol}>
                 <View style={s.superBadge}>
                   <Ionicons name="sparkles" size={11} color="#E3A008" />
                   <Text style={s.superBadgeText}>Super Restaurante</Text>
-                </View>
-
-                <View
-                  style={[
-                    s.statusChip,
-                    storeOpen ? s.statusChipOpen : s.statusChipClosed,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      s.statusChipText,
-                      storeOpen ? s.statusChipTextOpen : s.statusChipTextClosed,
-                    ]}
-                  >
-                    {storeOpen ? 'Aberto agora •' : 'Fechado agora'}
-                  </Text>
                 </View>
               </View>
             </View>
