@@ -260,13 +260,28 @@ export default function StepPagamento({
 
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Entrega</Text>
-          <Text style={styles.summaryValue}>
-            {deliveryType === 'delivery'
-              ? deliveryFee > 0
-                ? `R$ ${deliveryFee.toFixed(2).replace('.', ',')}`
-                : 'Grátis'
-              : 'Grátis'}
-          </Text>
+          {deliveryType === 'delivery' ? (
+            deliveryFee > 0 ? (
+              <Text style={styles.summaryValue}>
+                R$ {deliveryFee.toFixed(2).replace('.', ',')}
+              </Text>
+            ) : (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={{ textDecorationLine: 'line-through', color: '#9CA3AF', fontSize: 13, fontWeight: '500' }}>
+                  R$ 5,00
+                </Text>
+                <View style={{ backgroundColor: '#DCFCE7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: '#BBF7D0' }}>
+                  <Text style={{ color: '#15803D', fontSize: 12, fontWeight: '700' }}>
+                    Grátis
+                  </Text>
+                </View>
+              </View>
+            )
+          ) : (
+            <Text style={[styles.summaryValue, { color: COLORS.success, fontWeight: '700' }]}>
+              Grátis (Retirada)
+            </Text>
+          )}
         </View>
 
         {discount > 0 && (
