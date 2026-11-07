@@ -693,34 +693,54 @@ export default function RestaurantHeaderCard({
 
           {/* Informações Principais */}
           <View style={s.infoCol}>
-            {/* Linha 1: Nome + Avaliação com Pedidos Feitos Reais + Super Restaurante */}
-            <View style={s.titleRow}>
-              <View style={s.nameAndRatingRow}>
-                <Text style={s.restaurantName} numberOfLines={1}>
-                  Batata Top
-                </Text>
+            {/* Linha 1: Nome + Avaliação + Categorias à esquerda | Super Restaurante + Aberto agora abaixo à direita */}
+            <View style={s.headerTopBlock}>
+              <View style={s.titleAndCatCol}>
+                <View style={s.nameAndRatingRow}>
+                  <Text style={s.restaurantName} numberOfLines={1}>
+                    Batata Top
+                  </Text>
 
-                <View style={s.ratingInline}>
-                  <Ionicons name="star" size={14} color="#FCBB00" />
-                  <Text style={s.ratingValue}>{realRating.toFixed(1)}</Text>
-                  <Text style={s.ordersCountText}>
-                    ({realOrdersCount}{' '}
-                    {realOrdersCount === 1 ? 'pedido feito' : 'pedidos feitos'})
+                  <View style={s.ratingInline}>
+                    <Ionicons name="star" size={14} color="#FCBB00" />
+                    <Text style={s.ratingValue}>{realRating.toFixed(1)}</Text>
+                    <Text style={s.ordersCountText}>
+                      ({realOrdersCount}{' '}
+                      {realOrdersCount === 1 ? 'pedido feito' : 'pedidos feitos'})
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Linha 2: Categorias */}
+                <Text style={s.categoriesText} numberOfLines={1}>
+                  Batatas Recheadas • Macarrão • Bebidas
+                </Text>
+              </View>
+
+              {/* Coluna Direita: Selo Super Restaurante + Status Aberto/Fechado logo abaixo */}
+              <View style={s.badgesRightCol}>
+                <View style={s.superBadge}>
+                  <Ionicons name="sparkles" size={11} color="#E3A008" />
+                  <Text style={s.superBadgeText}>Super Restaurante</Text>
+                </View>
+
+                <View
+                  style={[
+                    s.statusChip,
+                    storeOpen ? s.statusChipOpen : s.statusChipClosed,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      s.statusChipText,
+                      storeOpen ? s.statusChipTextOpen : s.statusChipTextClosed,
+                    ]}
+                  >
+                    {storeOpen ? 'Aberto agora •' : 'Fechado agora'}
                   </Text>
                 </View>
               </View>
-
-              {/* Selo Super Restaurante */}
-              <View style={s.superBadge}>
-                <Ionicons name="sparkles" size={11} color="#E3A008" />
-                <Text style={s.superBadgeText}>Super Restaurante</Text>
-              </View>
             </View>
-
-            {/* Linha 2: Categorias */}
-            <Text style={s.categoriesText} numberOfLines={1}>
-              Batatas Recheadas • Macarrão • Bebidas
-            </Text>
 
             {/* Linha 3: Chips Informativos Horizontais */}
             <ScrollView
@@ -763,23 +783,6 @@ export default function RestaurantHeaderCard({
               <View style={s.chip}>
                 <Ionicons name="location-outline" size={13} color="#C1440E" />
                 <Text style={s.chipTextMuted}>Iacanga - SP</Text>
-              </View>
-
-              {/* Status de Funcionamento */}
-              <View
-                style={[
-                  s.statusChip,
-                  storeOpen ? s.statusChipOpen : s.statusChipClosed,
-                ]}
-              >
-                <Text
-                  style={[
-                    s.statusChipText,
-                    storeOpen ? s.statusChipTextOpen : s.statusChipTextClosed,
-                  ]}
-                >
-                  {storeOpen ? 'Aberto agora •' : 'Fechado agora'}
-                </Text>
               </View>
             </ScrollView>
           </View>
@@ -1146,13 +1149,22 @@ const s = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
-  titleRow: {
+  headerTopBlock: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: 6,
-    marginBottom: 3,
+    marginBottom: 6,
+  },
+  titleAndCatCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  badgesRightCol: {
+    alignItems: 'flex-end',
+    gap: 4,
+    flexShrink: 0,
   },
   nameAndRatingRow: {
     flexDirection: 'row',
@@ -1202,7 +1214,6 @@ const s = StyleSheet.create({
     fontSize: TYPOGRAPHY.sizes.xs,
     fontWeight: '500',
     color: COLORS.grayText, // #71717A
-    marginBottom: 6,
   },
   chipsScroll: {
     width: '100%',
@@ -1242,8 +1253,8 @@ const s = StyleSheet.create({
   statusChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
     borderRadius: RADIUS.full,
     borderWidth: 1,
   },
@@ -1256,7 +1267,7 @@ const s = StyleSheet.create({
     borderColor: '#FECACA',
   },
   statusChipText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
   },
   statusChipTextOpen: {

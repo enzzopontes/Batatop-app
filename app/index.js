@@ -16,6 +16,7 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import { useRouter, useFocusEffect, Redirect } from 'expo-router';
 import { Image as ExpoImage } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useState, useRef, useCallback, useEffect, memo } from 'react';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -185,6 +186,10 @@ export default function Home() {
   const headerHeight = useHeaderHeight();
   const headerHidden = useHeaderHidden();
   const scrollRef = useRef(null);
+  const couponScrollRef = useRef(null);
+  const couponTimerRef = useRef(null);
+  const couponIndexRef = useRef(0);
+  const [activeCouponIndex, setActiveCouponIndex] = useState(0);
   const [categoriasBottomY, setCategoriasBottomY] = useState(null);
   const [homeCoupons, setHomeCoupons] = useState([]);
 
@@ -197,6 +202,39 @@ export default function Home() {
     }).catch(console.warn);
     return () => { active = false; };
   }, []);
+
+  const stopCouponAutoplay = useCallback(() => {
+    if (couponTimerRef.current) {
+      clearInterval(couponTimerRef.current);
+      couponTimerRef.current = null;
+    }
+  }, []);
+
+  const scrollToCouponIndex = useCallback((nextIdx) => {
+    const total = homeCoupons.length;
+    if (total <= 0) return;
+    const bounded = ((nextIdx % total) + total) % total;
+    couponIndexRef.current = bounded;
+    setActiveCouponIndex(bounded);
+    couponScrollRef.current?.scrollTo({
+      x: bounded * (HOME_COUPON_CARD_WIDTH + HOME_COUPON_GAP),
+      animated: true,
+    });
+  }, [homeCoupons.length]);
+
+  const startCouponAutoplay = useCallback(() => {
+    stopCouponAutoplay();
+    if (homeCoupons.length <= 1) return;
+    couponTimerRef.current = setInterval(() => {
+      const nextIdx = (couponIndexRef.current + 1) % homeCoupons.length;
+      scrollToCouponIndex(nextIdx);
+    }, 4500);
+  }, [stopCouponAutoplay, homeCoupons.length, scrollToCouponIndex]);
+
+  useEffect(() => {
+    startCouponAutoplay();
+    return () => stopCouponAutoplay();
+  }, [startCouponAutoplay, stopCouponAutoplay]);
 
   // ── Onboarding: mostra /welcome e depois /location, cada um só na
   // primeira vez ──────────────────────────────────────────────────────────
@@ -335,6 +373,21 @@ export default function Home() {
         {/* Espaço reservado pro header — fixo, não empurra mais nada */}
         <View style={{ height: headerSpacerHeight }} />
 
+        {/* Capa da Batata igual ao site (Hero) com gradiente suave na base */}
+        <View style={s.heroCoverContainer}>
+          <ExpoImage
+            source={require('../assets/products/costela.jpg')}
+            style={s.heroCoverImage}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+          />
+          <LinearGradient
+            colors={['transparent', 'rgba(0,0,0,0.12)', 'rgba(0,0,0,0.72)']}
+            locations={[0, 0.5, 1]}
+            style={s.heroCoverGradient}
+          />
+        </View>
+
         <View style={s.headerCardWrap}>
           <RestaurantHeaderCard />
         </View>
@@ -391,7 +444,7 @@ export default function Home() {
           )}
         </View>
 
-        {/* ══════════════════ CUPONS (estilo idêntico à página de cupons) ══════════════════ */}
+        {/* ══════════════════ CUPONS (estilo idêntico à página de cupons, com rotação automática igual ao site) ══════════════════ */}
         {displayCoupons && displayCoupons.length > 0 ? (
           <View style={s.section}>
             <View style={s.sectionRow}>
@@ -401,18 +454,59 @@ export default function Home() {
                 </View>
                 <Text style={s.sectionTitle}>Cupons disponíveis</Text>
               </View>
-              <Pressable onPress={() => router.push('/cupons')} style={s.verTodos}>
-                <Text style={s.verTodosText}>Ver todos ({displayCoupons.length})</Text>
-                <Ionicons name="chevron-forward" size={13} color={COLORS.primary} />
-              </Pressable>
+              <View style={s.cupomHeaderRight}>
+                {displayCoupons.length > 1 ? (
+                  <View style={s.cupomNavControls}>
+                    <Pressable
+                      onPress={() => {
+                        stopCouponAutoplay();
+                        scrollToCouponIndex(couponIndexRef.current - 1);
+                        startCouponAutoplay();
+                      }}
+                      style={s.cupomNavBtn}
+                      hitSlop={6}
+                    >
+                      <Ionicons name="chevron-back" size={14} color={COLORS.text} />
+                    </Pressable>
+                    <Pressable
+                      onPress={() => {
+                        stopCouponAutoplay();
+                        scrollToCouponIndex(couponIndexRef.current + 1);
+                        startCouponAutoplay();
+                      }}
+                      style={s.cupomNavBtn}
+                      hitSlop={6}
+                    >
+                      <Ionicons name="chevron-forward" size={14} color={COLORS.text} />
+                    </Pressable>
+                  </View>
+                ) : null}
+                <Pressable onPress={() => router.push('/cupons')} style={s.verTodos}>
+                  <Text style={s.verTodosText}>Ver todos ({displayCoupons.length})</Text>
+                  <Ionicons name="chevron-forward" size={13} color={COLORS.primary} />
+                </Pressable>
+              </View>
             </View>
             <ScrollView
+              ref={couponScrollRef}
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={s.cupomRow}
               decelerationRate="fast"
               snapToInterval={HOME_COUPON_CARD_WIDTH + HOME_COUPON_GAP}
               snapToAlignment="start"
+              onScrollBeginDrag={stopCouponAutoplay}
+              onMomentumScrollEnd={(e) => {
+                const offsetX = e.nativeEvent.contentOffset.x;
+                const newIdx = Math.round(offsetX / (HOME_COUPON_CARD_WIDTH + HOME_COUPON_GAP));
+                const bounded = Math.max(0, Math.min(displayCoupons.length - 1, newIdx));
+                couponIndexRef.current = bounded;
+                setActiveCouponIndex(bounded);
+                startCouponAutoplay();
+              }}
+              onScrollEndDrag={() => {
+                startCouponAutoplay();
+              }}
             >
               {displayCoupons.map((c) => (
                 <HomeCouponCard
@@ -422,6 +516,25 @@ export default function Home() {
                 />
               ))}
             </ScrollView>
+            {displayCoupons.length > 1 ? (
+              <View style={s.cupomDotsRow}>
+                {displayCoupons.map((c, idx) => (
+                  <Pressable
+                    key={c.id || c.codigo || idx}
+                    onPress={() => {
+                      stopCouponAutoplay();
+                      scrollToCouponIndex(idx);
+                      startCouponAutoplay();
+                    }}
+                    hitSlop={6}
+                    style={[
+                      s.cupomDot,
+                      idx === activeCouponIndex && s.cupomDotActive,
+                    ]}
+                  />
+                ))}
+              </View>
+            ) : null}
           </View>
         ) : null}
 
@@ -493,9 +606,24 @@ export default function Home() {
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   scroll: { flex: 1 },
+  heroCoverContainer: {
+    width: '100%',
+    height: 148,
+    backgroundColor: '#1F1B16',
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  heroCoverImage: {
+    width: '100%',
+    height: '100%',
+  },
+  heroCoverGradient: {
+    ...StyleSheet.absoluteFillObject,
+  },
   headerCardWrap: {
     paddingHorizontal: SPACING[6],
-    paddingTop: SPACING[3],
+    marginTop: -18,
+    zIndex: 10,
   },
 
 
@@ -693,6 +821,45 @@ const s = StyleSheet.create({
     paddingHorizontal: SPACING[6],
     gap: HOME_COUPON_GAP,
     paddingVertical: 4,
+  },
+  cupomHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  cupomNavControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  cupomNavBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cupomDotsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 2,
+  },
+  cupomDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#D4CFC7',
+  },
+  cupomDotActive: {
+    width: 18,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: COLORS.primary,
   },
   cupomQtd: {
     backgroundColor: '#FFB80015',
