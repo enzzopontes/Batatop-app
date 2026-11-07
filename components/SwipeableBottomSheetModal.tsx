@@ -134,6 +134,13 @@ export default function SwipeableBottomSheetModal({
         }
         return gestureState.dy > 6 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
       },
+      onMoveShouldSetPanResponderCapture: (_, gestureState) => {
+        if (gestureState.dy <= 6 || isClosingRef.current) return false;
+        if (scrollable) {
+          return isAtTopRef.current && gestureState.dy > 8 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.5;
+        }
+        return gestureState.dy > 6 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
+      },
       onPanResponderGrant: () => {
         translateY.stopAnimation();
       },

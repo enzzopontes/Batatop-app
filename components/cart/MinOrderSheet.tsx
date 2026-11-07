@@ -5,6 +5,7 @@ import { COLORS, SPACING, RADIUS } from '../../constants/theme';
 import { MIN_ORDER_VALUE } from '../../constants/store';
 import PrimaryButton from '../PrimaryButton';
 import SwipeableBottomSheetModal from '../SwipeableBottomSheetModal';
+import RipplePressable from './RipplePressable';
 
 interface MinOrderSheetProps {
   visible: boolean;
@@ -26,6 +27,8 @@ export default function MinOrderSheet({ visible, onClose }: MinOrderSheetProps) 
       onRequestClose={onClose}
       backdropColor="rgba(0, 0, 0, 0.5)"
       contentStyle={styles.sheet}
+      minBottomPadding={32}
+      extraBottomPadding={16}
     >
       <Text style={styles.title}>Valor mínimo do pedido</Text>
       <Text style={styles.description}>
@@ -40,14 +43,15 @@ export default function MinOrderSheet({ visible, onClose }: MinOrderSheetProps) 
         style={{ marginBottom: 12 }}
       />
 
-      <Pressable
+      <RipplePressable
         style={styles.cancelBtn}
         onPress={onClose}
         hitSlop={8}
+        rippleColor="rgba(227, 160, 8, 0.15)"
         accessibilityLabel="Ok, entendi"
       >
         <Text style={styles.cancelBtnText}>Ok, entendi</Text>
-      </Pressable>
+      </RipplePressable>
     </SwipeableBottomSheetModal>
   );
 }
@@ -100,12 +104,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   cancelBtn: {
-    paddingVertical: 10,
+    width: '100%',
+    height: 48,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
   },
   cancelBtnText: {
-    color: COLORS.primary,
+    color: COLORS.text,
     fontWeight: '700',
     fontSize: 15,
   },

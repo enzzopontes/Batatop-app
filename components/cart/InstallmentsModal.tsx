@@ -77,6 +77,8 @@ export default function InstallmentsModal({
       contentStyle={styles.sheetContent}
       scrollable
       isAtTop={isAtTop}
+      minBottomPadding={32}
+      extraBottomPadding={16}
     >
       {/* Título centralizado */}
       <Text style={styles.sheetTitle}>Parcelamento</Text>
@@ -307,7 +309,7 @@ const styles = StyleSheet.create({
   cancelBtnText: {
     fontSize: 15,
     fontWeight: '700',
-    color: COLORS.primary,
+    color: COLORS.text,
   },
   loadingContainer: {
     paddingVertical: 40,

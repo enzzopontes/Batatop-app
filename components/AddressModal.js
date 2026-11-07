@@ -28,6 +28,8 @@ export default function AddressModal({ visible, address, onClose, onEdit, onDele
       onRequestClose={onClose}
       backdropColor="rgba(0,0,0,0.5)"
       contentStyle={am.sheet}
+      minBottomPadding={32}
+      extraBottomPadding={16}
     >
       <Text style={am.title}>{labelText}</Text>
 
@@ -42,7 +44,7 @@ export default function AddressModal({ visible, address, onClose, onEdit, onDele
         </RipplePressable>
       </View>
 
-      <RipplePressable style={am.cancelBtn} onPress={onClose} rippleColor="rgba(181, 134, 10, 0.2)">
+      <RipplePressable style={am.cancelBtn} onPress={onClose} rippleColor="rgba(227, 160, 8, 0.15)">
         <Text style={am.cancelText}>Cancelar</Text>
       </RipplePressable>
     </SwipeableBottomSheetModal>
@@ -59,7 +61,6 @@ const am = StyleSheet.create({
     borderTopRightRadius: RADIUS.xl,
     paddingTop: SPACING[3],
     paddingHorizontal: SPACING[5],
-    paddingBottom: SPACING[6],
     alignItems: 'center',
   },
   handle: {
@@ -98,11 +99,19 @@ const am = StyleSheet.create({
     fontSize: TYPOGRAPHY.sizes.sm,
   },
   cancelBtn: {
-    paddingTop: SPACING[1],
+    width: '100%',
+    height: 48,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: SPACING[1],
   },
   cancelText: {
-    color: COLORS.primary,
-    fontWeight: '600',
-    fontSize: TYPOGRAPHY.sizes.base,
+    color: COLORS.text,
+    fontWeight: '700',
+    fontSize: 15,
   },
 });
