@@ -86,6 +86,30 @@ export function useCoupons(currentOrderTotal = 0) {
 
       const session = await getEffectiveSession();
       const userId = session?.user?.id ?? null;
+
+      // 1. Regra de Primeiro Pedido (Boas-vindas para novos clientes cadastrados)
+      if (coupon.template_origin === 'first_order' || coupon.code?.startsWith('BEMVINDO')) {
+        if (!userId) {
+          return { valid: false, reason: 'Faça login para usar cupom de 1º pedido' };
+        }
+        const { count: priorOrders } = await supabase
+          .from('orders')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', userId)
+          .neq('status', 'cancelled');
+        if ((priorOrders ?? 0) > 0) {
+          return { valid: false, reason: 'Válido apenas no seu primeiro pedido' };
+        }
+      }
+
+      // 2. Regra Exclusiva para Clientes Cadastrados / Aniversário
+      if (coupon.template_origin === 'registered_only' || coupon.template_origin === 'aniversario') {
+        if (!userId) {
+          return { valid: false, reason: 'Exclusivo para clientes cadastrados. Faça login!' };
+        }
+      }
+
+      // 3. Limite por usuário
       if (userId && coupon.max_uses_per_user != null) {
         const { count } = await supabase
           .from('user_coupon_uses')
