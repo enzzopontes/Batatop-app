@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS } from '../../constants/theme';
 import PecaTambemList from './PecaTambemList';
 import RipplePressable from './RipplePressable';
+import { resolveProductImage } from '../../utils/resolveProductImage';
 
 const LOGO = require('../../assets/logo.png');
 const CUPOM_ICON = require('../../assets/cuponpretobranco.png');
@@ -34,13 +35,11 @@ interface StepItensProps {
   onEditItem: (item: any) => void;
 }
 
-const SUPABASE_STORAGE =
-  'https://eucwoxjmjfqylyrqunwk.supabase.co/storage/v1/object/public/Products/';
-
 function resolveItemImage(url?: string | null) {
-  if (!url) return 'https://images.unsplash.com/photo-1518013391915-e40643a1bce1?w=400';
-  if (url.startsWith('http')) return url;
-  return SUPABASE_STORAGE + url.replace(/^\/products\//, '');
+  return resolveProductImage(
+    url,
+    'https://images.unsplash.com/photo-1518013391915-e40643a1bce1?w=400'
+  );
 }
 
 export default function StepItens({

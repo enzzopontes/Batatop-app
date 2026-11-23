@@ -13,13 +13,10 @@ import * as Haptics from 'expo-haptics';
 import { AdminListSkeleton } from '../../components/Skeleton';
 import { ThemedAlertHost } from '../../components/ThemedAlert';
 import SwipeableBottomSheetModal from '../../components/SwipeableBottomSheetModal';
-
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://eucwoxjmjfqylyrqunwk.supabase.co';
+import { resolveProductImage } from '../../utils/resolveProductImage';
 
 function resolveImageUrl(image_url) {
-  if (!image_url) return null;
-  if (image_url.startsWith('http')) return image_url;
-  return `${SUPABASE_URL}/storage/v1/object/public/Products/${image_url.replace(/^\/products\//, '')}`;
+  return resolveProductImage(image_url, null);
 }
 
 const TABS = [

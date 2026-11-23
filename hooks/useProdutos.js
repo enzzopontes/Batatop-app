@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseConfig';
-
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://eucwoxjmjfqylyrqunwk.supabase.co';
+import { resolveProductImage } from '../utils/resolveProductImage';
 
 export const sanitizePostgrestSearch = (raw) => {
   if (raw == null) return '';
@@ -101,7 +100,7 @@ const formatProduto = (produto, promoCfg) => {
     precoFormatado: `R$ ${effectivePrice.toFixed(2).replace('.', ',')}`,
     categoria: produto.category ? produto.category.charAt(0).toUpperCase() + produto.category.slice(1) : 'Outros',
     category: produto.category,
-    imagem: produto.image_url ? (produto.image_url.startsWith('http') ? produto.image_url : `${SUPABASE_URL}/storage/v1/object/public/Products/${produto.image_url.replace(/^\/products\//, '')}`) : null, // Fallback para URL vazia
+    imagem: resolveProductImage(produto.image_url, null), // Fallback para URL vazia
     ranking: 0,
     avaliacoes: 4.5,
     avaliacoesCount: 0,

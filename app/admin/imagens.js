@@ -15,6 +15,13 @@ import { AdminListSkeleton } from '../../components/Skeleton';
 import { ThemedAlertHost } from '../../components/ThemedAlert';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatopiacanga.com.br';
+const STORAGE_BUCKET = 'Products';
+const STORAGE_FOLDERS = [
+  { folder: '', category: 'product' },
+  { folder: 'uploads/product', category: 'product' },
+  { folder: 'uploads/promo', category: 'promo' },
+  { folder: 'uploads/general', category: 'general' },
+];
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_BASE64_LENGTH = 2_750_000;
 
@@ -52,13 +59,62 @@ export default function AdminImagens() {
   const loadImages = useCallback(async () => {
     try {
       setRefreshing(true);
-      const { data, error } = await supabase
-        .from('uploaded_images')
-        .select('id, name, mime_type, category, uploaded_at')
-        .order('uploaded_at', { ascending: false });
 
-      if (error) throw error;
-      setImages(data || []);
+      const [storageResults, dbResult] = await Promise.all([
+        Promise.all(
+          STORAGE_FOLDERS.map(async ({ folder, category }) => {
+            try {
+              const { data: files, error } = await supabase.storage
+                .from(STORAGE_BUCKET)
+                .list(folder, { limit: 200, sortBy: { column: 'created_at', order: 'desc' } });
+
+              if (error || !files) return [];
+
+              return files
+                .filter((file) => file && file.name && !file.name.startsWith('.') && file.id)
+                .map((file) => {
+                  const storagePath = folder ? `${folder}/${file.name}` : file.name;
+                  const { data: pubData } = supabase.storage
+                    .from(STORAGE_BUCKET)
+                    .getPublicUrl(storagePath);
+
+                  return {
+                    id: storagePath,
+                    name: file.name,
+                    url: pubData?.publicUrl || '',
+                    category,
+                    uploaded_at: file.created_at || file.updated_at || new Date().toISOString(),
+                    source: 'storage',
+                  };
+                });
+            } catch {
+              return [];
+            }
+          })
+        ),
+        supabase
+          .from('uploaded_images')
+          .select('id, name, mime_type, category, uploaded_at')
+          .order('uploaded_at', { ascending: false }),
+      ]);
+
+      const storageImages = storageResults.flat();
+
+      if (dbResult.error && storageImages.length === 0) {
+        throw dbResult.error;
+      }
+
+      const dbImages = (dbResult.data || []).map((row) => ({
+        ...row,
+        url: `${API_BASE_URL}/api/images/${row.id}`,
+        source: 'database',
+      }));
+
+      const combined = [...storageImages, ...dbImages].sort(
+        (a, b) => new Date(b.uploaded_at || 0).getTime() - new Date(a.uploaded_at || 0).getTime()
+      );
+
+      setImages(combined);
     } catch (e) {
       console.error(e);
       Alert.alert('Erro', 'Não foi possível carregar as imagens.');
@@ -76,7 +132,7 @@ export default function AdminImagens() {
   useEffect(() => {
     images.forEach((img) => {
       if (img.id && !dimensions[img.id]) {
-        const uri = `${API_BASE_URL}/api/images/${img.id}`;
+        const uri = img.url || `${API_BASE_URL}/api/images/${img.id}`;
         Image.getSize(
           uri,
           (width, height) => {
@@ -99,14 +155,14 @@ export default function AdminImagens() {
     const pickerResult = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
-      quality: 0.6,
+      quality: 0.75,
       base64: true,
     });
 
-    if (pickerResult.canceled) return;
+    if (pickerResult.canceled || !pickerResult.assets?.[0]) return;
 
     const asset = pickerResult.assets[0];
-    if (!asset.base64) {
+    if (!asset.uri && !asset.base64) {
       Alert.alert('Erro', 'Não foi possível ler os dados da imagem.');
       return;
     }
@@ -117,30 +173,65 @@ export default function AdminImagens() {
       return;
     }
 
-    if (asset.base64.length > MAX_BASE64_LENGTH) {
+    if (asset.base64 && asset.base64.length > MAX_BASE64_LENGTH) {
       Alert.alert('Imagem muito grande', 'Escolha uma imagem menor que 2MB.');
       return;
     }
 
     setUploading(true);
     try {
-      const fileName = asset.fileName || `image-${Date.now()}.jpg`;
-      const id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const ext = mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg';
+      const storagePath = `uploads/${uploadCategory || 'product'}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
-      const insertData = {
-        id,
-        name: fileName,
-        data: asset.base64,
-        mime_type: mimeType,
-        category: uploadCategory,
-        uploaded_at: new Date().toISOString(),
-      };
+      let uploadedUrl = null;
+      if (asset.uri) {
+        try {
+          const response = await fetch(asset.uri);
+          const blob = await response.blob();
+          const { error: storageError } = await supabase.storage
+            .from(STORAGE_BUCKET)
+            .upload(storagePath, blob, {
+              contentType: mimeType,
+              cacheControl: '31536000',
+              upsert: false,
+            });
 
-      const { error } = await supabase
-        .from('uploaded_images')
-        .insert(insertData);
+          if (!storageError) {
+            const { data: pubData } = supabase.storage
+              .from(STORAGE_BUCKET)
+              .getPublicUrl(storagePath);
+            if (pubData?.publicUrl) {
+              uploadedUrl = pubData.publicUrl;
+            }
+          }
+        } catch {
+          // Fallback para tabela uploaded_images
+        }
+      }
 
-      if (error) throw error;
+      if (!uploadedUrl) {
+        if (!asset.base64) {
+          throw new Error('Não foi possível ler os dados da imagem.');
+        }
+
+        const fileName = asset.fileName || `image-${Date.now()}.${ext}`;
+        const id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+        const insertData = {
+          id,
+          name: fileName,
+          data: asset.base64,
+          mime_type: mimeType,
+          category: uploadCategory,
+          uploaded_at: new Date().toISOString(),
+        };
+
+        const { error } = await supabase
+          .from('uploaded_images')
+          .insert(insertData);
+
+        if (error) throw error;
+      }
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('Sucesso', 'Imagem enviada com sucesso!');
@@ -154,10 +245,10 @@ export default function AdminImagens() {
   };
 
   // ─── Copiar URL de imagem para clipboard com feedback ─────────────
-  const handleCopyUrl = async (id) => {
-    const url = `${API_BASE_URL}/api/images/${id}`;
+  const handleCopyUrl = async (img) => {
+    const url = img.url || `${API_BASE_URL}/api/images/${img.id}`;
     await Clipboard.setStringAsync(url);
-    setCopiedId(id);
+    setCopiedId(img.id);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setTimeout(() => setCopiedId(null), 2500);
   };
@@ -171,11 +262,21 @@ export default function AdminImagens() {
     if (!imageToDelete) return;
     try {
       setIsDeleting(true);
-      const { error } = await supabase
-        .from('uploaded_images')
-        .delete()
-        .eq('id', imageToDelete.id);
-      if (error) throw error;
+      const isStorageItem =
+        imageToDelete.source === 'storage' || String(imageToDelete.id || '').includes('/');
+
+      if (isStorageItem) {
+        const { error } = await supabase.storage
+          .from(STORAGE_BUCKET)
+          .remove([imageToDelete.id]);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('uploaded_images')
+          .delete()
+          .eq('id', imageToDelete.id);
+        if (error) throw error;
+      }
 
       setImages((prev) => prev.filter((i) => i.id !== imageToDelete.id));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -336,7 +437,7 @@ export default function AdminImagens() {
                   {/* Image View with Overlays */}
                   <View style={s.imageWrapper}>
                     <Image
-                      source={{ uri: `${API_BASE_URL}/api/images/${img.id}` }}
+                      source={{ uri: img.url || `${API_BASE_URL}/api/images/${img.id}` }}
                       style={s.gridImage}
                       resizeMode="cover"
                     />
@@ -364,7 +465,7 @@ export default function AdminImagens() {
                     <View style={s.imgCardActions}>
                       <Pressable
                         style={[s.actionBtn, isCopied && s.actionBtnCopied]}
-                        onPress={() => handleCopyUrl(img.id)}
+                        onPress={() => handleCopyUrl(img)}
                       >
                         <Ionicons
                           name={isCopied ? 'checkmark-circle' : 'copy-outline'}
@@ -405,7 +506,7 @@ export default function AdminImagens() {
             {imageToDelete && (
               <View style={s.modalPreviewCard}>
                 <Image
-                  source={{ uri: `${API_BASE_URL}/api/images/${imageToDelete.id}` }}
+                  source={{ uri: imageToDelete.url || `${API_BASE_URL}/api/images/${imageToDelete.id}` }}
                   style={s.modalThumb}
                 />
                 <View style={{ flex: 1 }}>

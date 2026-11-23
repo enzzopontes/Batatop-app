@@ -4,18 +4,17 @@ import { Image as ExpoImage } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS } from '../../constants/theme';
 import RipplePressable from './RipplePressable';
+import { resolveProductImage } from '../../utils/resolveProductImage';
 
 const CARD_WIDTH = 114;
 const CARD_MARGIN = 10;
 const ITEM_TOTAL_WIDTH = CARD_WIDTH + CARD_MARGIN;
 
-const SUPABASE_STORAGE =
-  'https://eucwoxjmjfqylyrqunwk.supabase.co/storage/v1/object/public/Products/';
-
 function resolveItemImage(url?: string | null): string {
-  if (!url) return 'https://images.unsplash.com/photo-1518013391915-e40643a1bce1?w=200';
-  if (url.startsWith('http')) return url;
-  return SUPABASE_STORAGE + url.replace(/^\/products\//, '');
+  return resolveProductImage(
+    url,
+    'https://images.unsplash.com/photo-1518013391915-e40643a1bce1?w=200'
+  );
 }
 
 interface QuickCardProps {

@@ -25,6 +25,7 @@ import { useCart } from '../../utils/cartStore';
 import { getEffectiveSession } from '../../utils/authSession';
 import { setPendingCartIntent } from '../../utils/pendingCartIntent';
 import { requestAuthSheet } from '../../utils/authSheetRequest';
+import { resolveProductImage } from '../../utils/resolveProductImage';
 import { COLORS, SHADOWS, RADIUS } from '../../constants/theme';
 import { ProdutoDetalhesSkeleton } from '../../components/Skeleton';
 import useAddressVerification from '../../hooks/useAddressVerification';
@@ -35,9 +36,6 @@ import PrimaryButton from '../../components/PrimaryButton';
 
 const { width } = Dimensions.get('window');
 
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://eucwoxjmjfqylyrqunwk.supabase.co';
-const SUPABASE_STORAGE = `${SUPABASE_URL}/storage/v1/object/public/Products/`;
-
 const CATEGORY_FALLBACKS = {
   batatas: 'https://images.unsplash.com/photo-1518013391915-e40643a1bce1?w=800',
   bebidas: 'https://images.unsplash.com/photo-1544145945-f904253d0c7b?w=800',
@@ -45,16 +43,9 @@ const CATEGORY_FALLBACKS = {
 };
 
 function resolveImage(imageUrl, categoria) {
-  if (imageUrl) {
-    if (imageUrl.startsWith('http')) return { uri: imageUrl };
-    if (imageUrl.startsWith('/api/images/')) {
-      return { uri: `${process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatopiacanga.com.br'}${imageUrl}` };
-    }
-    return { uri: SUPABASE_STORAGE + imageUrl.replace(/^\/products\//, '') };
-  }
   const fallback = CATEGORY_FALLBACKS[categoria?.toLowerCase()] ||
     'https://images.unsplash.com/photo-1518013391915-e40643a1bce1?w=800';
-  return { uri: fallback };
+  return { uri: resolveProductImage(imageUrl, fallback) };
 }
 
 function resolveEffectivePrice(rawProduct, storeStatus) {

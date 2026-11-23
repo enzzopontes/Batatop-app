@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseConfig';
-
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://eucwoxjmjfqylyrqunwk.supabase.co';
+import { resolveProductImage } from '../utils/resolveProductImage';
 
 export const useProductRanking = () => {
   const [produtos, setProdutos] = useState([]);
@@ -68,7 +67,7 @@ export const useProductRanking = () => {
         preco: produto.price,
         precoFormatado: `R$ ${produto.price.toFixed(2).replace('.', ',')}`,
         categoria: produto.category ? produto.category.charAt(0).toUpperCase() + produto.category.slice(1) : 'Outros',
-        imagem: produto.image_url ? (produto.image_url.startsWith('http') ? produto.image_url : `${SUPABASE_URL}/storage/v1/object/public/Products/${produto.image_url.replace(/^\/products\//, '')}`) : null,
+        imagem: resolveProductImage(produto.image_url, null),
         vendas: salesCounts[produto.id] || 0,
         avaliacoes: 4.5,
         avaliacoesCount: 0,
