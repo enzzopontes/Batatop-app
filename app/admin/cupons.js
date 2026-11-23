@@ -3,7 +3,6 @@ import {
   View, Text, ScrollView, StyleSheet, Pressable,
   ActivityIndicator, Alert, Modal, TextInput, Switch, Platform, Image,
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,11 +17,22 @@ import SwipeableBottomSheetModal from '../../components/SwipeableBottomSheetModa
 import { AdminListSkeleton } from '../../components/Skeleton';
 import { ThemedAlertHost, showSuccessAlert, showErrorAlert } from '../../components/ThemedAlert';
 import HomeCouponCard from '../../components/HomeCouponCard';
+import ProductImagePicker from '../../components/admin/ProductImagePicker';
+import { resolveProductImage } from '../../utils/resolveProductImage';
 import { Image as ExpoImage } from 'expo-image';
 
-const ALLOWED_IMAGE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp']);
-const MAX_IMAGE_BYTES = 2_750_000;
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatopiacanga.com.br';
+
+function isSafeBannerUrl(url) {
+  if (typeof url !== 'string') return false;
+  const trimmed = url.trim();
+  if (!trimmed) return false;
+  if (/[\u0000-\u001F\u007F]/.test(trimmed)) return false;
+  if (trimmed.includes('..')) return false;
+  if (/^https?:\/\//i.test(trimmed)) return true;
+  if (trimmed.startsWith('/') && !trimmed.startsWith('//')) return true;
+  return false;
+}
 
 // ─── Helpers de formatação e geração ────────────────────────────────
 function formatBR(value) {
@@ -384,6 +394,20 @@ export default function AdminCupons() {
     };
   }, [form.value, form.type, form.minOrderValue, form.restrictedCategories, form.customCode, form.showCodeInTitle, form.badgeLabel]);
 
+  const usedBannerUrls = useMemo(
+    () =>
+      coupons
+        .filter((c) => c.id !== editingCoupon?.id && Boolean(c.banner_image_url))
+        .map((c) => c.banner_image_url),
+    [coupons, editingCoupon]
+  );
+
+  const resolvedBannerPreview = useMemo(() => {
+    if (!isSafeBannerUrl(form.bannerImageUrl)) return null;
+    const resolved = resolveProductImage(form.bannerImageUrl, null);
+    return isSafeBannerUrl(resolved) ? resolved : null;
+  }, [form.bannerImageUrl]);
+
   const toggleRestrictedCategory = (cat) => {
     setForm(f => {
       const has = f.restrictedCategories.includes(cat);
@@ -405,108 +429,15 @@ export default function AdminCupons() {
     }
   };
 
-  const handlePickBannerImage = async () => {
-    try {
-      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permissionResult.granted) {
-        Alert.alert('Permissão necessária', 'Precisamos de permissão para acessar sua galeria.');
-        return;
-      }
-
-      const pickerResult = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        quality: 0.8,
-        base64: true,
-      });
-
-      if (pickerResult.canceled || !pickerResult.assets?.[0]) return;
-      const asset = pickerResult.assets[0];
-
-      const mimeType = (asset.mimeType || 'image/jpeg').toLowerCase();
-      if (!ALLOWED_IMAGE_MIMES.has(mimeType)) {
-        Alert.alert('Formato não suportado', 'Formato não suportado. Use JPG, PNG ou WebP.');
-        return;
-      }
-
-      if (
-        (asset.fileSize && asset.fileSize > MAX_IMAGE_BYTES) ||
-        (asset.base64 && asset.base64.length > MAX_IMAGE_BYTES)
-      ) {
-        Alert.alert('Imagem muito grande', 'Imagem muito grande. Escolha uma imagem menor (máx. 2,5 MB).');
-        return;
-      }
-
-      // Tenta upload direto no bucket coupon-banners
-      const ext = mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg';
-      const fileName = `banner-${Date.now()}-${Math.random().toString(36).substring(2, 7)}.${ext}`;
-      let blob = null;
-      try {
-        const response = await fetch(asset.uri);
-        blob = await response.blob();
-      } catch {
-        blob = null;
-      }
-
-      if (blob?.size && blob.size > MAX_IMAGE_BYTES) {
-        Alert.alert('Imagem muito grande', 'Imagem muito grande. Escolha uma imagem menor (máx. 2,5 MB).');
-        return;
-      }
-
-      if (blob) {
-        const { error: storageErr } = await supabase.storage
-          .from('coupon-banners')
-          .upload(fileName, blob, {
-            contentType: mimeType,
-            upsert: true,
-          });
-
-        if (!storageErr) {
-          const { data: publicData } = supabase.storage
-            .from('coupon-banners')
-            .getPublicUrl(fileName);
-
-          if (publicData?.publicUrl) {
-            updateField({ bannerImageUrl: publicData.publicUrl });
-            showSuccessAlert('Imagem do banner vinculada com sucesso!', 'Pronto');
-            return;
-          }
-        }
-      }
-
-      // Fallback para uploaded_images caso storage falhe
-      if (asset.base64) {
-        const id = `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
-        const { error: uploadErr } = await supabase
-          .from('uploaded_images')
-          .insert({
-            id,
-            name: fileName,
-            data: asset.base64,
-            mime_type: mimeType,
-            category: 'promo',
-            uploaded_at: new Date().toISOString(),
-          });
-
-        if (!uploadErr) {
-          const fallbackUrl = `${API_BASE_URL}/api/images/${id}`;
-          updateField({ bannerImageUrl: fallbackUrl });
-          showSuccessAlert('Imagem vinculada com sucesso!', 'Pronto');
-          return;
-        }
-      }
-
-      Alert.alert('Erro no upload', 'Não foi possível enviar a imagem. Tente novamente.');
-      return;
-    } catch (err) {
-      console.warn('Erro ao selecionar imagem do banner:', err);
-      Alert.alert('Erro', 'Não foi possível carregar a imagem selecionada.');
-    }
-  };
-
   const handleSave = async () => {
-    if (form.isBannerHighlight && !form.bannerImageUrl?.trim()) {
+    const cleanBannerUrl = form.bannerImageUrl?.trim() || '';
+    if (form.isBannerHighlight && !cleanBannerUrl) {
       Alert.alert('Atenção', 'Informe a URL da imagem ou escolha da galeria para destacar como banner.');
+      return;
+    }
+
+    if (form.isBannerHighlight && cleanBannerUrl && !isSafeBannerUrl(cleanBannerUrl)) {
+      Alert.alert('Atenção', 'URL da imagem do banner inválida. Use uma URL http(s) ou caminho interno válido.');
       return;
     }
 
@@ -1015,42 +946,35 @@ export default function AdminCupons() {
                   <Text style={s.bannerHintText}>
                     💡 Proporção recomendada: 16:9 (ex: 1080×608 ou 720×405) ou 2:1 (ex: 1000×500). A caixa da Home se adapta à proporção real da imagem sem bordas pretas.
                   </Text>
-                  <Text style={s.fieldLabel}>URL da Imagem do Banner *</Text>
+                  <ProductImagePicker
+                    value={form.bannerImageUrl}
+                    onChange={(url) => updateField({ bannerImageUrl: url })}
+                    usedUrls={usedBannerUrls}
+                    visible={modalVisible && form.isBannerHighlight}
+                    label="Imagem do Banner *"
+                    category="promo"
+                    includeCouponBanners
+                    hidePreview
+                    emptyUsedText="Todas as fotos do banco já estão em uso em outros cupons."
+                  />
+
+                  <Text style={s.fieldLabel}>Ou cole uma URL manualmente</Text>
                   <TextInput
-                    style={s.input}
-                    placeholder="https://... ou escolha da galeria"
+                    style={[s.input, { marginBottom: 8 }]}
+                    placeholder="https://..."
                     value={form.bannerImageUrl}
                     onChangeText={v => updateField({ bannerImageUrl: v })}
                     autoCapitalize="none"
                     placeholderTextColor="#9CA3AF"
                   />
 
-                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-                    <Pressable
-                      style={[s.bannerPickBtn, { flex: 1, marginTop: 0 }]}
-                      onPress={() => setLibraryModalVisible(true)}
-                    >
-                      <Ionicons name="images-outline" size={16} color="#C1440E" style={{ marginRight: 6 }} />
-                      <Text style={s.bannerPickBtnText}>Banco de Imagens</Text>
-                    </Pressable>
-
-                    <Pressable
-                      style={[s.bannerPickBtn, { flex: 1, marginTop: 0 }]}
-                      onPress={handlePickBannerImage}
-                    >
-                      <Ionicons name="cloud-upload-outline" size={16} color="#C1440E" style={{ marginRight: 6 }} />
-                      <Text style={s.bannerPickBtnText}>Subir da Galeria</Text>
-                    </Pressable>
-                  </View>
-
-                  <Text style={[s.fieldLabel, { marginTop: 12 }]}>Selo / Badge (opcional)</Text>
-                  <TextInput
-                    style={s.input}
-                    placeholder="Ex: MAIS PEDIDA, 50% OFF, LIMITADO"
-                    value={form.badgeLabel}
-                    onChangeText={v => updateField({ badgeLabel: v })}
-                    placeholderTextColor="#9CA3AF"
-                  />
+                  <Pressable
+                    style={[s.bannerPickBtn, { marginTop: 0 }]}
+                    onPress={() => setLibraryModalVisible(true)}
+                  >
+                    <Ionicons name="images-outline" size={15} color="#C1440E" style={{ marginRight: 6 }} />
+                    <Text style={s.bannerPickBtnText}>Abrir biblioteca completa</Text>
+                  </Pressable>
 
                   <Text style={[s.fieldLabel, { marginTop: 12 }]}>Prioridade na Home (0 a 100)</Text>
                   <TextInput
@@ -1064,19 +988,34 @@ export default function AdminCupons() {
 
                   {Boolean(form.bannerImageUrl) && (
                     <View style={s.bannerPreviewWrap}>
-                      <Text style={s.fieldLabel}>Pré-visualização do Banner</Text>
-                      <View style={s.bannerPreviewContainer}>
-                        <Image
-                          source={{ uri: form.bannerImageUrl }}
-                          style={s.bannerPreviewImage}
-                          resizeMode="cover"
-                        />
-                        {Boolean(form.badgeLabel) && (
-                          <View style={s.bannerPreviewBadge}>
-                            <Text style={s.bannerPreviewBadgeText}>{form.badgeLabel}</Text>
-                          </View>
-                        )}
+                      <View style={s.bannerPreviewHeader}>
+                        <Text style={[s.fieldLabel, { marginBottom: 0 }]}>Pré-visualização do Banner</Text>
+                        <Pressable
+                          style={s.bannerRemoveBtn}
+                          hitSlop={10}
+                          onPress={() => {
+                            Haptics.selectionAsync();
+                            updateField({ bannerImageUrl: '' });
+                          }}
+                        >
+                          <Ionicons name="trash-outline" size={13} color="#DC2626" />
+                          <Text style={s.bannerRemoveBtnText}>Remover</Text>
+                        </Pressable>
                       </View>
+                      {isSafeBannerUrl(form.bannerImageUrl) && resolvedBannerPreview && (
+                        <View style={s.bannerPreviewContainer}>
+                          <Image
+                            source={{ uri: resolvedBannerPreview }}
+                            style={s.bannerPreviewImage}
+                            resizeMode="cover"
+                          />
+                          {Boolean(form.badgeLabel) && (
+                            <View style={s.bannerPreviewBadge}>
+                              <Text style={s.bannerPreviewBadgeText}>{form.badgeLabel}</Text>
+                            </View>
+                          )}
+                        </View>
+                      )}
                     </View>
                   )}
                 </View>
@@ -1897,6 +1836,26 @@ const s = StyleSheet.create({
   },
   bannerPreviewWrap: {
     marginTop: 14,
+  },
+  bannerPreviewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  bannerRemoveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  bannerRemoveBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#DC2626',
   },
   bannerPreviewContainer: {
     height: 140,

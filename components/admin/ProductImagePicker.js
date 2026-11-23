@@ -24,8 +24,20 @@ const STORAGE_FOLDERS = [
   { folder: 'uploads/general', category: 'general' },
 ];
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const ALLOWED_CATEGORIES = new Set(['product', 'promo', 'general']);
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 const MAX_BASE64_LENGTH = 2_750_000;
+
+function isSafeImageUrl(url) {
+  if (typeof url !== 'string') return false;
+  const trimmed = url.trim();
+  if (!trimmed) return false;
+  if (/[\u0000-\u001F\u007F]/.test(trimmed)) return false;
+  if (trimmed.includes('..')) return false;
+  if (/^https?:\/\//i.test(trimmed)) return true;
+  if (trimmed.startsWith('/') && !trimmed.startsWith('//')) return true;
+  return false;
+}
 
 function normalizeMimeType(rawMime) {
   if (!rawMime || typeof rawMime !== 'string') return '';
@@ -134,7 +146,9 @@ export default function ProductImagePicker({
   category = 'product',
   emptyUsedText = 'Todas as fotos do banco já estão em uso em outros produtos.',
   includeCouponBanners = false,
+  hidePreview = false,
 }) {
+  const safeCategory = ALLOWED_CATEGORIES.has(category) ? category : 'product';
   const [bankImages, setBankImages] = useState([]);
   const [loadingBank, setLoadingBank] = useState(false);
   const [bankError, setBankError] = useState(false);
@@ -391,7 +405,7 @@ export default function ProductImagePicker({
 
       const ext = mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg';
       const rand = Math.random().toString(36).slice(2, 8);
-      const storagePath = `uploads/${category}/${Date.now()}-${rand}.${ext}`;
+      const storagePath = `uploads/${safeCategory}/${Date.now()}-${rand}.${ext}`;
 
       let uploadedUrl = null;
       if (blob) {
@@ -429,7 +443,7 @@ export default function ProductImagePicker({
           return;
         }
 
-        const fileName = sanitizeFileName(asset.fileName, ext, category);
+        const fileName = sanitizeFileName(asset.fileName, ext, safeCategory);
         const id = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
         const { error } = await supabase.from('uploaded_images').insert({
@@ -437,7 +451,7 @@ export default function ProductImagePicker({
           name: fileName,
           data: asset.base64,
           mime_type: mimeType,
-          category,
+          category: safeCategory,
           uploaded_at: new Date().toISOString(),
         });
 
@@ -462,7 +476,8 @@ export default function ProductImagePicker({
     }
   };
 
-  const resolvedPreview = resolveProductImage(value, null);
+  const resolvedPreview = isSafeImageUrl(value) ? resolveProductImage(value, null) : null;
+  const hasSafePreview = isSafeImageUrl(resolvedPreview);
 
   useEffect(() => {
     setPreviewError(false);
@@ -473,7 +488,7 @@ export default function ProductImagePicker({
       <Text style={s.sectionLabel}>{label}</Text>
 
       {/* Preview da imagem selecionada */}
-      {resolvedPreview ? (
+      {!hidePreview && (hasSafePreview ? (
         <View style={s.previewCard}>
           {previewError ? (
             <View style={[s.previewImage, s.imageFallback]}>
@@ -511,7 +526,7 @@ export default function ProductImagePicker({
           <Ionicons name="image-outline" size={24} color="#6B7280" />
           <Text style={s.emptyPreviewText}>Nenhuma foto selecionada</Text>
         </View>
-      )}
+      ))}
 
       {/* Botão enviar foto da galeria */}
       <Pressable
@@ -739,6 +754,8 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
   },
   bankTitle: {
+    flex: 1,
+    marginRight: 8,
     fontSize: 11,
     fontWeight: '800',
     color: '#374151',
@@ -812,8 +829,8 @@ const s = StyleSheet.create({
     position: 'relative',
   },
   thumbCardSelected: {
-    borderColor: '#EA1D2C',
-    backgroundColor: '#FEF2F2',
+    borderColor: '#E3A008',
+    backgroundColor: '#FEF3C7',
   },
   thumbImage: {
     width: 73,
@@ -827,7 +844,7 @@ const s = StyleSheet.create({
     width: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: '#EA1D2C',
+    backgroundColor: '#C1440E',
     alignItems: 'center',
     justifyContent: 'center',
   },
