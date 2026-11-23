@@ -26,8 +26,12 @@ export default function CartFooter({
 }: CartFooterProps) {
   const { paddingBottom } = useFooterInsets({ extraPadding: 16 });
   const formattedTotal = `R$ ${total.toFixed(2).replace('.', ',')}`;
-  const isFree = deliveryType === 'retirada' || deliveryFee === 0;
-  const deliveryStatus = isFree ? 'retirada grátis' : 'com entrega';
+  const deliveryStatus =
+    deliveryType === 'retirada'
+      ? 'retirada grátis'
+      : deliveryFee === 0
+        ? 'entrega grátis'
+        : 'com entrega';
 
   // Na etapa de pagamento: botão full-width "Revisar pedido • R$ XX,XX" idêntico à Imagem 2
   if (step === 'pagamento') {

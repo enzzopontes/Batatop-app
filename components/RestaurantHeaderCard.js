@@ -91,49 +91,11 @@ class LoyaltyManager {
     }
   }
 
-  async getLoyaltyState(userId = null) {
-    const local = await this.getLocalState();
-
-    if (!userId) {
-      return local;
-    }
-
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('loyalty_orders_count, loyalty_rewards_claimed')
-        .eq('id', userId)
-        .maybeSingle();
-
-      if (!error && data) {
-        const count = Math.min(
-          LOYALTY_TARGET_ORDERS,
-          Math.max(0, Number(data.loyalty_orders_count) || 0)
-        );
-        const serverState = {
-          ordersCount: count,
-          targetOrders: LOYALTY_TARGET_ORDERS,
-          remainingOrders: Math.max(0, LOYALTY_TARGET_ORDERS - count),
-          hasRewardAvailable: count >= LOYALTY_TARGET_ORDERS,
-          rewardsClaimedCount:
-            Number(data.loyalty_rewards_claimed) || local.rewardsClaimedCount,
-          activeRewardCode:
-            count >= LOYALTY_TARGET_ORDERS
-              ? local.activeRewardCode || 'BATATA-GRATIS-10'
-              : null,
-          history: local.history,
-        };
-        await this.saveLocalState(serverState);
-        return serverState;
-      }
-    } catch {
-      // Fallback local
-    }
-
-    return local;
+  async getLoyaltyState(_userId = null) {
+    return this.getLocalState();
   }
 
-  async incrementFromOrder({ orderId, orderCreatedAt, orderStatus, userId }) {
+  async incrementFromOrder({ orderId, orderCreatedAt, orderStatus }) {
     const createdAtMs = new Date(orderCreatedAt).getTime();
     const cutoffMs = new Date(LOYALTY_CUTOFF_DATE).getTime();
     if (createdAtMs < cutoffMs) {
@@ -146,19 +108,6 @@ class LoyaltyManager {
     );
     if (!isCompleted) {
       return this.getLocalState();
-    }
-
-    if (userId) {
-      try {
-        const { data, error } = await supabase.rpc('process_order_loyalty', {
-          p_order_id: orderId,
-        });
-        if (!error && data?.success) {
-          return this.getLoyaltyState(userId);
-        }
-      } catch (e) {
-        console.warn('RPC indisponível, fallback local ativo:', e);
-      }
     }
 
     const current = await this.getLocalState();
@@ -213,21 +162,6 @@ class LoyaltyManager {
       ],
     };
 
-    if (userId) {
-      try {
-        await supabase
-          .from('profiles')
-          .update({
-            loyalty_orders_count: 0,
-            loyalty_rewards_claimed: newState.rewardsClaimedCount,
-            loyalty_last_reward_at: new Date().toISOString(),
-          })
-          .eq('id', userId);
-      } catch (e) {
-        console.warn('Erro ao sincronizar resgate no banco:', e);
-      }
-    }
-
     await this.saveLocalState(newState);
     return { couponCode, newState };
   }
@@ -259,7 +193,6 @@ export function useLoyalty() {
 
   useEffect(() => {
     let mounted = true;
-    let profileChannel = null;
 
     async function syncUserAndLoyalty() {
       try {
@@ -268,33 +201,6 @@ export function useLoyalty() {
         if (mounted) setUserId(uid);
         const s = await loyaltyManager.getLoyaltyState(uid);
         if (mounted) setState(s);
-
-        if (profileChannel) {
-          supabase.removeChannel(profileChannel);
-          profileChannel = null;
-        }
-
-        if (uid && mounted) {
-          profileChannel = supabase
-            .channel(`loyalty_profile_${uid}`)
-            .on(
-              'postgres_changes',
-              {
-                event: 'UPDATE',
-                schema: 'public',
-                table: 'profiles',
-                filter: `id=eq.${uid}`,
-              },
-              () => {
-                if (mounted) {
-                  loyaltyManager.getLoyaltyState(uid).then((updated) => {
-                    if (mounted) setState(updated);
-                  });
-                }
-              }
-            )
-            .subscribe();
-        }
       } catch {
         const s = await loyaltyManager.getLocalState();
         if (mounted) setState(s);
@@ -318,9 +224,6 @@ export function useLoyalty() {
       mounted = false;
       unsubAuth();
       loyaltyListeners.delete(handleLoyaltyUpdate);
-      if (profileChannel) {
-        supabase.removeChannel(profileChannel);
-      }
     };
   }, []);
 
@@ -551,18 +454,11 @@ export default function RestaurantHeaderCard({
 
     // 1. Total real de pedidos feitos no restaurante
     try {
-      const { data: rpcOrders, error: rpcErr } = await supabase.rpc(
-        'get_total_orders_count'
-      );
-      if (!rpcErr && typeof rpcOrders === 'number') {
-        fetchedOrders = Math.max(totalOrders, rpcOrders);
-      } else {
-        const { count, error: countErr } = await supabase
-          .from('orders')
-          .select('*', { count: 'exact', head: true });
-        if (!countErr && typeof count === 'number') {
-          fetchedOrders = Math.max(totalOrders, count);
-        }
+      const { count, error: countErr } = await supabase
+        .from('orders')
+        .select('*', { count: 'exact', head: true });
+      if (!countErr && typeof count === 'number') {
+        fetchedOrders = Math.max(totalOrders, count);
       }
     } catch {}
 
@@ -590,21 +486,6 @@ export default function RestaurantHeaderCard({
         if (validRatingsCount > 0) {
           fetchedReviewsCount = validRatingsCount;
           fetchedRating = Math.round((sumRatings / validRatingsCount) * 10) / 10;
-        }
-      } else {
-        const { data: rpcStats } = await supabase.rpc(
-          'get_public_feedbacks_stats'
-        );
-        if (rpcStats && typeof rpcStats.average === 'number') {
-          fetchedRating = Number(rpcStats.average);
-          fetchedReviewsCount = Number(rpcStats.total) || 0;
-        }
-
-        const { data: rpcList } = await supabase.rpc('get_public_feedbacks', {
-          p_limit: 20,
-        });
-        if (Array.isArray(rpcList) && rpcList.length > 0) {
-          fetchedReviews = rpcList;
         }
       }
     } catch (err) {

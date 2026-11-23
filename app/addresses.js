@@ -26,7 +26,12 @@ import { supabase } from '../supabaseConfig';
 import { getEffectiveSession, subscribeAuthUiChange } from '../utils/authSession';
 import { getPendingAddress, setPendingAddress, clearPendingAddress } from '../utils/pendingAddress';
 import { getPendingCartIntent, clearPendingCartIntent } from '../utils/pendingCartIntent';
-import { setSelectedAddressId } from '../utils/addressVerification';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  SELECTED_ADDRESS_ID_KEY,
+  getSelectedAddressId,
+  setSelectedAddressId,
+} from '../utils/addressVerification';
 import { useCart } from '../utils/cartStore';
 import MapView from 'react-native-maps';
 import MapSelector from 'components/MapSelector';
@@ -1056,7 +1061,7 @@ export default function Addresses() {
       // direto, sem mexer em is_default nem nos outros fluxos (insert/pendente).
       if (editingAddress) {
         addressData.label = form.label ?? null;
-        addressData.reference_point = form.reference_point.trim();
+        addressData.reference_point = (form.reference_point || '').trim();
         let query = supabase.from('addresses').update(addressData).eq('id', editingAddress.id);
         if (user?.id) query = query.eq('user_id', user.id);
         const { error } = await query;
@@ -1113,9 +1118,25 @@ export default function Addresses() {
 
   const handleSetDefault = async (id) => {
     if (!user) return;
-    await supabase.from('addresses').update({ is_default: false }).eq('user_id', user.id);
-    await supabase.from('addresses').update({ is_default: true  }).eq('id', id).eq('user_id', user.id);
-    await fetchAddresses();
+    try {
+      const { error: resetError } = await supabase
+        .from('addresses')
+        .update({ is_default: false })
+        .eq('user_id', user.id);
+      if (resetError) throw resetError;
+
+      const { error: setError } = await supabase
+        .from('addresses')
+        .update({ is_default: true })
+        .eq('id', id)
+        .eq('user_id', user.id);
+      if (setError) throw setError;
+
+      await setSelectedAddressId(id);
+      await fetchAddresses();
+    } catch {
+      showThemedAlert('Erro', 'Não foi possível definir o endereço padrão.');
+    }
   };
 
   const handleDelete = (id) => {
@@ -1123,8 +1144,29 @@ export default function Addresses() {
     showThemedAlert('Remover endereço', 'Tem certeza?', [
       { text: 'Cancelar', style: 'cancel' },
       { text: 'Remover', style: 'destructive', onPress: async () => {
-        await supabase.from('addresses').delete().eq('id', id).eq('user_id', user.id);
-        await fetchAddresses();
+        try {
+          const { error } = await supabase
+            .from('addresses')
+            .delete()
+            .eq('id', id)
+            .eq('user_id', user.id);
+          if (error) throw error;
+
+          const currentSelectedId = await getSelectedAddressId();
+          if (currentSelectedId && String(currentSelectedId) === String(id)) {
+            const remaining = addresses.filter((a) => String(a.id) !== String(id));
+            const nextDefault = remaining.find((a) => a.is_default) || remaining[0];
+            if (nextDefault?.id) {
+              await setSelectedAddressId(nextDefault.id);
+            } else {
+              try { await AsyncStorage.removeItem(SELECTED_ADDRESS_ID_KEY); } catch {}
+            }
+          }
+
+          await fetchAddresses();
+        } catch {
+          showThemedAlert('Erro', 'Não foi possível remover o endereço.');
+        }
       }},
     ]);
   };

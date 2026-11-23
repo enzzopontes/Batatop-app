@@ -53,6 +53,8 @@ interface StepPagamentoProps {
   hasSavedPhone?: boolean;
   phone?: string;
   onChangePhone?: (text: string) => void;
+  isPromoActive?: boolean;
+  couponInvalidReason?: string | null;
 }
 
 export default function StepPagamento({
@@ -75,6 +77,8 @@ export default function StepPagamento({
   hasSavedPhone,
   phone = '',
   onChangePhone,
+  isPromoActive = false,
+  couponInvalidReason,
 }: StepPagamentoProps) {
   const router = useRouter();
 
@@ -120,7 +124,14 @@ export default function StepPagamento({
       <View style={styles.couponCard}>
         <Image source={CUPOM_ICON} style={styles.couponIconImg} resizeMode="contain" />
         <View style={styles.couponInfo}>
-          {coupon ? (
+          {isPromoActive ? (
+            <>
+              <Text style={styles.couponTitle}>Promoção ativa aplicada</Text>
+              <Text style={styles.couponSub}>
+                Cupons não podem ser combinados com promoções ativas.
+              </Text>
+            </>
+          ) : coupon ? (
             <>
               <Text style={styles.couponTitle}>{coupon.code}</Text>
               <Text style={styles.couponSub}>
@@ -128,6 +139,9 @@ export default function StepPagamento({
                   ? `${Number(coupon.discount_value)}% de desconto`
                   : `R$ ${Number(coupon.discount_value).toFixed(2).replace('.', ',')} de desconto`}
               </Text>
+              {Boolean(couponInvalidReason) && (
+                <Text style={styles.couponInvalidReason}>{couponInvalidReason}</Text>
+              )}
             </>
           ) : (
             <>
@@ -146,7 +160,7 @@ export default function StepPagamento({
           >
             <Text style={styles.couponRemoveActionText}>Remover</Text>
           </RipplePressable>
-        ) : (
+        ) : !isPromoActive ? (
           <RipplePressable
             onPress={() => router.push('/cupons')}
             hitSlop={10}
@@ -155,7 +169,7 @@ export default function StepPagamento({
           >
             <Text style={styles.couponActionText}>Adicionar</Text>
           </RipplePressable>
-        )}
+        ) : null}
       </View>
 
       {/* 4.1 Bloco de Talheres */}
@@ -266,15 +280,10 @@ export default function StepPagamento({
                 R$ {deliveryFee.toFixed(2).replace('.', ',')}
               </Text>
             ) : (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Text style={{ textDecorationLine: 'line-through', color: '#9CA3AF', fontSize: 13, fontWeight: '500' }}>
-                  R$ 5,00
+              <View style={{ backgroundColor: '#DCFCE7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: '#BBF7D0' }}>
+                <Text style={{ color: '#15803D', fontSize: 12, fontWeight: '700' }}>
+                  Grátis
                 </Text>
-                <View style={{ backgroundColor: '#DCFCE7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: '#BBF7D0' }}>
-                  <Text style={{ color: '#15803D', fontSize: 12, fontWeight: '700' }}>
-                    Grátis
-                  </Text>
-                </View>
               </View>
             )
           ) : (
@@ -365,6 +374,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.textSecondary,
     marginTop: 2,
+  },
+  couponInvalidReason: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.error,
+    marginTop: 4,
   },
   couponActionText: {
     fontSize: 14,

@@ -8,7 +8,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, RADIUS } from '../constants/theme';
 import { fetchHighlightCouponBanners } from '../utils/homeCoupons';
 import { cartStore } from '../utils/cartStore';
-import { showSuccessAlert } from './ThemedAlert';
+import { validateCouponCode } from '../hooks/useCoupons';
+import { showSuccessAlert, showErrorAlert } from './ThemedAlert';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -138,15 +139,24 @@ export default function BannerCarousel() {
     const coupon = item.coupon;
     if (coupon && (coupon.code || coupon.id)) {
       try {
-        cartStore.setCoupon(coupon);
-        if (coupon.code) {
+        const cartTotal = cartStore.getCartTotal() / 100;
+        const cartItems = cartStore.getCart();
+        const result = await validateCouponCode(coupon.code, cartTotal, cartItems);
+        if (!result.valid) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          showErrorAlert(result.reason || 'Cupom indisponível.', 'Cupom Inválido');
+          return;
+        }
+        const validatedCoupon = result.coupon || coupon;
+        cartStore.setCoupon(validatedCoupon);
+        if (validatedCoupon.code) {
           try {
-            await Clipboard.setStringAsync(coupon.code);
+            await Clipboard.setStringAsync(validatedCoupon.code);
           } catch {}
         }
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         showSuccessAlert(
-          `Cupom ${coupon.code || ''} aplicado! Ao entrar na sacola o desconto já estará ativo.`,
+          `Cupom ${validatedCoupon.code || ''} aplicado! Ao entrar na sacola o desconto já estará ativo.`,
           'Cupom Ativado'
         );
       } catch (err) {

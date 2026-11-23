@@ -27,22 +27,42 @@ export function mapCartItemsToOrderItems(items) {
     const notes = (item.notes || item.observacoes || '').trim() || null;
     const pastaType = item.pasta_type || item.pastaType || null;
 
-    const adicionais = Array.isArray(item.adicionais)
-      ? item.adicionais.map((adic) => {
-          const adicQty = Math.max(1, Math.floor(Number(adic.quantity ?? adic.quantidade ?? 1)));
-          const rawAdicId = String(adic.id || '').trim();
-          const adicId = rawAdicId.length >= 36 ? rawAdicId.slice(0, 36) : rawAdicId;
-          const isValidId = UUID_REGEX.test(adicId);
+    const adicionaisMap = new Map();
+    if (Array.isArray(item.adicionais)) {
+      for (const adic of item.adicionais) {
+        if (!adic || typeof adic !== 'object') continue;
 
-          const mappedAdic = { quantity: adicQty };
-          if (isValidId) {
-            mappedAdic.id = adicId;
-          } else if (adic.name || adic.nome) {
-            mappedAdic.name = String(adic.name || adic.nome).trim();
+        const rawAdicQty = Number(adic.quantity ?? adic.quantidade ?? 1);
+        const adicQty = Math.max(
+          1,
+          Math.min(99, Math.floor(Number.isNaN(rawAdicQty) ? 1 : rawAdicQty))
+        );
+        const rawAdicId = String(adic.id || '').trim();
+        const adicId = rawAdicId.length >= 36 ? rawAdicId.slice(0, 36) : rawAdicId;
+        const isValidId = UUID_REGEX.test(adicId);
+
+        if (isValidId) {
+          const key = `id:${adicId.toLowerCase()}`;
+          const existing = adicionaisMap.get(key);
+          if (existing) {
+            existing.quantity = Math.max(1, Math.min(99, existing.quantity + adicQty));
+          } else {
+            adicionaisMap.set(key, { quantity: adicQty, id: adicId });
           }
-          return mappedAdic;
-        })
-      : [];
+        } else if (adic.name || adic.nome) {
+          const adicName = String(adic.name || adic.nome).trim();
+          if (!adicName) continue;
+          const key = `name:${adicName.toUpperCase()}`;
+          const existing = adicionaisMap.get(key);
+          if (existing) {
+            existing.quantity = Math.max(1, Math.min(99, existing.quantity + adicQty));
+          } else {
+            adicionaisMap.set(key, { quantity: adicQty, name: adicName });
+          }
+        }
+      }
+    }
+    const adicionais = Array.from(adicionaisMap.values());
 
     return {
       product_id: productId,

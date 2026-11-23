@@ -122,8 +122,8 @@ export default function CampaignModal({
 
         const couponPayload = {
           code: cleanCode,
-          type: discountType,
-          value: discountNum,
+          discount_type: discountType === 'fixed' ? 'fixed' : 'percentage',
+          discount_value: discountNum,
           min_order_value: minOrderNum > 0 ? minOrderNum : null,
           expires_at: expDate.toISOString(),
           active: true,
@@ -141,11 +141,9 @@ export default function CampaignModal({
           .single();
 
         if (couponError) {
-          console.warn('Aviso ao criar cupom:', couponError.message);
-          // Continua sem quebrar se o código já existir ou se falhar pontualmente
-        } else {
-          createdCouponId = cupomCriado?.id || null;
+          throw new Error(`Erro ao criar cupom "${cleanCode}": ${couponError.message}`);
         }
+        createdCouponId = cupomCriado?.id || null;
       }
 
       // 2. Criação da Campanha

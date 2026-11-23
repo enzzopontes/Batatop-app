@@ -138,6 +138,8 @@ export default function CartScreen() {
                 hasSavedPhone={flow.hasSavedPhone}
                 phone={flow.phone}
                 onChangePhone={flow.setPhone}
+                isPromoActive={flow.isPromoActive}
+                couponInvalidReason={flow.couponInvalidReason}
               />
             )}
           </View>
@@ -184,6 +186,7 @@ export default function CartScreen() {
               flow.setShowReviseModal(false);
               flow.setShowPaymentSelector(true);
             }}
+            onAddCard={flow.openCardWizardFromRevise}
             onToggleDeliveryType={flow.toggleDeliveryType}
           />
 

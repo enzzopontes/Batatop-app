@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -215,6 +215,7 @@ export default function CardWizard({ cardType, existingCardsCount, addCard, savi
 
   const [stepError, setStepError] = useState(null);
   const [validatingCard, setValidatingCard] = useState(false);
+  const savingRef = useRef(false);
 
   const brand = detectCardBrand(cardNumber);
   const typeLabel = cardType === 'cartão de débito' ? 'DÉBITO' : 'CRÉDITO';
@@ -319,27 +320,33 @@ export default function CardWizard({ cardType, existingCardsCount, addCard, savi
   }
 
   async function handleSave() {
-    const [month, year] = expiry.split('/');
+    if (savingRef.current || savingCard) return;
+    savingRef.current = true;
+    try {
+      const [month, year] = expiry.split('/');
 
-    const result = await addCard({
-      cardNumber: cardNumber.replace(/\D/g, ''),
-      expirationMonth: month,
-      expirationYear: `20${year}`,
-      securityCode: cvv,
-      cardholderName: cardholderName.trim(),
-      docNumber,
-      cardType,
-      setAsDefault: existingCardsCount === 0,
-    });
+      const result = await addCard({
+        cardNumber: cardNumber.replace(/\D/g, ''),
+        expirationMonth: month,
+        expirationYear: `20${year}`,
+        securityCode: cvv,
+        cardholderName: cardholderName.trim(),
+        docNumber,
+        cardType,
+        setAsDefault: existingCardsCount === 0,
+      });
 
-    if (!result.success) {
-      showThemedAlert('Não foi possível salvar', result.error || 'Tente novamente em instantes.', [
-        { text: 'OK', style: 'cancel' },
-      ]);
-      return;
+      if (!result.success) {
+        showThemedAlert('Não foi possível salvar', result.error || 'Tente novamente em instantes.', [
+          { text: 'OK', style: 'cancel' },
+        ]);
+        return;
+      }
+
+      onSaved();
+    } finally {
+      savingRef.current = false;
     }
-
-    onSaved();
   }
 
   function renderStepFields() {

@@ -156,6 +156,51 @@ export default function RegisterScreen() {
             </View>
 
             <TouchableOpacity
+              style={styles.termsRow}
+              onPress={() => setAcceptedTerms(!acceptedTerms)}
+              activeOpacity={0.7}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: acceptedTerms }}
+              accessibilityLabel="Aceitar os Termos de Uso e a Política de Privacidade"
+            >
+              <Ionicons
+                name={acceptedTerms ? 'checkbox' : 'square-outline'}
+                size={22}
+                color={acceptedTerms ? '#FFB500' : '#999'}
+                style={styles.termsCheckboxIcon}
+              />
+              <Text style={styles.termsText}>
+                Li e aceito os{' '}
+                <Text
+                  style={styles.termsLink}
+                  onPress={(e) => {
+                    e?.stopPropagation?.();
+                    router.push({
+                      pathname: '/ajuda/artigo/termos-de-uso',
+                      params: { headerTitle: 'TERMOS DE USO' },
+                    });
+                  }}
+                >
+                  Termos de Uso
+                </Text>{' '}
+                e a{' '}
+                <Text
+                  style={styles.termsLink}
+                  onPress={(e) => {
+                    e?.stopPropagation?.();
+                    router.push({
+                      pathname: '/ajuda/artigo/declaracao-de-privacidade',
+                      params: { headerTitle: 'DECLARAÇÃO DE PRIVACIDADE' },
+                    });
+                  }}
+                >
+                  Política de Privacidade
+                </Text>
+                .
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
               style={styles.registerButton}
               onPress={handleRegister}
               disabled={loading}
@@ -258,13 +303,35 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#1A1A1A',
   },
+  termsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: 4,
+    marginBottom: 4,
+    paddingVertical: 6,
+  },
+  termsCheckboxIcon: {
+    marginRight: 10,
+    marginTop: 1,
+  },
+  termsText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 20,
+    color: '#666',
+  },
+  termsLink: {
+    color: '#1A1A1A',
+    fontWeight: '700',
+    textDecorationLine: 'underline',
+  },
   registerButton: {
     backgroundColor: '#FFB500',
     height: 55,
     borderRadius: 15,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 16,
     ...SHADOWS.sm,
   },
   registerButtonText: {

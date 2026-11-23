@@ -32,7 +32,6 @@ import { useModalFade } from '../../hooks/useModalFade';
 import { useSafeAreaInsets, SafeAreaProvider } from 'react-native-safe-area-context';
 import { notifyAdminNewOrder } from '../../utils/notifyNewOrder';
 import { STORE_ADDRESS } from '../../constants/store';
-import { loyaltyManager } from '../../components/RestaurantHeaderCard';
 import ThreeDotsLoader from '../../components/ThreeDotsLoader';
 
 import AnimatedReanimated, {
@@ -579,6 +578,8 @@ const STATUS_BG = {
 };
 
 const PAYMENT_LABELS = {
+  dinheiro: 'Dinheiro',
+  cartao: 'Cartão',
   cash: 'Dinheiro',
   credit_card: 'Cartão de Crédito',
   debit_card: 'Cartão de Débito',
@@ -658,6 +659,25 @@ function ProgressBar({ status, isPixAwaiting = false }) {
 
 // ─── Helper de Extração Segura de Dados do Pix (Cascata Multichaves) ──────────
 
+function isPixStatusUnderpaid(res) {
+  return Boolean(
+    res?.action === 'held_underpaid' ||
+      res?.status === 'held_underpaid' ||
+      res?.needs_review === true ||
+      res?.review_reason === 'underpaid'
+  );
+}
+
+function isPixStatusApproved(res) {
+  return (
+    !isPixStatusUnderpaid(res) &&
+    (res?.statusDetail === 'accredited' ||
+      res?.paymentStatus === 'approved' ||
+      res?.status === 'approved' ||
+      res?.status === 'processed')
+  );
+}
+
 function extractPixData(pedido) {
   if (!pedido) {
     return {
@@ -669,6 +689,7 @@ function extractPixData(pedido) {
       pixExpRaw: null,
       paymentId: null,
       isPixAwaiting: false,
+      isUnderpaidReview: false,
     };
   }
 
@@ -727,14 +748,25 @@ function extractPixData(pedido) {
     metadata.pix?.order_id ||
     metadata.payment_id;
 
+  const isUnderpaidReview =
+    Boolean(
+      pedido.isUnderpaidReview ||
+        (pedido.metadata?.needs_review && pedido.metadata?.review_reason === 'underpaid') ||
+        pedido.metadata?.review_reason === 'underpaid'
+    ) &&
+    !Boolean(pedido.metadata?.paid_at) &&
+    !['cancelled', 'preparing', 'preparo', 'ready', 'out_for_delivery', 'delivered'].includes(
+      pedido.status
+    );
+
   const isPaid =
-    pedido.metadata?.mp_payment_status === 'approved' ||
-    pedido.metadata?.pix?.status === 'approved' ||
-    Boolean(pedido.metadata?.paid_at) ||
-    ['preparing', 'preparo', 'ready', 'out_for_delivery', 'delivered'].includes(pedido.status);
+    !isUnderpaidReview &&
+    (Boolean(pedido.metadata?.paid_at) ||
+      ['preparing', 'preparo', 'ready', 'out_for_delivery', 'delivered'].includes(pedido.status));
 
   const isPixAwaiting =
     !isPaid &&
+    !isUnderpaidReview &&
     (pedido.status === 'awaiting_payment' || (pedido.status === 'pending' && isPixMethod)) &&
     (isPixMethod || !!qrCodeText);
 
@@ -747,6 +779,7 @@ function extractPixData(pedido) {
     pixExpRaw,
     paymentId,
     isPixAwaiting,
+    isUnderpaidReview,
   };
 }
 
@@ -763,12 +796,14 @@ export default function DetalhesPedido() {
   const [erro, setErro] = useState(false);
   const [copied, setCopied] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const cancellingOrderRef = useRef(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const { mounted: cancelModalMounted, fadeAnim: cancelModalFade } = useModalFade(showCancelModal);
   const [helpModalVisible, setHelpModalVisible] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState(null);
   const hasTriggeredExpiryFetchRef = useRef(false);
   const [confirmingDelivered, setConfirmingDelivered] = useState(false);
+  const confirmingDeliveryRef = useRef(false);
   const [feedbackModalVisible, setFeedbackModalVisible] = useState(false);
   const pixFadeAnim = useRef(new Animated.Value(1)).current;
   const [showConfetti, setShowConfetti] = useState(false);
@@ -794,14 +829,11 @@ export default function DetalhesPedido() {
     pixExpRaw,
     paymentId: mpPaymentId,
     isPixAwaiting,
+    isUnderpaidReview,
   } = extractPixData(pedido);
 
   // Fallback seguro: se não houver base64, gera via API online de QR Code
-  const qrImageUri = qrCodeBase64
-    ? `data:image/png;base64,${qrCodeBase64}`
-    : qrCodeText
-    ? `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrCodeText)}`
-    : null;
+  const qrImageUri = qrCodeBase64 ? `data:image/png;base64,${qrCodeBase64}` : null;
 
   const pedidoRef = useRef(pedido);
   pedidoRef.current = pedido;
@@ -838,12 +870,7 @@ export default function DetalhesPedido() {
               }
             : prev
         );
-        try {
-          await supabase.rpc('merge_order_metadata', {
-            order_id: orderIdToFetch,
-            patch: { pix: pixPatch },
-          });
-        } catch {}
+        carregarPedidoRef.current?.({ silent: true });
       } else {
         setPixGenError(res?.error || 'Não foi possível gerar o QR Code Pix.');
       }
@@ -1058,7 +1085,8 @@ export default function DetalhesPedido() {
   }, []);
 
   const handleConfirmDelivered = async () => {
-    if (!pedido) return;
+    if (!pedido || confirmingDeliveryRef.current) return;
+    confirmingDeliveryRef.current = true;
     setConfirmingDelivered(true);
     try {
       const { data, error } = await supabase.rpc('confirm_order_delivered_user', {
@@ -1072,6 +1100,7 @@ export default function DetalhesPedido() {
     } catch (err) {
       showThemedAlert('Erro', 'Não foi possível confirmar o recebimento. Tente novamente.');
     } finally {
+      confirmingDeliveryRef.current = false;
       setConfirmingDelivered(false);
     }
   };
@@ -1090,8 +1119,20 @@ export default function DetalhesPedido() {
       const resultado = await buscarPedidoPorId(id);
       if (resultado.success && resultado.data) {
         const fetched = resultado.data;
+        const fetchedIsUnderpaid =
+          (fetched.isUnderpaidReview ||
+            fetched.reviewReason === 'underpaid' ||
+            fetched.metadata?.review_reason === 'underpaid' ||
+            (Boolean(fetched.needsReview || fetched.metadata?.needs_review) &&
+              fetched.status === 'awaiting_payment')) &&
+          !Boolean(fetched.metadata?.paid_at) &&
+          !['cancelled', 'preparing', 'preparo', 'ready', 'out_for_delivery', 'delivered'].includes(
+            fetched.status
+          );
         const fetchedIsPaid =
-          fetched.status !== 'awaiting_payment' && fetched.status !== 'cancelled';
+          !fetchedIsUnderpaid &&
+          (Boolean(fetched.metadata?.paid_at) ||
+            ['preparing', 'preparo', 'ready', 'out_for_delivery', 'delivered'].includes(fetched.status));
 
         if (isPixAwaitingRef.current && fetchedIsPaid) {
           pendingPaidOrderRef.current = fetched;
@@ -1104,17 +1145,6 @@ export default function DetalhesPedido() {
         if (isCelebrationPendingRef.current) {
           pendingPaidOrderRef.current = fetched;
           return fetched;
-        }
-
-        if (['delivered', 'concluido', 'concluído'].includes(String(fetched.status || '').toLowerCase())) {
-          loyaltyManager
-            .incrementFromOrder({
-              orderId: fetched.id,
-              orderCreatedAt: fetched.createdAt,
-              orderStatus: fetched.status,
-              userId: fetched.user_id,
-            })
-            .catch(() => {});
         }
 
         setPedido(fetched);
@@ -1143,13 +1173,12 @@ export default function DetalhesPedido() {
           if (mpPaymentId) {
             checkPixStatus(mpPaymentId)
               .then((res) => {
+                if (isPixStatusUnderpaid(res)) {
+                  carregarPedidoRef.current({ silent: true });
+                  return;
+                }
                 if (!res?.success) return;
-                const isPaid =
-                  res.statusDetail === 'accredited' ||
-                  res.paymentStatus === 'approved' ||
-                  res.status === 'approved' ||
-                  res.status === 'processed';
-                if (isPaid) {
+                if (isPixStatusApproved(res)) {
                   triggerPaymentSuccess();
                 }
               })
@@ -1180,7 +1209,21 @@ export default function DetalhesPedido() {
           filter: `id=eq.${id}`,
         },
         (payload) => {
-          if (payload.new?.status && payload.new.status !== 'awaiting_payment' && payload.new.status !== 'cancelled') {
+          const nextRow = payload.new;
+          const nextMeta = nextRow?.metadata || {};
+          const nextUnderpaidOrReview =
+            (nextMeta.review_reason === 'underpaid' ||
+              (nextMeta.needs_review === true && nextRow?.status === 'awaiting_payment')) &&
+            !Boolean(nextMeta.paid_at) &&
+            !['cancelled', 'preparing', 'preparo', 'ready', 'out_for_delivery', 'delivered'].includes(
+              nextRow?.status
+            );
+          if (
+            !nextUnderpaidOrReview &&
+            nextRow?.status &&
+            nextRow.status !== 'awaiting_payment' &&
+            nextRow.status !== 'cancelled'
+          ) {
             if (isPixAwaitingRef.current || payload.old?.status === 'awaiting_payment' || pedidoRef.current?.status === 'awaiting_payment') {
               triggerPaymentSuccess();
             }
@@ -1253,15 +1296,18 @@ export default function DetalhesPedido() {
     const interval = setInterval(async () => {
       if (!isPollingActive) return;
       const result = await checkPixStatus(mpPaymentId);
-      if (!result.success || !isPollingActive) return;
+      if (!isPollingActive) return;
 
-      const isPaid =
-        result.statusDetail === 'accredited' ||
-        result.paymentStatus === 'approved' ||
-        result.status === 'approved' ||
-        result.status === 'processed';
+      if (isPixStatusUnderpaid(result)) {
+        isPollingActive = false;
+        clearInterval(interval);
+        await carregarPedidoRef.current({ silent: true });
+        return;
+      }
 
-      if (isPaid) {
+      if (!result?.success) return;
+
+      if (isPixStatusApproved(result)) {
         isPollingActive = false;
         clearInterval(interval);
         triggerPaymentSuccess();
@@ -1311,7 +1357,8 @@ export default function DetalhesPedido() {
   };
 
   const confirmCancelOrder = async () => {
-    if (!pedido) return;
+    if (!pedido || cancellingOrderRef.current) return;
+    cancellingOrderRef.current = true;
     const numLocal = pedido.orderNumber || pedido.id.slice(-4).toUpperCase();
     setShowCancelModal(false);
     setCancelling(true);
@@ -1336,6 +1383,7 @@ export default function DetalhesPedido() {
       const msg = CANCEL_ERROR_MESSAGES[err?.message] || err?.message || 'Não foi possível cancelar o pedido. Entre em contato pelo WhatsApp.';
       showThemedAlert('Erro', msg);
     } finally {
+      cancellingOrderRef.current = false;
       setCancelling(false);
     }
   };
@@ -1375,7 +1423,9 @@ export default function DetalhesPedido() {
   const num = pedido.orderNumber || pedido.id.slice(-4).toUpperCase();
   const statusColor = STATUS_COLORS[pedido.status] ?? COLORS.textMuted;
   const statusBg = STATUS_BG[pedido.status] ?? COLORS.borderLight;
-  const statusLabel = STATUS_LABELS[pedido.status] ?? pedido.status;
+  const statusLabel = isUnderpaidReview
+    ? 'Pagamento em revisão'
+    : STATUS_LABELS[pedido.status] ?? pedido.status;
   const statusIcon = STATUS_ICONS[pedido.status] ?? 'bag-outline';
 
   const timeStr = pedido.createdAt
@@ -1386,6 +1436,23 @@ export default function DetalhesPedido() {
     PAYMENT_LABELS[pedido.paymentMethod] ||
     pedido.paymentMethod?.toUpperCase() ||
     '—';
+  const pm = String(pedido.paymentMethod || '').toLowerCase();
+  const isCardMethod =
+    pm === 'cartao' ||
+    pm.includes('cart') ||
+    pm === 'credit_card' ||
+    pm === 'debit_card';
+  const cardLabel =
+    pedido.metadata?.card_type === 'debit' || pm.includes('deb')
+      ? 'Cartão de Débito'
+      : pedido.metadata?.card_type === 'credit' || pm.includes('cred')
+      ? 'Cartão de Crédito'
+      : 'Cartão';
+  const isOnlinePayment = pedido.metadata?.payment_online === true;
+  const isPaidOnline =
+    !isUnderpaidReview &&
+    !['awaiting_payment', 'cancelled'].includes(pedido.status) &&
+    (isOnlinePayment || Boolean(pedido.metadata?.paid_at));
 
   const enderecoCompleto = [
     pedido.address,
@@ -1531,6 +1598,23 @@ export default function DetalhesPedido() {
           )}
         </View>
 
+        {/* CARD REVISÃO — Pagamento Pix com valor divergente (held_underpaid) */}
+        {isUnderpaidReview && (
+          <View style={[s.card, s.underpaidCard]}>
+            <View style={s.underpaidRow}>
+              <View style={s.underpaidIconBox}>
+                <Ionicons name="alert-circle" size={24} color="#D97706" />
+              </View>
+              <View style={s.underpaidTextCol}>
+                <Text style={s.underpaidTitle}>Pagamento em revisão</Text>
+                <Text style={s.underpaidText}>
+                  Identificamos uma divergência no valor pago. Nossa equipe já foi notificada e analisará seu pedido em breve.
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
+
         {/* CARD PIX — Cobrança PIX Fintech (Fica em segundo lugar, logo abaixo do Status) */}
         {isPixAwaiting && (
           <Animated.View style={[s.card, s.paymentBox, { opacity: pixFadeAnim }]}>
@@ -1580,6 +1664,13 @@ export default function DetalhesPedido() {
                   style={s.qrImage}
                   resizeMode="contain"
                 />
+              </View>
+            ) : qrCodeText ? (
+              <View style={s.qrFallbackContainer}>
+                <Ionicons name="qr-code-outline" size={28} color="#D97706" />
+                <Text style={s.qrFallbackSub}>
+                  QR Code visual indisponível. Use o código Pix Copia e Cola abaixo.
+                </Text>
               </View>
             ) : (
               <Pressable
@@ -1780,7 +1871,7 @@ export default function DetalhesPedido() {
               name={
                 isPixMethod
                   ? 'qr-code-outline'
-                  : pedido.paymentMethod?.toLowerCase()?.includes('cart')
+                  : isCardMethod
                   ? 'card-outline'
                   : 'cash-outline'
               }
@@ -1789,9 +1880,21 @@ export default function DetalhesPedido() {
             />
             <Text style={s.paymentMethodText}>
               {isPixMethod
-                ? (isPixAwaiting ? 'Pix • Aguardando pagamento' : 'Pago pelo app • Pix (Aprovado)')
-                : pedido.paymentMethod?.toLowerCase()?.includes('cart')
-                ? 'Pago pelo app • Cartão de Crédito/Débito'
+                ? isUnderpaidReview
+                  ? 'Pix • Pagamento em revisão'
+                  : isPixAwaiting
+                  ? 'Pix • Aguardando pagamento'
+                  : 'Pago pelo app • Pix (Aprovado)'
+                : isCardMethod
+                ? isPaidOnline
+                  ? `Pago pelo app • ${cardLabel}`
+                  : isOnlinePayment
+                  ? isUnderpaidReview
+                    ? `${cardLabel} • Pagamento em revisão`
+                    : pedido.status === 'awaiting_payment'
+                    ? `${cardLabel} • Aguardando pagamento`
+                    : `${cardLabel} • Cancelado`
+                  : `Pagamento na entrega • ${cardLabel}`
                 : `Pagamento na entrega • ${paymentLabel}`}
             </Text>
           </View>
@@ -2569,6 +2672,39 @@ const s = StyleSheet.create({
     borderColor: '#FEE2E2',
     backgroundColor: '#FEF2F2',
     padding: 16,
+  },
+  underpaidCard: {
+    borderWidth: 1.5,
+    borderColor: '#FDE68A',
+    backgroundColor: '#FFFBEB',
+    padding: 16,
+  },
+  underpaidRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  underpaidIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FEF3C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  underpaidTextCol: {
+    flex: 1,
+  },
+  underpaidTitle: {
+    fontSize: 14.5,
+    fontWeight: '800',
+    color: '#92400E',
+    marginBottom: 4,
+  },
+  underpaidText: {
+    fontSize: 12.5,
+    color: '#B45309',
+    lineHeight: 18,
   },
   cancelledRow: {
     flexDirection: 'row',

@@ -11,7 +11,6 @@ import { getEffectiveSession, performLogout } from '../../utils/authSession';
 import LogoutRememberModal from '../../components/LogoutRememberModal';
 import { requestAuthSheet } from '../../utils/authSheetRequest';
 import ProfileAccordionItem from '../../components/ProfileAccordionItem';
-import ProfileSuccessToast from '../../components/ProfileSuccessToast';
 import { isAdminUser, checkIsAdmin } from '../../utils/isAdmin';
 import { ProfileSkeleton } from '../../components/Skeleton';
 
@@ -25,10 +24,7 @@ export default function Profile() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
-  // Tela de perfil deslogado (soft logout) — toast de "histórico limpo",
-  // só usado no bloco `if (!user)` abaixo. O AuthBottomSheet é o global
-  // de _layout.js (via requestAuthSheet()).
-  const [historyToastVisible, setHistoryToastVisible] = useState(false);
+  // O AuthBottomSheet é o global de _layout.js (via requestAuthSheet()).
 
   useFocusEffect(
     useCallback(() => {
@@ -122,12 +118,6 @@ export default function Profile() {
     }
   };
 
-  const handleClearHistory = () => {
-    // Limpar histórico local não precisa de login.
-    // TODO: limpar o histórico de busca de verdade aqui (AsyncStorage/estado)
-    setHistoryToastVisible(true);
-  };
-
   if (loading) {
     return <ProfileSkeleton />;
   }
@@ -135,12 +125,6 @@ export default function Profile() {
   if (!user) {
     return (
       <View style={sg.container}>
-        <ProfileSuccessToast
-          visible={historyToastVisible}
-          message="Histórico limpo com sucesso"
-          onHide={() => setHistoryToastVisible(false)}
-        />
-
         <ScrollView
           contentContainerStyle={[sg.scrollContent, { paddingTop: Math.max(insets.top, 16) + 12 }]}
           showsVerticalScrollIndicator={false}
@@ -187,16 +171,6 @@ export default function Profile() {
             ]}
           />
 
-          {/* Configurações -> só Limpar histórico de busca */}
-          <ProfileAccordionItem
-            icon="settings-outline"
-            title="Configurações"
-            subtitle="Limpar histórico de busca"
-            items={[
-              { label: 'Limpar histórico de busca', onPress: handleClearHistory },
-            ]}
-          />
-
           {/* Ajuda e Termos */}
           <ProfileAccordionItem
             icon="help-circle-outline"
@@ -221,14 +195,35 @@ export default function Profile() {
     );
   }
 
+  const displayName = user?.user_metadata?.full_name || 'Usuário Batatop';
+  const avatarInitials = (() => {
+    const cleanName = String(user?.user_metadata?.full_name || '').trim();
+    if (cleanName) {
+      const parts = cleanName.split(/\s+/).filter(Boolean);
+      if (parts.length >= 2) {
+        return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+      }
+      return cleanName.slice(0, 2).toUpperCase();
+    }
+    const cleanEmail = String(user?.email || '').trim().split('@')[0];
+    if (cleanEmail) {
+      const parts = cleanEmail.split(/[._-]+/).filter(Boolean);
+      if (parts.length >= 2) {
+        return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+      }
+      return cleanEmail.slice(0, 2).toUpperCase();
+    }
+    return 'BT';
+  })();
+  const customAvatarUrl =
+    typeof user?.user_metadata?.avatar_url === 'string' &&
+    user.user_metadata.avatar_url.trim().length > 0 &&
+    !user.user_metadata.avatar_url.includes('dicebear.com')
+      ? user.user_metadata.avatar_url.trim()
+      : null;
+
   return (
     <View style={s.container}>
-      <ProfileSuccessToast
-        visible={historyToastVisible}
-        message="Histórico limpo com sucesso"
-        onHide={() => setHistoryToastVisible(false)}
-      />
-
       <ScrollView
         style={s.scroll}
         showsVerticalScrollIndicator={false}
@@ -244,14 +239,20 @@ export default function Profile() {
             sem e-mail/CPF aqui; isso mora em "Dados da conta" agora) */}
         <View style={s.profileHeaderRow}>
           <View style={s.avatarWrapper}>
-            <ExpoImage
-              source={{ uri: user?.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/png?seed=${user?.email || 'Guest'}` }}
-              style={s.avatarImage}
-              cachePolicy="memory-disk"
-            />
+            {customAvatarUrl ? (
+              <ExpoImage
+                source={{ uri: customAvatarUrl }}
+                style={s.avatarImage}
+                cachePolicy="memory-disk"
+              />
+            ) : (
+              <View style={s.avatarInitialsWrap}>
+                <Text style={s.avatarInitialsText}>{avatarInitials}</Text>
+              </View>
+            )}
           </View>
           <Text style={s.userName} numberOfLines={1}>
-            {user?.user_metadata?.full_name || 'Usuário Batatop'}
+            {displayName}
           </Text>
         </View>
 
@@ -346,7 +347,6 @@ export default function Profile() {
           items={[
             { label: 'Segurança', onPress: () => router.push('/profile/security') },
             { label: 'Gerenciar notificações', onPress: () => router.push('/profile/gerenciar-notificacoes') },
-            { label: 'Limpar histórico de busca', onPress: handleClearHistory },
             { label: 'Sair da conta', onPress: handleLogout, danger: true },
           ]}
         />
@@ -485,12 +485,25 @@ const s = StyleSheet.create({
     height: 56,
     borderRadius: 28,
     overflow: 'hidden',
-    backgroundColor: '#FADCE0',
+    backgroundColor: COLORS.primary,
     marginRight: 14,
   },
   avatarImage: {
     width: '100%',
     height: '100%',
+  },
+  avatarInitialsWrap: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primary,
+  },
+  avatarInitialsText: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: COLORS.text,
+    letterSpacing: 0.5,
   },
   userName: {
     flex: 1,

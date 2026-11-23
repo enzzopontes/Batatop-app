@@ -292,6 +292,8 @@ export const LargeSecureStore = {
 
   setItem(key, value) {
     return withKeyLock(key, async () => {
+      await ensureLegacyMigration();
+
       if (Platform.OS === 'web') {
         await AsyncStorage.setItem(key, value);
         return true;
@@ -315,6 +317,7 @@ export const LargeSecureStore = {
         const cipherHex = bytesToHex(ciphertext);
 
         await AsyncStorage.setItem(`enc_${key}`, `${ivHex}${cipherHex}`);
+        await AsyncStorage.removeItem(key).catch(() => {});
         return true;
       } catch (err) {
         console.error(`[LargeSecureStore] Falha ao salvar '${key}'. Limpando payload:`, err);

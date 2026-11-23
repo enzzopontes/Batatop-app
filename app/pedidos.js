@@ -29,7 +29,6 @@ import OrderFeedbackModal from '../components/orders/OrderFeedbackModal';
 import { ThemedAlertHost, showThemedAlert } from '../components/ThemedAlert';
 import { cartStore } from '../utils/cartStore';
 import { checkPixStatus } from '../utils/mercadoPago';
-import { loyaltyManager } from '../components/RestaurantHeaderCard';
 import batataDormindo from '../assets/batatadormindo.png';
 
 // ─── Header Minimalista Padrão (Estilo iFood) ─────────────────────────────────
@@ -71,7 +70,7 @@ function PulsingDot() {
 }
 
 // ─── Barra de Progresso Segmentada Estilo iFood ──────────────────────────────
-function SegmentedProgressBar({ status }) {
+function SegmentedProgressBar({ status, isUnderpaidReview = false }) {
   const pulseAnim = useRef(new Animated.Value(0.4)).current;
 
   useEffect(() => {
@@ -89,7 +88,10 @@ function SegmentedProgressBar({ status }) {
   let currentStep = 1;
   let statusText = 'Pedido confirmado';
 
-  if (status === 'awaiting_payment') {
+  if (isUnderpaidReview) {
+    currentStep = 1;
+    statusText = 'Pagamento em revisão';
+  } else if (status === 'awaiting_payment') {
     currentStep = 1;
     statusText = 'Aguardando pagamento Pix';
   } else if (status === 'pending' || status === 'confirmed') {
@@ -176,16 +178,28 @@ function formatOrderDate(date) {
   return `${capitalizedWeekday}, ${day} de ${month} de ${year}`;
 }
 
+// ─── Verificador de Pedido em Revisão (Pagamento Parcial) ───────────────────
+export function isOrderUnderpaidReview(order) {
+  if (!order) return false;
+  return Boolean(
+    order.isUnderpaidReview ||
+      (order.metadata?.needs_review && order.metadata?.review_reason === 'underpaid') ||
+      order.metadata?.review_reason === 'underpaid'
+  );
+}
+
 // ─── Verificador de Pedido Aguardando Pix ──────────────────────────────────
 export function isOrderAwaitingPix(order) {
   if (!order) return false;
+  const isUnderpaidReview = isOrderUnderpaidReview(order);
   const isPaid =
-    order.metadata?.mp_payment_status === 'approved' ||
-    order.metadata?.pix?.status === 'approved' ||
     Boolean(order.metadata?.paid_at) ||
-    ['preparing', 'preparo', 'ready', 'out_for_delivery', 'delivered'].includes(order.status);
+    ['preparing', 'preparo', 'ready', 'out_for_delivery', 'delivered'].includes(order.status) ||
+    (!isUnderpaidReview &&
+      (order.metadata?.mp_payment_status === 'approved' ||
+        order.metadata?.pix?.status === 'approved'));
 
-  if (isPaid) return false;
+  if (isPaid || isUnderpaidReview) return false;
 
   const isPixMethod =
     order.paymentMethod === 'pix' ||
@@ -201,6 +215,10 @@ export function isOrderAwaitingPix(order) {
 function ActiveOrderCard({ order, onDetails }) {
   const num = order.orderNumber || order.id.slice(-4).toUpperCase();
   const etaMinutes = order.metadata?.eta_minutes;
+  const isUnderpaidReview =
+    isOrderUnderpaidReview(order) &&
+    !Boolean(order.metadata?.paid_at) &&
+    !['cancelled', 'preparing', 'preparo', 'ready', 'out_for_delivery', 'delivered'].includes(order.status);
   const awaitingPix = isOrderAwaitingPix(order);
 
   const formattedEta = useMemo(() => {
@@ -237,7 +255,14 @@ function ActiveOrderCard({ order, onDetails }) {
       </View>
 
       {/* Faixa de Status Estilo iFood */}
-      {awaitingPix ? (
+      {isUnderpaidReview ? (
+        <View style={[styles.statusBanner, { backgroundColor: '#FEF3C7' }]}>
+          <Ionicons name="alert-circle-outline" size={16} color="#D97706" />
+          <Text style={[styles.statusBannerText, { color: '#B45309' }]}>
+            Pagamento em revisão • Em análise pela loja
+          </Text>
+        </View>
+      ) : awaitingPix ? (
         <View style={[styles.statusBanner, { backgroundColor: '#FEF3C7' }]}>
           <Ionicons name="time-outline" size={16} color="#D97706" />
           <Text style={[styles.statusBannerText, { color: '#B45309' }]}>
@@ -261,7 +286,7 @@ function ActiveOrderCard({ order, onDetails }) {
       )}
 
       {/* Barra de Progresso Segmentada iFood */}
-      <SegmentedProgressBar status={order.status} />
+      <SegmentedProgressBar status={order.status} isUnderpaidReview={isUnderpaidReview} />
 
       {/* Lista de Itens Rica dentro do Card */}
       <View style={styles.cardItemsSection}>
@@ -576,18 +601,6 @@ export default function PedidosScreen() {
       if (res.success) {
         setOrders(res.data);
         await fetchFeedbacks(uid);
-        for (const ord of res.data) {
-          if (['delivered', 'concluido', 'concluído'].includes(String(ord.status || '').toLowerCase())) {
-            loyaltyManager
-              .incrementFromOrder({
-                orderId: ord.id,
-                orderCreatedAt: ord.createdAt,
-                orderStatus: ord.status,
-                userId: uid,
-              })
-              .catch(() => {});
-          }
-        }
       } else if (!silent) {
         showThemedAlert('Erro', 'Não foi possível carregar seus pedidos.');
       }
@@ -651,7 +664,23 @@ export default function PedidosScreen() {
 
         try {
           const res = await checkPixStatus(paymentId);
-          if (res?.success && (res.status === 'approved' || res.statusDetail === 'accredited')) {
+          const isUnderpaid = Boolean(
+            res?.action === 'held_underpaid' ||
+              res?.held_underpaid ||
+              res?.heldUnderpaid ||
+              res?.status === 'held_underpaid' ||
+              res?.statusDetail === 'held_underpaid' ||
+              res?.needs_review ||
+              res?.needsReview ||
+              res?.review_reason === 'underpaid' ||
+              res?.reviewReason === 'underpaid'
+          );
+          if (!isUnderpaid && !res?.success) continue;
+          const isGenuinelyApproved =
+            !isUnderpaid &&
+            (res?.status === 'approved' || res?.statusDetail === 'accredited');
+
+          if (isUnderpaid || isGenuinelyApproved) {
             if (userIdRef.current) {
               fetchOrdersRef.current(userIdRef.current, { silent: true });
             }

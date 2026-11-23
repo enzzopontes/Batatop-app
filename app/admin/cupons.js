@@ -20,6 +20,10 @@ import { ThemedAlertHost, showSuccessAlert, showErrorAlert } from '../../compone
 import HomeCouponCard from '../../components/HomeCouponCard';
 import { Image as ExpoImage } from 'expo-image';
 
+const ALLOWED_IMAGE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const MAX_IMAGE_BYTES = 2_750_000;
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatopiacanga.com.br';
+
 // ─── Helpers de formatação e geração ────────────────────────────────
 function formatBR(value) {
   const n = Number(value);
@@ -176,22 +180,18 @@ export default function AdminCupons() {
       // 2. Imagens enviadas na galeria (uploaded_images)
       const { data: dbImages } = await supabase
         .from('uploaded_images')
-        .select('id, name, mime_type, category, data, uploaded_at')
+        .select('id, name, mime_type, category, uploaded_at')
         .order('uploaded_at', { ascending: false });
 
       if (Array.isArray(dbImages)) {
         dbImages.forEach((img) => {
-          const apiBase = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatopiacanga.com.br';
-          const url = `${apiBase}/api/images/${img.id}`;
-          const previewUri = img.data
-            ? `data:${img.mime_type || 'image/jpeg'};base64,${img.data}`
-            : url;
+          const url = `${API_BASE_URL}/api/images/${img.id}`;
 
           list.push({
             id: `upload-${img.id}`,
             name: img.name || 'Galeria de Mídia',
-            url: previewUri,
-            previewUri,
+            url,
+            previewUri: url,
             category: 'banners',
             categoryLabel: 'GALERIA',
           });
@@ -420,56 +420,84 @@ export default function AdminCupons() {
         base64: true,
       });
 
-      if (pickerResult.canceled) return;
+      if (pickerResult.canceled || !pickerResult.assets?.[0]) return;
       const asset = pickerResult.assets[0];
 
+      const mimeType = (asset.mimeType || 'image/jpeg').toLowerCase();
+      if (!ALLOWED_IMAGE_MIMES.has(mimeType)) {
+        Alert.alert('Formato não suportado', 'Formato não suportado. Use JPG, PNG ou WebP.');
+        return;
+      }
+
+      if (
+        (asset.fileSize && asset.fileSize > MAX_IMAGE_BYTES) ||
+        (asset.base64 && asset.base64.length > MAX_IMAGE_BYTES)
+      ) {
+        Alert.alert('Imagem muito grande', 'Imagem muito grande. Escolha uma imagem menor (máx. 2,5 MB).');
+        return;
+      }
+
       // Tenta upload direto no bucket coupon-banners
-      const fileName = `banner-${Date.now()}-${Math.random().toString(36).substring(2, 7)}.jpg`;
-      const response = await fetch(asset.uri);
-      const blob = await response.blob();
+      const ext = mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg';
+      const fileName = `banner-${Date.now()}-${Math.random().toString(36).substring(2, 7)}.${ext}`;
+      let blob = null;
+      try {
+        const response = await fetch(asset.uri);
+        blob = await response.blob();
+      } catch {
+        blob = null;
+      }
 
-      const { error: storageErr } = await supabase.storage
-        .from('coupon-banners')
-        .upload(fileName, blob, {
-          contentType: asset.mimeType || 'image/jpeg',
-          upsert: true,
-        });
+      if (blob?.size && blob.size > MAX_IMAGE_BYTES) {
+        Alert.alert('Imagem muito grande', 'Imagem muito grande. Escolha uma imagem menor (máx. 2,5 MB).');
+        return;
+      }
 
-      if (!storageErr) {
-        const { data: publicData } = supabase.storage
+      if (blob) {
+        const { error: storageErr } = await supabase.storage
           .from('coupon-banners')
-          .getPublicUrl(fileName);
+          .upload(fileName, blob, {
+            contentType: mimeType,
+            upsert: true,
+          });
 
-        if (publicData?.publicUrl) {
-          updateField({ bannerImageUrl: publicData.publicUrl });
-          showSuccessAlert('Imagem do banner vinculada com sucesso!', 'Pronto');
-          return;
+        if (!storageErr) {
+          const { data: publicData } = supabase.storage
+            .from('coupon-banners')
+            .getPublicUrl(fileName);
+
+          if (publicData?.publicUrl) {
+            updateField({ bannerImageUrl: publicData.publicUrl });
+            showSuccessAlert('Imagem do banner vinculada com sucesso!', 'Pronto');
+            return;
+          }
         }
       }
 
       // Fallback para uploaded_images caso storage falhe
       if (asset.base64) {
-        const id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const id = `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
         const { error: uploadErr } = await supabase
           .from('uploaded_images')
           .insert({
             id,
             name: fileName,
             data: asset.base64,
-            mime_type: asset.mimeType || 'image/jpeg',
+            mime_type: mimeType,
             category: 'promo',
             uploaded_at: new Date().toISOString(),
           });
 
         if (!uploadErr) {
-          const fallbackUrl = `${process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatop.vercel.app'}/api/images/${id}`;
+          const fallbackUrl = `${API_BASE_URL}/api/images/${id}`;
           updateField({ bannerImageUrl: fallbackUrl });
           showSuccessAlert('Imagem vinculada com sucesso!', 'Pronto');
           return;
         }
       }
 
-      updateField({ bannerImageUrl: asset.uri });
+      Alert.alert('Erro no upload', 'Não foi possível enviar a imagem. Tente novamente.');
+      return;
     } catch (err) {
       console.warn('Erro ao selecionar imagem do banner:', err);
       Alert.alert('Erro', 'Não foi possível carregar a imagem selecionada.');

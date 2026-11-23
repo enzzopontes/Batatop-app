@@ -58,7 +58,16 @@ export default function PaymentsScreen() {
   function handleRemoveCard(card) {
     showThemedAlert('Remover cartão', `Deseja remover o cartão final ${card.last_four}?`, [
       { text: 'Cancelar', style: 'cancel' },
-      { text: 'Remover', style: 'destructive', onPress: () => removeCard(card) },
+      {
+        text: 'Remover',
+        style: 'destructive',
+        onPress: async () => {
+          const result = await removeCard(card);
+          if (!result?.success) {
+            showThemedAlert('Erro', result?.error || 'Não foi possível remover o cartão.');
+          }
+        },
+      },
     ]);
   }
 

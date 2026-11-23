@@ -14,6 +14,10 @@ import * as Haptics from 'expo-haptics';
 import { AdminListSkeleton } from '../../components/Skeleton';
 import { ThemedAlertHost } from '../../components/ThemedAlert';
 
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatopiacanga.com.br';
+const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_BASE64_LENGTH = 2_750_000;
+
 const CATEGORIES = [
   { key: 'all', label: 'Todas' },
   { key: 'product', label: 'Produtos', color: '#D97706' },
@@ -50,7 +54,7 @@ export default function AdminImagens() {
       setRefreshing(true);
       const { data, error } = await supabase
         .from('uploaded_images')
-        .select('*')
+        .select('id, name, mime_type, category, uploaded_at')
         .order('uploaded_at', { ascending: false });
 
       if (error) throw error;
@@ -71,8 +75,8 @@ export default function AdminImagens() {
   // Obter dimensões das imagens carregadas
   useEffect(() => {
     images.forEach((img) => {
-      if (img.id && !dimensions[img.id] && img.data) {
-        const uri = `data:${img.mime_type || 'image/jpeg'};base64,${img.data}`;
+      if (img.id && !dimensions[img.id]) {
+        const uri = `${API_BASE_URL}/api/images/${img.id}`;
         Image.getSize(
           uri,
           (width, height) => {
@@ -107,7 +111,13 @@ export default function AdminImagens() {
       return;
     }
 
-    if (asset.base64.length > 2800000) {
+    const mimeType = (asset.mimeType || 'image/jpeg').toLowerCase();
+    if (!ALLOWED_MIME_TYPES.includes(mimeType)) {
+      Alert.alert('Formato não suportado', 'Use imagens nos formatos JPG, PNG ou WebP.');
+      return;
+    }
+
+    if (asset.base64.length > MAX_BASE64_LENGTH) {
       Alert.alert('Imagem muito grande', 'Escolha uma imagem menor que 2MB.');
       return;
     }
@@ -115,7 +125,6 @@ export default function AdminImagens() {
     setUploading(true);
     try {
       const fileName = asset.fileName || `image-${Date.now()}.jpg`;
-      const mimeType = asset.mimeType || 'image/jpeg';
       const id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
       const insertData = {
@@ -146,7 +155,7 @@ export default function AdminImagens() {
 
   // ─── Copiar URL de imagem para clipboard com feedback ─────────────
   const handleCopyUrl = async (id) => {
-    const url = `${process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatop.vercel.app'}/api/images/${id}`;
+    const url = `${API_BASE_URL}/api/images/${id}`;
     await Clipboard.setStringAsync(url);
     setCopiedId(id);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -327,7 +336,7 @@ export default function AdminImagens() {
                   {/* Image View with Overlays */}
                   <View style={s.imageWrapper}>
                     <Image
-                      source={{ uri: `data:${img.mime_type || 'image/jpeg'};base64,${img.data}` }}
+                      source={{ uri: `${API_BASE_URL}/api/images/${img.id}` }}
                       style={s.gridImage}
                       resizeMode="cover"
                     />
@@ -396,7 +405,7 @@ export default function AdminImagens() {
             {imageToDelete && (
               <View style={s.modalPreviewCard}>
                 <Image
-                  source={{ uri: `data:${imageToDelete.mime_type || 'image/jpeg'};base64,${imageToDelete.data}` }}
+                  source={{ uri: `${API_BASE_URL}/api/images/${imageToDelete.id}` }}
                   style={s.modalThumb}
                 />
                 <View style={{ flex: 1 }}>

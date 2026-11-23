@@ -59,6 +59,14 @@ const ERROR_MESSAGES: Record<string, string> = {
   coupon_min_order_value_not_met: 'O valor mínimo do pedido para este cupom não foi atingido.',
   coupon_user_limit_reached: 'Você já atingiu o limite de usos para este cupom.',
   coupon_not_applicable: 'Este cupom não é aplicável a este pedido.',
+  min_order_value_not_met: 'O pedido mínimo é de R$ 20,00 (sem considerar taxa de entrega).',
+  coupon_blocked_by_active_promo: 'Cupons não podem ser combinados com promoções ativas no momento.',
+  coupon_first_order_only: 'Este cupom é válido apenas para o seu primeiro pedido.',
+  address_too_long: 'Endereço muito longo.',
+  notes_too_long: 'Observação do pedido muito longa (máximo 500 caracteres).',
+  pasta_type_too_long: 'Tipo de massa inválido.',
+  item_notes_too_long: 'Observação do item muito longa.',
+  coupon_type_unsupported: 'Tipo de cupom não suportado.',
   online_total_must_be_positive: 'O valor total para pagamento online deve ser maior que zero.',
 };
 export type DeliveryType = 'delivery' | 'retirada';
@@ -167,7 +175,8 @@ export function useCheckoutFlow() {
   const [selectedAddress, setSelectedAddress] = useState<Address | null>(null);
   const [loadingAddress, setLoadingAddress] = useState(false);
   const [dynamicDeliveryFee, setDynamicDeliveryFee] = useState<number>(DELIVERY_FEE);
-  const [isDeliveryFeeEnabled, setIsDeliveryFeeEnabled] = useState<boolean>(true);
+  const [isDeliveryFeeEnabled, setIsDeliveryFeeEnabled] = useState<boolean>(false);
+  const [isPromoActive, setIsPromoActive] = useState(false);
 
   // Payment
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix');
@@ -183,7 +192,7 @@ export function useCheckoutFlow() {
   const [cardCpf, setCardCpf] = useState('');
 
   const showReviseModal = _showReviseModal;
-  const setShowReviseModal = (val: boolean | ((prev: boolean) => boolean)) => {
+  const setShowReviseModal = useCallback((val: boolean | ((prev: boolean) => boolean)) => {
     _setShowReviseModal((prev) => {
       const next = typeof val === 'function' ? val(prev) : val;
       if (!next) {
@@ -192,7 +201,12 @@ export function useCheckoutFlow() {
       }
       return next;
     });
-  };
+  }, []);
+
+  const openCardWizardFromRevise = useCallback(() => {
+    setShowReviseModal(false);
+    setShowCardWizard(true);
+  }, [setShowReviseModal]);
 
   // Extra options (talher obrigatório)
   const [wantsCutlery, setWantsCutlery] = useState<boolean | null>(null);
@@ -204,14 +218,16 @@ export function useCheckoutFlow() {
   const submittingRef = useRef(false);
   const isOrderFinishingRef = useRef(false);
   const pendingOrderIdRef = useRef<string | null>(null);
+  const pendingOrderTotalRef = useRef<number | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Zerando o ref quando carrinho, método de pagamento ou cupom mudarem
   useEffect(() => {
     pendingOrderIdRef.current = null;
+    pendingOrderTotalRef.current = null;
     setSelectedInstallment(null);
     setInstallmentOptions([]);
-  }, [items, paymentMethod, coupon]);
+  }, [items, paymentMethod, coupon, deliveryType, isPromoActive]);
 
   // Calculations
   const subtotal = totalCents / 100;
@@ -221,17 +237,71 @@ export function useCheckoutFlow() {
   let discount = 0;
   let couponInvalidReason: string | null = null;
   if (coupon) {
-    if (coupon.min_order_value && subtotal < Number(coupon.min_order_value)) {
+    if (isPromoActive) {
+      couponInvalidReason = 'Cupons indisponíveis durante promoções ativas.';
+      discount = 0;
+    } else if (coupon.min_order_value && subtotal < Number(coupon.min_order_value)) {
       couponInvalidReason = `Pedido mínimo de R$ ${Number(coupon.min_order_value).toFixed(2).replace('.', ',')}`;
       discount = 0;
     } else {
-      discount =
-        coupon.discount_type === 'percent' || coupon.discount_type === 'percentage'
-          ? subtotal * (Number(coupon.discount_value) / 100)
-          : Number(coupon.discount_value);
+      let eligibleSubtotal = subtotal;
+      const hasCategoryRestrictions =
+        Array.isArray(coupon.restricted_categories) && coupon.restricted_categories.length > 0;
+
+      if (hasCategoryRestrictions) {
+        const allowedCategories = new Set(
+          coupon.restricted_categories.map((c: string) => String(c).toLowerCase())
+        );
+        const hasCategoryMetadata = items.some((item: { category?: string; categoria?: string }) =>
+          Boolean(item.category || item.categoria)
+        );
+        if (hasCategoryMetadata) {
+          eligibleSubtotal = items.reduce(
+            (
+              acc: number,
+              item: {
+                category?: string;
+                categoria?: string;
+                precoNum?: number;
+                price?: number;
+                preco?: number;
+                quantity?: number;
+                quantidade?: number;
+              }
+            ) => {
+              const itemCategory = String(item.category || item.categoria || '').toLowerCase();
+              if (!allowedCategories.has(itemCategory)) return acc;
+              const unitPrice =
+                typeof item.precoNum === 'number' && !isNaN(item.precoNum)
+                  ? item.precoNum / 100
+                  : Number(item.price || item.preco || 0);
+              const qty = Number(item.quantity || item.quantidade || 1) || 1;
+              return acc + (isNaN(unitPrice) ? 0 : unitPrice) * qty;
+            },
+            0
+          );
+        }
+
+        if (hasCategoryMetadata && eligibleSubtotal <= 0) {
+          couponInvalidReason = 'Cupom não aplicável aos itens da sacola.';
+          discount = 0;
+        } else {
+          const rawDiscount =
+            coupon.discount_type === 'percent' || coupon.discount_type === 'percentage'
+              ? Math.round(eligibleSubtotal * (Number(coupon.discount_value) / 100) * 100) / 100
+              : Number(coupon.discount_value);
+          discount = Math.max(0, Math.min(rawDiscount, eligibleSubtotal));
+        }
+      } else {
+        const rawDiscount =
+          coupon.discount_type === 'percent' || coupon.discount_type === 'percentage'
+            ? Math.round(eligibleSubtotal * (Number(coupon.discount_value) / 100) * 100) / 100
+            : Number(coupon.discount_value);
+        discount = Math.max(0, Math.min(rawDiscount, eligibleSubtotal));
+      }
     }
   }
-  const baseTotal = Math.max(0, subtotal + deliveryFee - discount);
+  const baseTotal = Math.max(0, subtotal - discount) + deliveryFee;
   const total =
     selectedInstallment && selectedInstallment.installments > 1 && paymentMethod === 'cartão de crédito'
       ? selectedInstallment.totalAmount
@@ -249,13 +319,15 @@ export function useCheckoutFlow() {
   useEffect(() => {
     const applySettingValue = (val: any) => {
       if (!val) return;
-      if (val.isDeliveryFeeEnabled === false) {
-        setIsDeliveryFeeEnabled(false);
-        setDynamicDeliveryFee(0);
-      } else {
+      if (val.isDeliveryFeeEnabled === true) {
         setIsDeliveryFeeEnabled(true);
         setDynamicDeliveryFee(Number(val.deliveryFee ?? DELIVERY_FEE));
+      } else {
+        setIsDeliveryFeeEnabled(false);
+        setDynamicDeliveryFee(0);
       }
+      const promoOn = Boolean(val.itemPromo?.isActive || val.superPromo?.isActive || val.isPromoActive);
+      setIsPromoActive(promoOn);
     };
 
     (async () => {
@@ -470,8 +542,9 @@ export function useCheckoutFlow() {
   );
 
   // Carrega opções reais de parcelamento no Mercado Pago
-  const loadInstallments = useCallback(async () => {
-    if (paymentMethod !== 'cartão de crédito' || baseTotal <= 0) {
+  const loadInstallments = useCallback(async (overrideAmount?: number) => {
+    const targetAmount = typeof overrideAmount === 'number' && overrideAmount > 0 ? overrideAmount : baseTotal;
+    if (paymentMethod !== 'cartão de crédito' || targetAmount <= 0) {
       return;
     }
 
@@ -491,15 +564,15 @@ export function useCheckoutFlow() {
       if (!savedCardId && !bin) {
         const fallback: InstallmentOption = {
           installments: 1,
-          installmentAmount: baseTotal,
-          totalAmount: baseTotal,
+          installmentAmount: targetAmount,
+          totalAmount: targetAmount,
         };
         setInstallmentOptions([fallback]);
         return;
       }
 
       const res = await getInstallments({
-        amount: baseTotal,
+        amount: targetAmount,
         savedCardId,
         bin,
       });
@@ -514,8 +587,8 @@ export function useCheckoutFlow() {
       } else {
         const fallback: InstallmentOption = {
           installments: 1,
-          installmentAmount: baseTotal,
-          totalAmount: baseTotal,
+          installmentAmount: targetAmount,
+          totalAmount: targetAmount,
         };
         setInstallmentOptions([fallback]);
         if (res.error) {
@@ -533,7 +606,7 @@ export function useCheckoutFlow() {
   const openInstallments = useCallback(() => {
     if (paymentMethod !== 'cartão de crédito') return;
     setShowInstallmentsModal(true);
-    loadInstallments();
+    loadInstallments(pendingOrderTotalRef.current ?? undefined);
   }, [paymentMethod, loadInstallments]);
 
   const handleSelectInstallment = useCallback((option: InstallmentOption) => {
@@ -579,7 +652,7 @@ export function useCheckoutFlow() {
       } else {
         if (!cardName.trim()) return 'Informe o nome impresso no cartão';
         if (cardNumber.replace(/\D/g, '').length < 15) return 'Número de cartão inválido';
-        if (cardExpiry.replace(/\D/g, '').length !== 4) return 'Validade do cartão inválida';
+        if (!/^(0[1-9]|1[0-2])\/\d{2}$/.test(cardExpiry.trim())) return 'Validade do cartão inválida (use MM/AA)';
         if (cardCvv.length < 3) return 'CVV do cartão inválido';
       }
     }
@@ -596,6 +669,20 @@ export function useCheckoutFlow() {
     if (!session?.user) {
       submittingRef.current = false;
       requestAuthSheet();
+      return;
+    }
+
+    if (
+      (paymentMethod === 'cartão de crédito' || paymentMethod === 'cartão de débito') &&
+      !selectedSavedCard &&
+      !cardName.trim() &&
+      !cardNumber.trim() &&
+      !cardExpiry.trim() &&
+      !cardCvv.trim()
+    ) {
+      submittingRef.current = false;
+      setShowReviseModal(false);
+      setShowCardWizard(true);
       return;
     }
 
@@ -663,7 +750,7 @@ export function useCheckoutFlow() {
         paymentMethod === 'cartão de débito' ||
         paymentMethod === 'cartão de débito (entrega)';
 
-      const orderMetadata: any = {
+      const orderMetadata: Record<string, string | number | null> = {
         source: 'app',
         cep: deliveryType === 'delivery' && selectedAddress ? selectedAddress.cep : null,
         delivery_lat: deliveryType === 'delivery' && selectedAddress ? selectedAddress.latitude ?? null : null,
@@ -673,11 +760,19 @@ export function useCheckoutFlow() {
         orderMetadata.card_type = 'credit';
         if (selectedInstallment && selectedInstallment.installments > 1) {
           orderMetadata.installments = selectedInstallment.installments;
-          orderMetadata.installment_amount = selectedInstallment.installmentAmount;
-          orderMetadata.financed_total = selectedInstallment.totalAmount;
         }
       } else if (isDebit) {
         orderMetadata.card_type = 'debit';
+      }
+      if (
+        (paymentMethod === 'cartão de crédito' || paymentMethod === 'cartão de débito') &&
+        selectedSavedCard &&
+        !useManualCardForm
+      ) {
+        orderMetadata.saved_card_id = selectedSavedCard.id;
+        if (/^[0-9]{4}$/.test(String(selectedSavedCard.last_four || ''))) {
+          orderMetadata.card_last_four = String(selectedSavedCard.last_four);
+        }
       }
 
       const notesParts: string[] = [];
@@ -715,7 +810,7 @@ export function useCheckoutFlow() {
           p_delivery_type: deliveryType === 'retirada' ? 'retirada' : 'delivery',
           p_payment_method: mappedPaymentMethod,
           p_payment_online: isOnline,
-          p_coupon_code: coupon?.code || null,
+          p_coupon_code: !isPromoActive && !couponInvalidReason && coupon?.code ? coupon.code : null,
           p_notes: finalNotes || null,
           p_wants_cutlery: wantsCutlery ?? false,
           p_metadata: orderMetadata,
@@ -733,6 +828,7 @@ export function useCheckoutFlow() {
 
         currentOrderId = rpcData.order_id;
         pendingOrderIdRef.current = currentOrderId;
+        pendingOrderTotalRef.current = Number(rpcData.total_amount ?? baseTotal);
       }
 
       // 2. Processa pagamento nas rotas do servidor se for online
@@ -744,6 +840,7 @@ export function useCheckoutFlow() {
           setSubmitting(false);
           if (pixResult.error === 'order_status_not_payable' || pixResult.error === 'order_not_found') {
             pendingOrderIdRef.current = null;
+            pendingOrderTotalRef.current = null;
           }
           const isConfigErr = pixResult.error?.startsWith('config:');
           const err = isConfigErr
@@ -753,29 +850,11 @@ export function useCheckoutFlow() {
           showThemedAlert(isConfigErr ? 'Serviço indisponível' : 'Erro no PIX', err);
           return;
         }
-
-        const qrCodeVal = pixResult.qrCode || pixResult.qr_code || '';
-        const qrBase64Val = pixResult.qrCodeBase64 || pixResult.qr_code_base64 || '';
-        if (qrCodeVal || qrBase64Val) {
-          try {
-            await supabase.rpc('merge_order_metadata', {
-              order_id: currentOrderId,
-              patch: {
-                pix: {
-                  payment_id: String(pixResult.paymentId || pixResult.id || ''),
-                  qr_code: qrCodeVal,
-                  qr_code_base64: qrBase64Val,
-                  ticket_url: pixResult.ticketUrl || pixResult.ticket_url || '',
-                  expiration_date: pixResult.expirationDate || pixResult.expiration_date || null,
-                },
-              },
-            });
-          } catch {}
-        }
       } else if (paymentMethod === 'cartão de crédito' || paymentMethod === 'cartão de débito') {
-        try {
-          const chosenInstallments = paymentMethod === 'cartão de crédito' ? (selectedInstallment?.installments || 1) : 1;
+        const authoritativeTotal = pendingOrderTotalRef.current ?? baseTotal;
+        const chosenInstallments = paymentMethod === 'cartão de crédito' ? (selectedInstallment?.installments || 1) : 1;
 
+        try {
           if (selectedSavedCard && !useManualCardForm) {
             // Sincroniza CPF do titular com profiles para evitar solicitar no futuro
             if (cardCpf && isValidCpf(cardCpf) && session?.user?.id) {
@@ -797,10 +876,18 @@ export function useCheckoutFlow() {
               paymentMethodId: selectedSavedCard.payment_method_id,
               docNumber: cardCpf && isValidCpf(cardCpf) ? cardCpf.replace(/\D/g, '') : undefined,
               installments: chosenInstallments,
-              installmentsBaseAmount: baseTotal,
+              installmentsBaseAmount: authoritativeTotal,
             });
           } else {
-            const [expMonth, expYear] = cardExpiry.split('/');
+            const expiryMatch = cardExpiry.trim().match(/^(0[1-9]|1[0-2])\/(\d{2})$/);
+            if (!expiryMatch) {
+              setSubmitting(false);
+              const err = 'Validade do cartão inválida (use MM/AA)';
+              setErrorMessage(err);
+              showThemedAlert('Erro no cartão', err);
+              return;
+            }
+            const [, expMonth, expYear] = expiryMatch;
             const fullYear = `20${expYear}`;
 
             const tokenResult = await tokenizeCard({
@@ -830,7 +917,7 @@ export function useCheckoutFlow() {
               paymentMethodId: pmId,
               docNumber: cardCpf.replace(/\D/g, ''),
               installments: chosenInstallments,
-              installmentsBaseAmount: baseTotal,
+              installmentsBaseAmount: authoritativeTotal,
             });
           }
         } finally {
@@ -838,7 +925,48 @@ export function useCheckoutFlow() {
           setCardCvv('');
         }
 
-        if (cardResult.status === 'rejected') {
+        if (
+          cardResult?.code === 'installments_amount_mismatch' ||
+          String(cardResult?.error || '').includes('installments_amount_mismatch')
+        ) {
+          setSubmitting(false);
+          loadInstallments(authoritativeTotal);
+          if (paymentMethod === 'cartão de crédito' && chosenInstallments > 1) {
+            setShowInstallmentsModal(true);
+          }
+          const err = 'O valor total do pedido foi atualizado. Revise as parcelas e confirme o pagamento novamente.';
+          setErrorMessage(err);
+          showThemedAlert('Valor atualizado', err);
+          return;
+        }
+
+        if (
+          cardResult?.action === 'held_underpaid' ||
+          cardResult?.code === 'held_underpaid'
+        ) {
+          pendingOrderIdRef.current = null;
+          pendingOrderTotalRef.current = null;
+          setOrderCompleted(true);
+          setShowReviseModal(false);
+          isOrderFinishingRef.current = true;
+          clearCart();
+          setSubmitting(false);
+          router.replace(`/pedidos/${currentOrderId}`);
+          return;
+        }
+
+        const shouldResetPendingOrder =
+          cardResult?.httpStatus === 429 ||
+          cardResult?.statusDetail === 'cc_rejected_max_attempts' ||
+          cardResult?.error?.includes('Limite de tentativas') ||
+          cardResult?.code === 'order_status_not_payable' ||
+          cardResult?.error === 'order_status_not_payable';
+        if (shouldResetPendingOrder) {
+          pendingOrderIdRef.current = null;
+          pendingOrderTotalRef.current = null;
+        }
+
+        if (cardResult?.status === 'rejected') {
           setSubmitting(false);
           const err = getCardRejectionMessage(cardResult.statusDetail);
           setErrorMessage(err);
@@ -846,17 +974,25 @@ export function useCheckoutFlow() {
           return; // Mantém pendingOrderIdRef para retentativa com mesmo pedido
         }
 
-        if (!cardResult.success && !cardResult.status) {
+        if (!cardResult?.success) {
           setSubmitting(false);
-          if (cardResult.error?.includes('Limite de tentativas') || cardResult.error === 'order_status_not_payable') {
-            pendingOrderIdRef.current = null;
-          }
-          const isConfigErr = cardResult.error?.startsWith('config:');
+          const isConfigErr = cardResult?.error?.startsWith('config:');
           const err = isConfigErr
             ? 'O serviço de pagamento está temporariamente indisponível. Escolha outra forma de pagamento.'
-            : (cardResult.error || 'Erro ao processar pagamento do cartão');
+            : (cardResult?.error || 'Erro ao processar pagamento do cartão');
           setErrorMessage(err);
           showThemedAlert(isConfigErr ? 'Serviço indisponível' : 'Erro no cartão', err);
+          return;
+        }
+
+        const allowedStatuses = ['approved', 'in_process'];
+        if (!allowedStatuses.includes(cardResult.status)) {
+          setSubmitting(false);
+          const err =
+            cardResult.error ||
+            'Não foi possível confirmar o pagamento no cartão. Tente novamente ou escolha outra forma de pagamento.';
+          setErrorMessage(err);
+          showThemedAlert('Pagamento não confirmado', err);
           return;
         }
 
@@ -871,6 +1007,7 @@ export function useCheckoutFlow() {
       // Sucesso na submissão
       const finalOrderId = currentOrderId;
       pendingOrderIdRef.current = null;
+      pendingOrderTotalRef.current = null;
 
       // Persiste o telefone no banco de dados atrelado ao usuário (profiles) e user_metadata
       if (session?.user?.id && phone.trim()) {
@@ -1074,6 +1211,7 @@ export function useCheckoutFlow() {
     total,
     coupon,
     couponInvalidReason,
+    isPromoActive,
     deliveryType,
     setDeliveryType,
     toggleDeliveryType,
@@ -1119,6 +1257,7 @@ export function useCheckoutFlow() {
     setShowReviseModal,
     showCardWizard,
     setShowCardWizard,
+    openCardWizardFromRevise,
     minOrderSheetVisible,
     setMinOrderSheetVisible,
     baseTotal,

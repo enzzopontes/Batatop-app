@@ -70,8 +70,8 @@ export async function notifyAdminNewOrder(orderId) {
     // 3. Disparo unificado via API Vercel (garante envio isolado admin + cliente com FCM v1)
     if (API_BASE_URL) {
       try {
-        const { data: sessionData } = await supabase.auth.getSession();
-        const token = sessionData?.session?.access_token;
+        const session = await getEffectiveSession();
+        const token = session?.access_token;
         if (token) {
           const res = await fetch(`${API_BASE_URL}/api/notify-new-order`, {
             method: 'POST',
@@ -141,10 +141,11 @@ export async function notifyAdminNewOrder(orderId) {
         if (!expoRes.ok) {
           console.warn('[notify] Expo push API status:', expoRes.status);
         } else {
-          const expoJson = await expoRes.json();
+          const expoJson = await expoRes.json().catch(() => null);
           if (__DEV__) {
             console.log('[notify] Push disparado com sucesso para admins:', expoJson);
           }
+          return;
         }
       } catch (expoErr) {
         console.warn('[notify] Falha ao enviar para Expo push API:', expoErr?.message || expoErr);
@@ -173,8 +174,8 @@ export async function notifyAdminNewOrder(orderId) {
     // 7. Fallback redundante: Rota API Next.js /api/notify-new-order
     if (API_BASE_URL) {
       try {
-        const { data: sessionData } = await supabase.auth.getSession();
-        const token = sessionData?.session?.access_token;
+        const session = await getEffectiveSession();
+        const token = session?.access_token;
         if (!token) {
           console.warn('[notify] Sem access_token para chamar API Vercel /api/notify-new-order');
           return;
@@ -196,8 +197,10 @@ export async function notifyAdminNewOrder(orderId) {
             if (__DEV__) {
               console.log('[notify] Pedido não requer notificação manual (notificado via webhook/outro fluxo):', resJson?.error);
             }
-          } else {
+          } else if (__DEV__) {
             console.error(`[notify] API /api/notify-new-order falhou [HTTP ${res.status}]:`, resJson);
+          } else {
+            console.error(`[notify] API /api/notify-new-order falhou [HTTP ${res.status}]`);
           }
         } else if (__DEV__) {
           console.log('[notify] API /api/notify-new-order sucesso:', resJson);

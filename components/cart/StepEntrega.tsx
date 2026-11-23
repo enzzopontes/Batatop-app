@@ -111,15 +111,10 @@ export default function StepEntrega({
 
               <View style={styles.optionRight}>
                 {deliveryFee === 0 ? (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={{ textDecorationLine: 'line-through', color: '#9CA3AF', fontSize: 13, fontWeight: '500' }}>
-                      R$ 5,00
+                  <View style={{ backgroundColor: '#DCFCE7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: '#BBF7D0' }}>
+                    <Text style={{ color: '#15803D', fontSize: 12, fontWeight: '700' }}>
+                      Grátis
                     </Text>
-                    <View style={{ backgroundColor: '#DCFCE7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: '#BBF7D0' }}>
-                      <Text style={{ color: '#15803D', fontSize: 12, fontWeight: '700' }}>
-                        Grátis
-                      </Text>
-                    </View>
                   </View>
                 ) : (
                   <Text style={styles.optionFee}>

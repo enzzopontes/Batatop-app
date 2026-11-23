@@ -39,6 +39,7 @@ interface ReviseOrderModalProps {
   onEditAddress: () => void;
   onEditCoupon: () => void;
   onEditPayment: () => void;
+  onAddCard?: () => void;
   onToggleDeliveryType: () => void;
 }
 
@@ -86,6 +87,7 @@ export default function ReviseOrderModal({
   onEditAddress,
   onEditCoupon,
   onEditPayment,
+  onAddCard,
   onToggleDeliveryType,
 }: ReviseOrderModalProps) {
   const formattedTotal = `R$ ${total.toFixed(2).replace('.', ',')}`;
@@ -111,6 +113,18 @@ export default function ReviseOrderModal({
   const isSavedCardActive =
     (paymentMethod === 'cartão de crédito' || paymentMethod === 'cartão de débito') &&
     !!selectedSavedCard;
+
+  const isCardMissingSavedCard =
+    (paymentMethod === 'cartão de crédito' || paymentMethod === 'cartão de débito') &&
+    !selectedSavedCard;
+
+  const handleAddCard = () => {
+    if (onAddCard) {
+      onAddCard();
+    } else {
+      onEditPayment();
+    }
+  };
 
   const getPaymentHeader = () => {
     if (
@@ -237,6 +251,27 @@ export default function ReviseOrderModal({
               <Text style={styles.rowPriceText}>{formattedTotal}</Text>
             </RipplePressable>
 
+            {/* Aviso quando pagamento por cartão online não possui cartão salvo */}
+            {isCardMissingSavedCard && (
+              <View style={styles.missingCardBox}>
+                <View style={styles.missingCardHeader}>
+                  <Ionicons name="alert-circle-outline" size={18} color={COLORS.warningText} />
+                  <Text style={styles.missingCardText}>
+                    Nenhum cartão cadastrado. Cadastre um cartão para pagar pelo app.
+                  </Text>
+                </View>
+                <RipplePressable
+                  style={styles.missingCardBtn}
+                  onPress={handleAddCard}
+                  hitSlop={6}
+                  rippleColor="rgba(227, 160, 8, 0.15)"
+                >
+                  <Ionicons name="add-circle-outline" size={16} color={COLORS.text} />
+                  <Text style={styles.missingCardBtnText}>Cadastrar cartão</Text>
+                </RipplePressable>
+              </View>
+            )}
+
             {/* Campos de segurança do cartão salvo (CVV obrigatório no MP e CPF se pendente) */}
             {isSavedCardActive && (
               <View style={styles.cardSecurityContainer}>
@@ -280,11 +315,11 @@ export default function ReviseOrderModal({
           {/* Botão principal "Fazer pedido" com PrimaryButton */}
           <PrimaryButton
             fullWidth
-            title="Fazer pedido"
-            onPress={onSubmitOrder}
+            title={isCardMissingSavedCard ? 'Cadastrar cartão' : 'Fazer pedido'}
+            onPress={isCardMissingSavedCard ? handleAddCard : onSubmitOrder}
             disabled={submitting}
             loading={submitting}
-            accessibilityLabel="Fazer pedido"
+            accessibilityLabel={isCardMissingSavedCard ? 'Cadastrar cartão' : 'Fazer pedido'}
             style={{ marginBottom: SPACING[3] }}
           />
 
@@ -410,6 +445,44 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     paddingRight: 4,
     marginTop: 4,
+  },
+  missingCardBox: {
+    backgroundColor: COLORS.warningBg,
+    borderWidth: 1,
+    borderColor: COLORS.warningBorder,
+    borderRadius: RADIUS.md,
+    padding: SPACING[3],
+    gap: SPACING[2],
+    marginTop: 4,
+  },
+  missingCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  missingCardText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 16,
+    color: COLORS.warningText,
+    fontWeight: '500',
+  },
+  missingCardBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    height: 36,
+    borderRadius: RADIUS.sm,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    backgroundColor: '#FFFFFF',
+    overflow: 'hidden',
+  },
+  missingCardBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.text,
   },
   cpfRow: {
     flexDirection: 'row',

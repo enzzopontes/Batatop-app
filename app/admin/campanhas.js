@@ -71,7 +71,7 @@ export default function AdminCampanhas() {
       // 1. Busca campanhas com cupom relacionado
       const { data: camps, error: campErr } = await supabase
         .from('campaigns')
-        .select('*, coupons (code, type, value, active)')
+        .select('*, coupons (code, discount_type, discount_value, active)')
         .order('scheduled_for', { ascending: false });
 
       if (campErr) {

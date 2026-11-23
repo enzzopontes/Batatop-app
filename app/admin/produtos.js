@@ -193,21 +193,35 @@ export default function AdminProdutos() {
           .select()
           .single();
         if (error) throw error;
+        if (!data?.id) throw new Error('Não foi possível obter o ID do produto criado.');
         productId = data.id;
       }
 
-      await supabase.from('product_adicionais').delete().eq('product_id', productId);
+      const { error: deleteAdicErr } = await supabase
+        .from('product_adicionais')
+        .delete()
+        .eq('product_id', productId);
+      if (deleteAdicErr) {
+        throw new Error(
+          `Produto salvo, mas falhou ao atualizar adicionais: ${deleteAdicErr.message || 'erro desconhecido'}`
+        );
+      }
       if (selectedAdicionais.length > 0) {
-        await supabase.from('product_adicionais').insert(
+        const { error: insertAdicErr } = await supabase.from('product_adicionais').insert(
           selectedAdicionais.map((aid) => ({ product_id: productId, adicional_id: aid }))
         );
+        if (insertAdicErr) {
+          throw new Error(
+            `Produto salvo, mas falhou ao vincular adicionais: ${insertAdicErr.message || 'erro desconhecido'}`
+          );
+        }
       }
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setProdModalVisible(false);
       await loadProducts();
     } catch (e) {
-      Alert.alert('Erro', 'Não foi possível salvar o produto.');
+      Alert.alert('Erro', e?.message || 'Não foi possível salvar o produto.');
       console.error(e);
     } finally {
       setSaving(false);
@@ -223,12 +237,18 @@ export default function AdminProdutos() {
         style: 'destructive',
         onPress: async () => {
           try {
-            await supabase.from('product_adicionais').delete().eq('product_id', product.id);
+            const { error: deleteAdicErr } = await supabase
+              .from('product_adicionais')
+              .delete()
+              .eq('product_id', product.id);
+            if (deleteAdicErr) throw deleteAdicErr;
+
             const { error } = await supabase.from('products').delete().eq('id', product.id);
             if (error) throw error;
             await loadProducts();
-          } catch {
-            Alert.alert('Erro', 'Não foi possível deletar.');
+          } catch (e) {
+            Alert.alert('Erro', e?.message || 'Não foi possível deletar.');
+            console.error(e);
           }
         },
       },
@@ -248,8 +268,9 @@ export default function AdminProdutos() {
         .update({ available: nextStatus })
         .eq('id', product.id);
       if (error) throw error;
-    } catch {
-      Alert.alert('Erro', 'Não foi possível alterar a disponibilidade.');
+    } catch (e) {
+      Alert.alert('Erro', e?.message || 'Não foi possível alterar a disponibilidade.');
+      console.error(e);
       await loadProducts();
     }
   };
@@ -284,7 +305,7 @@ export default function AdminProdutos() {
     setSaving(true);
     try {
       if (editingAdic) {
-        await supabase
+        const { error } = await supabase
           .from('adicionais')
           .update({
             name: adicForm.name.trim(),
@@ -292,18 +313,21 @@ export default function AdminProdutos() {
             adicional_categoria: adicForm.adicional_categoria,
           })
           .eq('id', editingAdic.id);
+        if (error) throw error;
       } else {
-        await supabase.from('adicionais').insert({
+        const { error } = await supabase.from('adicionais').insert({
           name: adicForm.name.trim(),
           price: priceNum,
           adicional_categoria: adicForm.adicional_categoria,
         });
+        if (error) throw error;
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setAdicModalVisible(false);
       await loadProducts();
-    } catch {
-      Alert.alert('Erro', 'Não foi possível salvar.');
+    } catch (e) {
+      Alert.alert('Erro', e?.message || 'Não foi possível salvar.');
+      console.error(e);
     } finally {
       setSaving(false);
     }
@@ -318,11 +342,22 @@ export default function AdminProdutos() {
         style: 'destructive',
         onPress: async () => {
           try {
-            await supabase.from('product_adicionais').delete().eq('adicional_id', a.id);
-            await supabase.from('adicionais').delete().eq('id', a.id);
+            const { error: deleteRelErr } = await supabase
+              .from('product_adicionais')
+              .delete()
+              .eq('adicional_id', a.id);
+            if (deleteRelErr) throw deleteRelErr;
+
+            const { error: deleteAdicErr } = await supabase
+              .from('adicionais')
+              .delete()
+              .eq('id', a.id);
+            if (deleteAdicErr) throw deleteAdicErr;
+
             await loadProducts();
-          } catch {
-            Alert.alert('Erro', 'Não foi possível deletar.');
+          } catch (e) {
+            Alert.alert('Erro', e?.message || 'Não foi possível deletar.');
+            console.error(e);
           }
         },
       },

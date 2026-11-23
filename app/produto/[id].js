@@ -48,13 +48,49 @@ function resolveImage(imageUrl, categoria) {
   if (imageUrl) {
     if (imageUrl.startsWith('http')) return { uri: imageUrl };
     if (imageUrl.startsWith('/api/images/')) {
-      return { uri: `${process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatop.vercel.app'}${imageUrl}` };
+      return { uri: `${process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatopiacanga.com.br'}${imageUrl}` };
     }
     return { uri: SUPABASE_STORAGE + imageUrl.replace(/^\/products\//, '') };
   }
   const fallback = CATEGORY_FALLBACKS[categoria?.toLowerCase()] ||
     'https://images.unsplash.com/photo-1518013391915-e40643a1bce1?w=800';
   return { uri: fallback };
+}
+
+function resolveEffectivePrice(rawProduct, storeStatus) {
+  const basePrice = Number(rawProduct?.price) || 0;
+  if (!storeStatus || typeof storeStatus !== 'object') return basePrice;
+
+  if (storeStatus.itemPromo?.isActive && Array.isArray(storeStatus.promoProducts)) {
+    const match = storeStatus.promoProducts.find(
+      (p) => String(p?.productId ?? p?.product_id ?? p?.id) === String(rawProduct?.id)
+    );
+    if (match) {
+      const promoVal = Number(match.promoPrice ?? match.promo_price ?? match.price);
+      if (!isNaN(promoVal) && promoVal > 0) return promoVal;
+    }
+  }
+
+  const catNorm = String(rawProduct?.category || '').trim().toLowerCase();
+  const isBatata = catNorm === 'batata' || catNorm === 'batatas';
+
+  if (storeStatus.superPromo?.isActive && isBatata) {
+    const superVal = Number(storeStatus.superPromo.price);
+    if (!isNaN(superVal) && superVal > 0) return superVal;
+  }
+
+  if (
+    !storeStatus.itemPromo?.isActive &&
+    !storeStatus.superPromo?.isActive &&
+    storeStatus.isPromoActive &&
+    isBatata &&
+    storeStatus.promoPrice != null
+  ) {
+    const legacyVal = Number(storeStatus.promoPrice);
+    if (!isNaN(legacyVal) && legacyVal > 0) return legacyVal;
+  }
+
+  return basePrice;
 }
 
 export default function ProdutoDetail() {
@@ -112,7 +148,7 @@ export default function ProdutoDetail() {
           parsed.forEach((a) => {
             const key = a.id || a.adicional_id;
             if (key) {
-              map[key] = (map[key] || 0) + 1;
+              map[key] = (map[key] || 0) + (Number(a.quantity ?? a.quantidade) || 1);
             }
           });
           setAdicionaisSelecionados(map);
@@ -126,21 +162,31 @@ export default function ProdutoDetail() {
   const fetchProduto = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .eq('id', id)
-        .single();
+      const [{ data, error }, { data: statusRow }] = await Promise.all([
+        supabase
+          .from('products')
+          .select('*')
+          .eq('id', id)
+          .single(),
+        supabase
+          .from('store_settings')
+          .select('setting_value')
+          .eq('setting_key', 'store_status')
+          .maybeSingle(),
+      ]);
 
       if (error) throw error;
+
+      const effectivePrice = resolveEffectivePrice(data, statusRow?.setting_value);
 
       setProduto({
         id: data.id,
         nome: data.name,
         descricao: data.description,
-        preco: data.price,
-        precoFormatado: `R$ ${data.price.toFixed(2).replace('.', ',')}`,
+        preco: effectivePrice,
+        precoFormatado: `R$ ${effectivePrice.toFixed(2).replace('.', ',')}`,
         categoria: data.category,
+        category: String(data.category || '').trim().toLowerCase(),
         imagem: data.image_url,
         disponivel: data.available,
       });
@@ -180,15 +226,28 @@ export default function ProdutoDetail() {
   // de adicionais — cada uma entra no carrinho como item próprio.
   const fetchBebidas = async () => {
     try {
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .ilike('category', 'bebida%')
-        .eq('available', true)
-        .neq('id', id);
+      const [{ data, error }, { data: statusRow }] = await Promise.all([
+        supabase
+          .from('products')
+          .select('*')
+          .ilike('category', 'bebida%')
+          .eq('available', true)
+          .neq('id', id),
+        supabase
+          .from('store_settings')
+          .select('setting_value')
+          .eq('setting_key', 'store_status')
+          .maybeSingle(),
+      ]);
 
       if (error) throw error;
-      setBebidas(data || []);
+      const storeStatus = statusRow?.setting_value;
+      setBebidas(
+        (data || []).map((b) => ({
+          ...b,
+          price: resolveEffectivePrice(b, storeStatus),
+        }))
+      );
     } catch (err) {
       console.error('Erro ao buscar bebidas:', err);
     }
@@ -340,12 +399,13 @@ export default function ProdutoDetail() {
   const buildCartItems = () => {
     if (!produto) return [];
 
-    // Expande adicionais com quantidade > 0, repetindo o item conforme qty
+    // Agrega adicionais com quantidade > 0 em um objeto por adicional ({ ...a, quantity })
     const adicionaisList = adicionais
       .filter((a) => (adicionaisSelecionados[a.id] || 0) > 0)
-      .flatMap((a) =>
-        Array.from({ length: adicionaisSelecionados[a.id] }, () => a)
-      );
+      .map((a) => ({
+        ...a,
+        quantity: adicionaisSelecionados[a.id],
+      }));
 
     const precoTotalItem = produto.preco + totalAdicionais;
 
@@ -354,8 +414,9 @@ export default function ProdutoDetail() {
         id: produto.id,
         nome: produto.nome,
         preco: `R$ ${precoTotalItem.toFixed(2).replace('.', ',')}`,
-        precoNum: precoTotalItem * 100,
+        precoNum: Math.round(precoTotalItem * 100),
         imagem: produto.imagem,
+        category: produto.category || String(produto.categoria || '').toLowerCase(),
         quantidade,
         adicionais: adicionaisList,
         observacoes,
@@ -374,8 +435,9 @@ export default function ProdutoDetail() {
           id: bebida.id,
           nome: bebida.name,
           preco: `R$ ${bebida.price.toFixed(2).replace('.', ',')}`,
-          precoNum: bebida.price * 100,
+          precoNum: Math.round(bebida.price * 100),
           imagem: bebida.image_url,
+          category: bebida.category || String(bebida.categoria || 'bebida').toLowerCase(),
           quantidade: qty,
           adicionais: [],
           observacoes: '',

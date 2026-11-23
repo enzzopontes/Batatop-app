@@ -18,6 +18,10 @@ import { supabase } from '../../supabaseConfig';
 import SwipeableBottomSheetModal from '../SwipeableBottomSheetModal';
 import { showSuccessAlert } from '../ThemedAlert';
 
+const ALLOWED_IMAGE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const MAX_IMAGE_BYTES = 2_750_000;
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatopiacanga.com.br';
+
 export default function AdminHomeBannersSection({ promoImages = [] }) {
   const [banners, setBanners] = useState([]);
   const [coupons, setCoupons] = useState([]);
@@ -53,7 +57,7 @@ export default function AdminHomeBannersSection({ promoImages = [] }) {
           .order('created_at', { ascending: false }),
         supabase
           .from('uploaded_images')
-          .select('id, name, data, mime_type, category, uploaded_at')
+          .select('id, name, mime_type, category, uploaded_at')
           .order('uploaded_at', { ascending: false }),
       ]);
 
@@ -135,40 +139,83 @@ export default function AdminHomeBannersSection({ promoImages = [] }) {
       if (res.canceled || !res.assets?.[0]) return;
       const asset = res.assets[0];
 
-      setUploadingImage(true);
-      const fileName = `home-banner-${Date.now()}-${Math.random().toString(36).substring(2, 7)}.jpg`;
+      const mimeType = (asset.mimeType || 'image/jpeg').toLowerCase();
+      if (!ALLOWED_IMAGE_MIMES.has(mimeType)) {
+        Alert.alert('Formato não suportado', 'Formato não suportado. Use JPG, PNG ou WebP.');
+        return;
+      }
 
+      if (
+        (asset.fileSize && asset.fileSize > MAX_IMAGE_BYTES) ||
+        (asset.base64 && asset.base64.length > MAX_IMAGE_BYTES)
+      ) {
+        Alert.alert('Imagem muito grande', 'Imagem muito grande. Escolha uma imagem menor (máx. 2,5 MB).');
+        return;
+      }
+
+      setUploadingImage(true);
+      const ext = mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg';
+      const fileName = `home-banner-${Date.now()}-${Math.random().toString(36).substring(2, 7)}.${ext}`;
+
+      let blob = null;
       try {
         const response = await fetch(asset.uri);
-        const blob = await response.blob();
-        const { error: storageErr } = await supabase.storage
-          .from('coupon-banners')
-          .upload(fileName, blob, {
-            contentType: asset.mimeType || 'image/jpeg',
-            upsert: true,
-          });
-
-        if (!storageErr) {
-          const { data: pubData } = supabase.storage
-            .from('coupon-banners')
-            .getPublicUrl(fileName);
-          if (pubData?.publicUrl) {
-            setImageUrl(pubData.publicUrl);
-            showSuccessAlert('Imagem do banner carregada!', 'Pronto');
-            return;
-          }
-        }
+        blob = await response.blob();
       } catch {
-        // fallback para base64 / uploaded_images
+        blob = null;
+      }
+
+      if (blob?.size && blob.size > MAX_IMAGE_BYTES) {
+        Alert.alert('Imagem muito grande', 'Imagem muito grande. Escolha uma imagem menor (máx. 2,5 MB).');
+        return;
+      }
+
+      if (blob) {
+        try {
+          const { error: storageErr } = await supabase.storage
+            .from('coupon-banners')
+            .upload(fileName, blob, {
+              contentType: mimeType,
+              upsert: true,
+            });
+
+          if (!storageErr) {
+            const { data: pubData } = supabase.storage
+              .from('coupon-banners')
+              .getPublicUrl(fileName);
+            if (pubData?.publicUrl) {
+              setImageUrl(pubData.publicUrl);
+              showSuccessAlert('Imagem do banner carregada!', 'Pronto');
+              return;
+            }
+          }
+        } catch {
+          // fallback para base64 / uploaded_images
+        }
       }
 
       if (asset.base64) {
-        const dataUri = `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`;
-        setImageUrl(dataUri);
-        showSuccessAlert('Imagem selecionada!', 'Pronto');
-      } else {
-        setImageUrl(asset.uri);
+        const id = `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+        const { error: uploadErr } = await supabase
+          .from('uploaded_images')
+          .insert({
+            id,
+            name: fileName,
+            data: asset.base64,
+            mime_type: mimeType,
+            category: 'promo',
+            uploaded_at: new Date().toISOString(),
+          });
+
+        if (!uploadErr) {
+          setImageUrl(`${API_BASE_URL}/api/images/${id}`);
+          showSuccessAlert('Imagem do banner carregada!', 'Pronto');
+          return;
+        }
       }
+
+      Alert.alert('Erro no upload', 'Não foi possível enviar a imagem. Tente novamente.');
+      return;
     } catch (err) {
       Alert.alert('Erro', 'Não foi possível selecionar a imagem.');
     } finally {
@@ -393,7 +440,7 @@ export default function AdminHomeBannersSection({ promoImages = [] }) {
                 <Text style={s.subLabel}>Banners no Supabase (toque para escolher):</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
                   {dbImages.map((img) => {
-                    const uri = img.data ? `data:${img.mime_type || 'image/jpeg'};base64,${img.data}` : `/api/images/${img.id}`;
+                    const uri = `${API_BASE_URL}/api/images/${img.id}`;
                     const isSelected = imageUrl === uri || imageUrl.includes(img.id);
                     const friendlyName = (img.name || '')
                       .replace(/\.[^/.]+$/, '')

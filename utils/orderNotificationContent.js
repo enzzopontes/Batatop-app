@@ -12,14 +12,22 @@ export function buildNewOrderPushContent(order, items = []) {
   const isRetirada = order.delivery_type === 'retirada' || order.delivery_type === 'pickup';
   const deliveryType = isRetirada ? 'Retirada no Balcão' : 'Entrega Delivery';
 
+  const pm = String(order.payment_method || '').toLowerCase();
+  const cardType = String(order.metadata?.card_type || '').toLowerCase();
   const paymentLabel =
-    order.payment_method === 'pix'
+    pm === 'pix'
       ? 'Pix'
-      : order.payment_method === 'dinheiro'
+      : pm === 'dinheiro' || pm === 'cash'
       ? 'Dinheiro'
-      : order.payment_method?.toLowerCase()?.includes('deb')
+      : pm === 'cartao'
+      ? cardType === 'debit'
+        ? 'Cartão de Débito'
+        : cardType === 'credit'
+        ? 'Cartão de Crédito'
+        : 'Cartão'
+      : pm.includes('deb')
       ? 'Cartão de Débito'
-      : order.payment_method?.toLowerCase()?.includes('cred')
+      : pm.includes('cred')
       ? 'Cartão de Crédito'
       : 'Cartão';
 

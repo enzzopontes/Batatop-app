@@ -72,6 +72,96 @@ export async function getEffectiveSession() {
 }
 
 /**
+ * Remove push tokens do usuário e (se aplicável) do admin enquanto a sessão
+ * autenticada ainda está ativa para satisfazer as políticas RLS de DELETE.
+ */
+async function unregisterPushTokensBeforeSignOut(userId, rememberUser) {
+  if (!userId) return;
+
+  const tasks = [
+    (async () => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { unregisterUserPushTokens } = require('./userPushNotifications');
+        if (typeof unregisterUserPushTokens === 'function') {
+          await unregisterUserPushTokens(userId).catch(() => {});
+        }
+      } catch {
+        // Módulo nativo indisponível ou falha de rede/RLS
+      }
+    })(),
+    (async () => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const pushMod = require('./pushNotifications');
+        const unregisterAdminPushToken = pushMod?.unregisterAdminPushToken;
+        let expoPushToken = null;
+
+        if (pushMod?.isAdminPushAvailable && typeof pushMod.safeGetNotificationPermissions === 'function') {
+          try {
+            const perm = await pushMod.safeGetNotificationPermissions();
+            if (perm?.status === 'granted') {
+              // eslint-disable-next-line @typescript-eslint/no-var-requires
+              const ConstantsModule = require('expo-constants');
+              const Constants = ConstantsModule?.default || ConstantsModule;
+              const Notifications = await import('expo-notifications');
+              const projectId =
+                Constants?.expoConfig?.extra?.eas?.projectId ??
+                Constants?.easConfig?.projectId;
+              const tokenResponse = projectId
+                ? await Notifications.getExpoPushTokenAsync({ projectId })
+                : await Notifications.getExpoPushTokenAsync();
+              expoPushToken = tokenResponse?.data || null;
+            }
+          } catch {
+            expoPushToken = null;
+          }
+        }
+
+        if (expoPushToken && typeof unregisterAdminPushToken === 'function') {
+          await unregisterAdminPushToken(userId, expoPushToken).catch(() => {});
+        }
+
+        if (!rememberUser || !expoPushToken) {
+          await supabase.from('admin_push_tokens').delete().eq('user_id', userId);
+        }
+      } catch {
+        // Módulo nativo indisponível ou falha de rede/RLS
+      }
+    })(),
+  ];
+
+  let timer;
+  try {
+    await Promise.race([
+      Promise.allSettled(tasks),
+      new Promise((resolve) => {
+        timer = setTimeout(resolve, 2500);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Encerra sessão do Google Sign-In nativo quando o módulo estiver linkado no binário.
+ * Seguro no Expo Go, web e ambiente de testes.
+ */
+async function safeGoogleSignOut() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const gSignin = require('@react-native-google-signin/google-signin');
+    const GoogleSignin = gSignin?.GoogleSignin;
+    if (GoogleSignin && typeof GoogleSignin.signOut === 'function') {
+      await Promise.resolve(GoogleSignin.signOut()).catch(() => {});
+    }
+  } catch {
+    // TurboModule nativo não presente (Expo Go, web ou testes)
+  }
+}
+
+/**
  * Encerramento de sessão seguro e unificado.
  *
  * Parâmetros:
@@ -91,9 +181,19 @@ export async function performLogout(rememberUser = false) {
   let signOutError = null;
 
   try {
-    if (rememberUser) {
+    let user = null;
+    try {
       const { data: { session } } = await supabase.auth.getSession();
-      const user = session?.user;
+      user = session?.user || null;
+    } catch {
+      user = null;
+    }
+
+    if (user?.id) {
+      await unregisterPushTokensBeforeSignOut(user.id, rememberUser);
+    }
+
+    if (rememberUser) {
       if (user) {
         const email = user.email || '';
         let name = user.user_metadata?.full_name || user.user_metadata?.name;
@@ -132,6 +232,8 @@ export async function performLogout(rememberUser = false) {
         signOutError = e;
       }
     }
+
+    await safeGoogleSignOut();
 
     // Confirmação pós-signOut com getSession() e contingência
     let { data: verifyData } = await supabase.auth.getSession();

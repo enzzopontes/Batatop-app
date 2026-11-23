@@ -13,7 +13,7 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
   }
 }
 
-async function callBackend(path, body, method = 'POST', timeoutMs = null) {
+async function callBackend(path, body, method = 'POST', timeoutMs = 18000) {
   try {
     const session = await getEffectiveSession();
     const token = session?.access_token || '';
@@ -38,8 +38,13 @@ async function callBackend(path, body, method = 'POST', timeoutMs = null) {
       console.log(`[mercadoPago] Erro em "${path}":`, data.error || response.status);
       return {
         success: false,
-        status: data.status,
+        httpStatus: response.status,
+        code: data.code || data.error_code || (typeof data.error === 'string' ? data.error : null),
+        status: data?.status,
         statusDetail: data.statusDetail || data.status_detail,
+        action: data?.action,
+        needs_review: data?.needs_review,
+        review_reason: data?.review_reason,
         error: data.error || (response.status === 500 ? 'Erro de configuração no servidor' : 'Erro no processamento'),
         details: data.details,
       };
@@ -128,7 +133,6 @@ export async function tokenizeCard({
   expirationYear,
   securityCode,
   cardholderName,
-  docType = 'CPF',
   docNumber,
 }) {
   try {
@@ -137,7 +141,7 @@ export async function tokenizeCard({
     }
 
     const cleanCardNumber = (cardNumber || '').replace(/\D/g, '');
-    const cleanDocNumber = (docNumber || '').replace(/\D/g, '');
+    const cleanDoc = (docNumber || '').replace(/\D/g, '');
 
     const response = await fetchWithTimeout(`https://api.mercadopago.com/v1/card_tokens?public_key=${MERCADO_PAGO_PUBLIC_KEY}`, {
       method: 'POST',
@@ -152,8 +156,8 @@ export async function tokenizeCard({
         cardholder: {
           name: cardholderName,
           identification: {
-            type: docType,
-            number: cleanDocNumber,
+            type: cleanDoc.length === 14 ? 'CNPJ' : 'CPF',
+            number: cleanDoc,
           },
         },
       }),

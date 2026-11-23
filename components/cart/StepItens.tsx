@@ -119,7 +119,13 @@ export default function StepItens({
         {items.map((item) => {
           const itemId = item.cartItemId || item.id;
           const linePrice = item.precoNum ? (item.precoNum / 100) * item.quantity : 0;
-          const extras: string[] = (item.adicionais || []).map((a: any) => a.name);
+          const extras: string[] = (item.adicionais || [])
+            .map((a: { name?: string; nome?: string; quantity?: number }) => {
+              const label = a.name || a.nome || '';
+              if (!label) return '';
+              return a.quantity && a.quantity > 1 ? `${a.quantity}x ${label}` : label;
+            })
+            .filter(Boolean);
 
           return (
             <View key={itemId} style={styles.itemCard}>
@@ -275,15 +281,10 @@ export default function StepItens({
                 R$ {deliveryFee.toFixed(2).replace('.', ',')}
               </Text>
             ) : (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Text style={{ textDecorationLine: 'line-through', color: '#9CA3AF', fontSize: 13, fontWeight: '500' }}>
-                  R$ 5,00
+              <View style={{ backgroundColor: '#DCFCE7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: '#BBF7D0' }}>
+                <Text style={{ color: '#15803D', fontSize: 12, fontWeight: '700' }}>
+                  Grátis
                 </Text>
-                <View style={{ backgroundColor: '#DCFCE7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: '#BBF7D0' }}>
-                  <Text style={{ color: '#15803D', fontSize: 12, fontWeight: '700' }}>
-                    Grátis
-                  </Text>
-                </View>
               </View>
             )
           ) : (

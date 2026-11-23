@@ -240,23 +240,49 @@ export default function LoginScreen() {
 
   const handleNameContinue = async () => {
     if (!isNameValid || nameSaving) return;
-    setNameSaving(true);
-    const trimmedName = `${firstName.trim()} ${lastName.trim()}`.trim();
-
-    const { error } = await supabase.auth.updateUser({
-      // cpf só entra se o usuário preencheu — campo opcional, nunca bloqueia.
-      data: { full_name: trimmedName, ...(cpfDigits && { cpf: cpfDigits }) },
-    });
-    setNameSaving(false);
-
-    if (error) {
-      showThemedAlert.error('Não foi possível salvar seu nome. Tente novamente.');
+    if (!isCpfValid) {
+      showThemedAlert.error('CPF inválido. Confira os números digitados.');
       return;
     }
+    setNameSaving(true);
+    const trimmedName = `${firstName.trim()} ${lastName.trim()}`.trim();
+    const cleanCpf = cpfDigits || null;
 
-    const { data: sessionData } = await supabase.auth.getSession();
-    await persistSavedUser({ name: trimmedName, email, userId: sessionData?.session?.user?.id });
-    goToHome();
+    try {
+      const { data: updatedData, error } = await supabase.auth.updateUser({
+        // cpf só entra se o usuário preencheu — campo opcional, nunca bloqueia.
+        data: { full_name: trimmedName, ...(cleanCpf && { cpf: cleanCpf }) },
+      });
+
+      if (error) {
+        showThemedAlert.error('Não foi possível salvar seu nome. Tente novamente.');
+        return;
+      }
+
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = updatedData?.user?.id || sessionData?.session?.user?.id;
+
+      if (userId) {
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .upsert(
+            { id: userId, cpf: cleanCpf, full_name: trimmedName },
+            { onConflict: 'id' }
+          );
+
+        if (profileError) {
+          showThemedAlert.error('Não foi possível salvar seus dados. Tente novamente.');
+          return;
+        }
+      }
+
+      await persistSavedUser({ name: trimmedName, email, userId });
+      goToHome();
+    } catch {
+      showThemedAlert.error('Não foi possível salvar seus dados. Tente novamente.');
+    } finally {
+      setNameSaving(false);
+    }
   };
 
   const handleDigitChange = (value, index) => {

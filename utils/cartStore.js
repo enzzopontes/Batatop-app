@@ -73,11 +73,15 @@ export const cartStore = {
     const adIds = (product.adicionais || []).map(a => a.id).sort().join('-');
     const cartItemId = `${product.id}-${adIds}-${product.observacoes || ''}`;
 
-    const existing = cart.find((item) => (item.cartItemId || item.id) === cartItemId);
-    if (existing) {
-      existing.quantity += qty;
+    const existingIndex = cart.findIndex((item) => (item.cartItemId || item.id) === cartItemId);
+    if (existingIndex !== -1) {
+      cart = cart.map((item, i) =>
+        i === existingIndex
+          ? { ...item, quantity: item.quantity + qty }
+          : item
+      );
     } else {
-      cart.push({ ...product, cartItemId, quantity: qty });
+      cart = [...cart, { ...product, cartItemId, quantity: qty }];
     }
     this.emit();
   },
@@ -91,15 +95,24 @@ export const cartStore = {
       // Se já existe outro item igual na sacola (além do que estamos editando), funde as quantidades
       const otherIndex = cart.findIndex((item, i) => i !== index && (item.cartItemId || item.id) === newCartItemId);
       if (otherIndex !== -1) {
-        cart[otherIndex].quantity += qty;
-        cart.splice(index, 1);
+        cart = cart
+          .map((item, i) =>
+            i === otherIndex
+              ? { ...item, quantity: item.quantity + qty }
+              : item
+          )
+          .filter((_, i) => i !== index);
       } else {
-        cart[index] = { ...product, cartItemId: newCartItemId, quantity: qty };
+        cart = cart.map((item, i) =>
+          i === index
+            ? { ...product, cartItemId: newCartItemId, quantity: qty }
+            : item
+        );
       }
+      this.emit();
     } else {
       this.addToCart(product);
     }
-    this.emit();
   },
   removeFromCart(cartItemId) {
     cart = cart.filter((item) => (item.cartItemId || item.id) !== cartItemId);
@@ -109,10 +122,11 @@ export const cartStore = {
     if (quantity <= 0) {
       this.removeFromCart(cartItemId);
     } else {
-      const item = cart.find((item) => (item.cartItemId || item.id) === cartItemId);
-      if (item) {
-        item.quantity = quantity;
-      }
+      cart = cart.map((item) =>
+        (item.cartItemId || item.id) === cartItemId
+          ? { ...item, quantity }
+          : item
+      );
       this.emit();
     }
   },

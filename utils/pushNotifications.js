@@ -13,26 +13,12 @@ export const ADMIN_ORDERS_CHANNEL_ID = 'new-orders';
 export const isAdminPushAvailable = !(isRunningInExpoGo() && Platform.OS === 'android');
 
 let notificationsModule = null;
-let handlerConfigured = false;
 
 async function getNotifications() {
   if (!isAdminPushAvailable) return null;
 
   if (!notificationsModule) {
     notificationsModule = await import('expo-notifications');
-
-    if (!handlerConfigured) {
-      notificationsModule.setNotificationHandler({
-        handleNotification: async () => ({
-          shouldShowAlert: false,
-          shouldShowBanner: false,
-          shouldShowList: false,
-          shouldPlaySound: false,
-          shouldSetBadge: false,
-        }),
-      });
-      handlerConfigured = true;
-    }
   }
 
   return notificationsModule;

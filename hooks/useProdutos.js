@@ -3,6 +3,114 @@ import { supabase } from '../supabaseConfig';
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://eucwoxjmjfqylyrqunwk.supabase.co';
 
+export const sanitizePostgrestSearch = (raw) => {
+  if (raw == null) return '';
+  return String(raw)
+    .replace(/[,()\\*%]/g, '')
+    .trim()
+    .slice(0, 80)
+    .trim();
+};
+
+const fetchActivePromoConfig = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('store_settings')
+      .select('setting_value')
+      .eq('setting_key', 'store_status')
+      .maybeSingle();
+
+    if (error || !data?.setting_value) return null;
+
+    const val =
+      typeof data.setting_value === 'string'
+        ? JSON.parse(data.setting_value)
+        : data.setting_value;
+
+    return val && typeof val === 'object' ? val : null;
+  } catch {
+    return null;
+  }
+};
+
+export const resolveProductPrice = (produto, promoCfg) => {
+  const basePrice = Number(produto?.price);
+  if (!promoCfg || typeof promoCfg !== 'object') {
+    return basePrice;
+  }
+
+  const category = String(produto?.category || '').toLowerCase();
+  const promoProducts = Array.isArray(promoCfg.promoProducts)
+    ? promoCfg.promoProducts
+    : [];
+  const findPromoEntry = () =>
+    promoProducts.find((e) => e && String(e.productId) === String(produto?.id));
+
+  if (promoCfg.itemPromo?.isActive) {
+    const entry = findPromoEntry();
+    if (entry != null && entry.promoPrice != null && entry.promoPrice !== '') {
+      const p = Number(entry.promoPrice);
+      if (Number.isFinite(p)) return p;
+    }
+    return basePrice;
+  }
+
+  if (promoCfg.superPromo?.isActive) {
+    if (
+      category === 'batata' &&
+      promoCfg.superPromo.price != null &&
+      promoCfg.superPromo.price !== ''
+    ) {
+      const p = Number(promoCfg.superPromo.price);
+      if (Number.isFinite(p)) return p;
+    }
+    return basePrice;
+  }
+
+  if (promoCfg.isPromoActive) {
+    const entry = findPromoEntry();
+    if (entry != null && entry.promoPrice != null && entry.promoPrice !== '') {
+      const p = Number(entry.promoPrice);
+      if (Number.isFinite(p)) return p;
+    }
+    if (category === 'batata') {
+      const rawPromo =
+        promoCfg.promoPrice != null && promoCfg.promoPrice !== ''
+          ? promoCfg.promoPrice
+          : 24.99;
+      const p = Number(rawPromo);
+      if (Number.isFinite(p)) return p;
+    }
+  }
+
+  return basePrice;
+};
+
+const formatProduto = (produto, promoCfg) => {
+  const precoOriginal = Number(produto.price);
+  const effectivePrice = resolveProductPrice(produto, promoCfg);
+
+  return {
+    id: produto.id,
+    nome: produto.name,
+    descricao: produto.description,
+    descricaoLonga: produto.description,
+    preco: effectivePrice,
+    precoOriginal,
+    emPromocao: effectivePrice < precoOriginal,
+    precoFormatado: `R$ ${effectivePrice.toFixed(2).replace('.', ',')}`,
+    categoria: produto.category ? produto.category.charAt(0).toUpperCase() + produto.category.slice(1) : 'Outros',
+    category: produto.category,
+    imagem: produto.image_url ? (produto.image_url.startsWith('http') ? produto.image_url : `${SUPABASE_URL}/storage/v1/object/public/Products/${produto.image_url.replace(/^\/products\//, '')}`) : null, // Fallback para URL vazia
+    ranking: 0,
+    avaliacoes: 4.5,
+    avaliacoesCount: 0,
+    tempo: '15-20',
+    destaque: produto.available,
+    disponivel: produto.available,
+  };
+};
+
 export const useProdutos = () => {
   const [produtos, setProdutos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -15,30 +123,18 @@ export const useProdutos = () => {
   const fetchProdutos = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const [{ data, error }, promoCfg] = await Promise.all([
+        supabase
+          .from('products')
+          .select('*')
+          .order('created_at', { ascending: false }),
+        fetchActivePromoConfig(),
+      ]);
 
       if (error) throw error;
 
       // Mapear dados do Supabase para o formato esperado pelo app
-      const produtosFormatados = data.map((produto) => ({
-        id: produto.id,
-        nome: produto.name,
-        descricao: produto.description,
-        descricaoLonga: produto.description,
-        preco: produto.price,
-        precoFormatado: `R$ ${produto.price.toFixed(2).replace('.', ',')}`,
-        categoria: produto.category ? produto.category.charAt(0).toUpperCase() + produto.category.slice(1) : 'Outros',
-        imagem: produto.image_url ? (produto.image_url.startsWith('http') ? produto.image_url : `${SUPABASE_URL}/storage/v1/object/public/Products/${produto.image_url.replace(/^\/products\//, '')}`) : null, // Fallback para URL vazia
-        ranking: 0,
-        avaliacoes: 4.5,
-        avaliacoesCount: 0,
-        tempo: '15-20',
-        destaque: produto.available,
-        disponivel: produto.available,
-      }));
+      const produtosFormatados = data.map((produto) => formatProduto(produto, promoCfg));
 
       setProdutos(produtosFormatados);
       setError(null);
@@ -70,11 +166,14 @@ export const useProdutoById = (id) => {
       // Tentar converter o ID para UUID apenas se necessário, mas o ideal é garantir que o ID passado seja o correto.
       // Removendo a trava para permitir que o erro venha do Supabase ou que funcione se o ID for válido.
       
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .eq('id', id)
-        .single();
+      const [{ data, error }, promoCfg] = await Promise.all([
+        supabase
+          .from('products')
+          .select('*')
+          .eq('id', id)
+          .single(),
+        fetchActivePromoConfig(),
+      ]);
 
       if (error) throw error;
       
@@ -82,23 +181,8 @@ export const useProdutoById = (id) => {
         throw new Error('Produto não encontrado');
       }
 
-      const produtoFormatado = {
-        id: data.id,
-        nome: data.name,
-        descricao: data.description,
-        descricaoLonga: data.description,
-        preco: data.price,
-        precoFormatado: `R$ ${data.price.toFixed(2).replace('.', ',')}`,
-        categoria: data.category ? data.category.charAt(0).toUpperCase() + data.category.slice(1) : 'Outros',
-        // Priorizar imagens locais da pasta public/products
-        imagem: data.image_url ? (data.image_url.startsWith('http') ? data.image_url : `${SUPABASE_URL}/storage/v1/object/public/Products/${data.image_url.replace(/^\/products\//, '')}`) : null,
-        ranking: 0,
-        avaliacoes: 4.5,
-        avaliacoesCount: 0,
-        tempo: '15-20',
-        destaque: data.available,
-        disponivel: data.available,
-      };
+      // Priorizar imagens locais da pasta public/products
+      const produtoFormatado = formatProduto(data, promoCfg);
 
       setProduto(produtoFormatado);
       setError(null);
@@ -132,26 +216,14 @@ export const useProdutosPorCategoria = (categoria) => {
         query = query.ilike('category', categoria);
       }
 
-      const { data, error } = await query.order('created_at', { ascending: false });
+      const [{ data, error }, promoCfg] = await Promise.all([
+        query.order('created_at', { ascending: false }),
+        fetchActivePromoConfig(),
+      ]);
 
       if (error) throw error;
 
-      const produtosFormatados = data.map((produto) => ({
-        id: produto.id,
-        nome: produto.name,
-        descricao: produto.description,
-        descricaoLonga: produto.description,
-        preco: produto.price,
-        precoFormatado: `R$ ${produto.price.toFixed(2).replace('.', ',')}`,
-        categoria: produto.category ? produto.category.charAt(0).toUpperCase() + produto.category.slice(1) : 'Outros',
-        imagem: produto.image_url ? (produto.image_url.startsWith('http') ? produto.image_url : `${SUPABASE_URL}/storage/v1/object/public/Products/${produto.image_url.replace(/^\/products\//, '')}`) : null,
-        ranking: 0,
-        avaliacoes: 4.5,
-        avaliacoesCount: 0,
-        tempo: '15-20',
-        destaque: produto.available,
-        disponivel: produto.available,
-      }));
+      const produtosFormatados = data.map((produto) => formatProduto(produto, promoCfg));
 
       setProdutos(produtosFormatados);
       setError(null);
@@ -172,40 +244,37 @@ export const useBuscarProdutos = (termo) => {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (!termo || termo.trim().length === 0) {
+    const sanitizedTermo = sanitizePostgrestSearch(termo);
+    if (!sanitizedTermo) {
       setProdutos([]);
+      setError(null);
       return;
     }
-    buscar();
+    buscar(sanitizedTermo);
   }, [termo]);
 
-  const buscar = async () => {
+  const buscar = async (sanitizedTermo) => {
     try {
+      const cleanTermo = sanitizePostgrestSearch(sanitizedTermo);
+      if (!cleanTermo) {
+        setProdutos([]);
+        setError(null);
+        return;
+      }
+
       setLoading(true);
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .or(`name.ilike.%${termo}%,description.ilike.%${termo}%`)
-        .order('created_at', { ascending: false });
+      const [{ data, error }, promoCfg] = await Promise.all([
+        supabase
+          .from('products')
+          .select('*')
+          .or(`name.ilike.%${cleanTermo}%,description.ilike.%${cleanTermo}%`)
+          .order('created_at', { ascending: false }),
+        fetchActivePromoConfig(),
+      ]);
 
       if (error) throw error;
 
-      const produtosFormatados = data.map((produto) => ({
-        id: produto.id,
-        nome: produto.name,
-        descricao: produto.description,
-        descricaoLonga: produto.description,
-        preco: produto.price,
-        precoFormatado: `R$ ${produto.price.toFixed(2).replace('.', ',')}`,
-        categoria: produto.category ? produto.category.charAt(0).toUpperCase() + produto.category.slice(1) : 'Outros',
-        imagem: produto.image_url ? (produto.image_url.startsWith('http') ? produto.image_url : `${SUPABASE_URL}/storage/v1/object/public/Products/${produto.image_url.replace(/^\/products\//, '')}`) : null,
-        ranking: 0,
-        avaliacoes: 4.5,
-        avaliacoesCount: 0,
-        tempo: '15-20',
-        destaque: produto.available,
-        disponivel: produto.available,
-      }));
+      const produtosFormatados = data.map((produto) => formatProduto(produto, promoCfg));
 
       setProdutos(produtosFormatados);
       setError(null);

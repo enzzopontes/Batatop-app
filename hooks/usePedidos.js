@@ -30,10 +30,14 @@ const mapOrderData = (o) => {
     }));
   }
 
+  const isUnderpaidReview =
+    Boolean(o.metadata?.needs_review && o.metadata?.review_reason === 'underpaid') ||
+    o.metadata?.review_reason === 'underpaid';
+
   const isPaid =
-    o.metadata?.mp_payment_status === 'approved' ||
-    o.metadata?.pix?.status === 'approved' ||
-    Boolean(o.metadata?.paid_at);
+    !isUnderpaidReview &&
+    (Boolean(o.metadata?.paid_at) ||
+      ['preparing', 'preparo', 'ready', 'out_for_delivery', 'delivered'].includes(o.status));
 
   const normalizedStatus =
     (o.status === 'awaiting_payment' || o.status === 'pending') && isPaid
@@ -61,16 +65,24 @@ const mapOrderData = (o) => {
     metadata: o.metadata || null,
     deliveryLat: o.delivery_lat ?? o.metadata?.delivery_lat ?? null,
     deliveryLng: o.delivery_lng ?? o.metadata?.delivery_lng ?? null,
+    needsReview: Boolean(o.metadata?.needs_review),
+    reviewReason: o.metadata?.review_reason || null,
+    isUnderpaidReview,
   };
 };
 
 const PIX_EXPIRATION_MS = 30 * 60 * 1000; // 30 minutos
 
-function checkAndAutoCancelPix(order) {
+async function checkAndAutoCancelPix(order) {
   if (!order) return order;
+  const isUnderpaidReview = Boolean(
+    order.isUnderpaidReview ||
+      order.metadata?.review_reason === 'underpaid' ||
+      (order.metadata?.needs_review && order.metadata?.review_reason === 'underpaid')
+  );
+  if (isUnderpaidReview) return order;
+
   const isPaid =
-    order.metadata?.mp_payment_status === 'approved' ||
-    order.metadata?.pix?.status === 'approved' ||
     Boolean(order.metadata?.paid_at) ||
     ['preparing', 'preparo', 'ready', 'out_for_delivery', 'delivered'].includes(order.status);
 
@@ -94,13 +106,18 @@ function checkAndAutoCancelPix(order) {
   const age = Date.now() - createdAt;
 
   if (age >= PIX_EXPIRATION_MS) {
-    supabase
-      .rpc('cancel_order_user', {
+    try {
+      const { error: cancelErr } = await supabase.rpc('cancel_order_user', {
         p_order_id: order.id,
         p_cancel_reason: 'pix_expirado_30min',
-      })
-      .catch(() => {});
-    return { ...order, status: 'cancelled' };
+      });
+      if (!cancelErr) {
+        return { ...order, status: 'cancelled' };
+      }
+    } catch {
+      return order;
+    }
+    return order;
   }
 
   return order;
@@ -127,12 +144,10 @@ export const usePedidos = () => {
 
       if (fetchError) throw fetchError;
 
-      const mapped = (data || []).map((raw) => {
-        const checked = checkAndAutoCancelPix(raw);
-        return mapOrderData(checked);
-      });
+      const mapped = (data || []).map(mapOrderData);
+      const checked = await Promise.all(mapped.map(checkAndAutoCancelPix));
 
-      return { success: true, data: mapped };
+      return { success: true, data: checked };
     } catch (err) {
       console.error('Erro ao buscar pedidos do usuário:', err);
       setError(err.message);
@@ -155,8 +170,9 @@ export const usePedidos = () => {
 
       if (fetchError) throw fetchError;
 
-      const checked = checkAndAutoCancelPix(data);
-      return { success: true, data: mapOrderData(checked) };
+      const mapped = mapOrderData(data);
+      const checked = await checkAndAutoCancelPix(mapped);
+      return { success: true, data: checked };
     } catch (err) {
       console.error('Erro ao buscar pedido:', err);
       setError(err.message);

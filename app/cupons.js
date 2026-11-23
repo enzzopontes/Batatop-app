@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -13,7 +13,7 @@ import { COLORS, TYPOGRAPHY, SPACING, RADIUS } from '../constants/theme';
 
 export default function CuponsScreen() {
   const router = useRouter();
-  const { total, coupon: selectedCoupon, setCoupon } = useCart();
+  const { items, total, coupon: selectedCoupon, setCoupon } = useCart();
 
   const {
     coupons,
@@ -26,26 +26,50 @@ export default function CuponsScreen() {
   const [code, setCode] = useState('');
   const [applying, setApplying] = useState(false);
   const [rejectCoupon, setRejectCoupon] = useState(false);
+  const actionRef = useRef(false);
 
   const handleApply = async () => {
-    if (!code.trim() || applying) return;
+    if (!code.trim() || applying || actionRef.current) return;
+    actionRef.current = true;
     setApplying(true);
-    const result = await validateCoupon(code);
-    setApplying(false);
+    try {
+      const result = await validateCoupon(code, items);
 
-    if (!result.valid) {
-      showThemedAlert('Cupom inválido', result.reason);
-      return;
+      if (!result.valid) {
+        showThemedAlert('Cupom inválido', result.reason);
+        return;
+      }
+      setCoupon(result.coupon);
+      setRejectCoupon(false);
+      router.back();
+    } finally {
+      setApplying(false);
+      actionRef.current = false;
     }
-    setCoupon(result.coupon);
-    setRejectCoupon(false);
-    router.back();
   };
 
-  const handleSelect = (coupon) => {
-    setRejectCoupon(false);
+  const handleSelect = async (coupon) => {
+    if (actionRef.current) return;
     const isSame = selectedCoupon?.id === coupon.id;
-    setCoupon(isSame ? null : coupon);
+    if (isSame) {
+      setRejectCoupon(false);
+      setCoupon(null);
+      return;
+    }
+
+    actionRef.current = true;
+    try {
+      const result = await validateCoupon(coupon.code, items);
+      if (!result.valid) {
+        showThemedAlert('Cupom indisponível', result.reason);
+        return;
+      }
+
+      setRejectCoupon(false);
+      setCoupon(result.coupon);
+    } finally {
+      actionRef.current = false;
+    }
   };
 
   const handleToggleReject = () => {

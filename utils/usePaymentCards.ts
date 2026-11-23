@@ -8,10 +8,23 @@ import {
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatopiacanga.com.br';
 
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs = 18000
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export type SavedCard = {
   id: string;
   user_id: string;
-  mp_customer_id: string;
   mp_card_id: string;
   last_four: string;
   payment_method_id: string;
@@ -52,7 +65,7 @@ export function usePaymentCards() {
 
       const { data, error } = await supabase
         .from('payment_cards')
-        .select('*')
+        .select('id, user_id, mp_card_id, last_four, payment_method_id, card_type, cardholder_name, is_default, created_at')
         .eq('user_id', user.id)
         .order('is_default', { ascending: false })
         .order('created_at', { ascending: false });
@@ -134,7 +147,7 @@ export function usePaymentCards() {
       }
 
       // 2. Chama a rota segura do servidor com Bearer
-      const response = await fetch(`${API_BASE_URL}/api/mercadopago/cards`, {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/api/mercadopago/cards`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -180,7 +193,7 @@ export function usePaymentCards() {
         return { success: false, error: 'Usuário não autenticado.' };
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/mercadopago/cards?cardId=${encodeURIComponent(card.id)}`, {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/api/mercadopago/cards?cardId=${encodeURIComponent(card.id)}`, {
         method: 'DELETE',
         headers: {
           Authorization: `Bearer ${session.access_token}`,
@@ -208,7 +221,7 @@ export function usePaymentCards() {
         return { success: false };
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/mercadopago/cards`, {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/api/mercadopago/cards`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',

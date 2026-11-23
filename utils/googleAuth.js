@@ -177,9 +177,8 @@ export async function signInWithSocial(provider = 'google') {
     }
     if (!data?.url) throw new Error('Não foi possível obter a URL de autorização do Google.');
 
-    console.log('🌐 [GoogleAuth] Abrindo navegador com URL Supabase:', data.url);
     const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
-    console.log('📥 [GoogleAuth] Retorno do WebBrowser:', result);
+    if (__DEV__) console.log('📥 [GoogleAuth] Retorno do WebBrowser:', result?.type);
 
     if (result.type !== 'success' || !result.url) {
       if (result.type === 'cancel' || result.type === 'dismiss') {
@@ -189,11 +188,13 @@ export async function signInWithSocial(provider = 'google') {
     }
 
     const params = extractParamsFromUrl(result.url);
-    console.log('🔑 [GoogleAuth] Parâmetros extraídos da URL:', {
-      hasCode: !!params.code,
-      hasAccessToken: !!params.access_token,
-      error: params.error || params.error_description,
-    });
+    if (__DEV__) {
+      console.log('🔑 [GoogleAuth] Parâmetros extraídos da URL:', {
+        hasCode: !!params.code,
+        hasAccessToken: !!params.access_token,
+        error: params.error || params.error_description,
+      });
+    }
 
     if (params.error_description || params.error) {
       throw new Error(params.error_description || params.error || 'Erro na autenticação.');
