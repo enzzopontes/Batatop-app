@@ -12,6 +12,7 @@ import {
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import * as Haptics from 'expo-haptics';
 import { supabase } from '../../supabaseConfig';
 import { resolveProductImage, API_BASE_URL } from '../../utils/resolveProductImage';
@@ -360,8 +361,8 @@ export default function ProductImagePicker({
       }
 
       let mimeType = normalizeMimeType(asset.mimeType);
-      if (mimeType && !ALLOWED_MIME_TYPES.includes(mimeType)) {
-        Alert.alert('Formato não suportado', 'Use imagens nos formatos JPG, PNG ou WebP.');
+      if (mimeType === 'image/svg+xml' || (mimeType && !mimeType.startsWith('image/'))) {
+        Alert.alert('Formato não suportado', 'Use uma imagem válida (JPG, PNG, WebP ou HEIC).');
         return;
       }
 
@@ -375,10 +376,39 @@ export default function ProductImagePicker({
 
       if (isActive()) setUploading(true);
 
-      let blob = null;
-      if (asset.uri) {
+      let uploadUri = asset.uri || null;
+      let uploadBase64 = asset.base64 || null;
+
+      // Converte automaticamente PNG, JPG, HEIC, etc. para WebP antes do upload
+      if (uploadUri && ImageManipulator?.manipulateAsync && ImageManipulator?.SaveFormat?.WEBP) {
         try {
-          const response = await fetch(asset.uri);
+          const actions =
+            typeof asset.width === 'number' && asset.width > 1200
+              ? [{ resize: { width: 1200 } }]
+              : [];
+          const manipulated = await ImageManipulator.manipulateAsync(uploadUri, actions, {
+            compress: 0.8,
+            format: ImageManipulator.SaveFormat.WEBP,
+            base64: true,
+          });
+          if (manipulated?.uri) {
+            uploadUri = manipulated.uri;
+            if (manipulated.base64) {
+              uploadBase64 = manipulated.base64;
+            }
+            mimeType = 'image/webp';
+          }
+        } catch {
+          // Fallback seguro para formato original caso o módulo nativo não suporte WebP no build atual
+        }
+      }
+
+      if (!isActive()) return;
+
+      let blob = null;
+      if (uploadUri) {
+        try {
+          const response = await fetch(uploadUri);
           blob = await response.blob();
         } catch {
           blob = null;
@@ -391,7 +421,7 @@ export default function ProductImagePicker({
         mimeType = normalizeMimeType(blob.type);
       }
       if (!mimeType) {
-        mimeType = mimeFromExtension(asset.fileName || asset.uri);
+        mimeType = mimeFromExtension(asset.fileName || uploadUri);
       }
       if (!ALLOWED_MIME_TYPES.includes(mimeType)) {
         Alert.alert('Formato não suportado', 'Use imagens nos formatos JPG, PNG ou WebP.');
@@ -434,11 +464,11 @@ export default function ProductImagePicker({
       if (!isActive()) return;
 
       if (!uploadedUrl) {
-        if (!asset.base64) {
+        if (!uploadBase64) {
           throw new Error('Não foi possível ler os dados da imagem.');
         }
 
-        if (asset.base64.length > MAX_BASE64_LENGTH) {
+        if (uploadBase64.length > MAX_BASE64_LENGTH) {
           Alert.alert('Imagem muito grande', 'Escolha uma imagem menor que 2MB.');
           return;
         }
@@ -449,7 +479,7 @@ export default function ProductImagePicker({
         const { error } = await supabase.from('uploaded_images').insert({
           id,
           name: fileName,
-          data: asset.base64,
+          data: uploadBase64,
           mime_type: mimeType,
           category: safeCategory,
           uploaded_at: new Date().toISOString(),
@@ -537,12 +567,12 @@ export default function ProductImagePicker({
         {uploading ? (
           <>
             <ActivityIndicator size="small" color="#1A1A1A" />
-            <Text style={s.uploadBtnText}>Enviando foto...</Text>
+            <Text style={s.uploadBtnText}>Convertendo e enviando...</Text>
           </>
         ) : (
           <>
             <Ionicons name="images-outline" size={17} color="#1A1A1A" />
-            <Text style={s.uploadBtnText}>Enviar foto da galeria</Text>
+            <Text style={s.uploadBtnText}>Enviar foto da galeria (WebP)</Text>
           </>
         )}
       </Pressable>
