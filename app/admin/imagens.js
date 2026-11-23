@@ -1,18 +1,20 @@
 import ThreeDotsLoader from '../../components/ThreeDotsLoader';
 import {
   View, Text, ScrollView, StyleSheet, Pressable,
-  ActivityIndicator, Alert, Image, TextInput, Modal,
+  ActivityIndicator, Image, TextInput, Modal,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as Clipboard from 'expo-clipboard';
 import { supabase } from '../../supabaseConfig';
 import * as Haptics from 'expo-haptics';
 import { AdminListSkeleton } from '../../components/Skeleton';
-import { ThemedAlertHost } from '../../components/ThemedAlert';
+import { showSuccessAlert, showErrorAlert, ThemedAlertHost } from '../../components/ThemedAlert';
+import { COLORS, RADIUS, SPACING } from '../../constants/theme';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatopiacanga.com.br';
 const STORAGE_BUCKET = 'Products';
@@ -20,23 +22,153 @@ const STORAGE_FOLDERS = [
   { folder: '', category: 'product' },
   { folder: 'uploads/product', category: 'product' },
   { folder: 'uploads/promo', category: 'promo' },
+  { folder: 'uploads/brand', category: 'brand' },
   { folder: 'uploads/general', category: 'general' },
 ];
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
 const MAX_BASE64_LENGTH = 2_750_000;
+const MAX_IMAGE_DIMENSION = 1000;
+
+const UPLOAD_CATEGORIES = [
+  { key: 'product', label: 'Produto', color: '#D97706', icon: 'fast-food-outline' },
+  { key: 'promo', label: 'Banner / Promoção', color: '#EA580C', icon: 'megaphone-outline' },
+  { key: 'brand', label: 'Logo / Identidade', color: '#7C3AED', icon: 'ribbon-outline' },
+  { key: 'general', label: 'Geral', color: '#2563EB', icon: 'images-outline' },
+];
 
 const CATEGORIES = [
   { key: 'all', label: 'Todas' },
-  { key: 'product', label: 'Produtos', color: '#D97706' },
-  { key: 'promo', label: 'Promoções', color: '#EA580C' },
-  { key: 'general', label: 'Geral', color: '#2563EB' },
+  ...UPLOAD_CATEGORIES,
 ];
 
-const UPLOAD_CATEGORIES = [
-  { key: 'product', label: 'Produto', color: '#D97706' },
-  { key: 'promo', label: 'Promoção', color: '#EA580C' },
-  { key: 'general', label: 'Geral', color: '#2563EB' },
-];
+const VALID_CATEGORIES = new Set(UPLOAD_CATEGORIES.map((c) => c.key));
+
+function getCategoryMeta(categoryKey) {
+  return (
+    UPLOAD_CATEGORIES.find((c) => c.key === categoryKey) ||
+    UPLOAD_CATEGORIES[UPLOAD_CATEGORIES.length - 1]
+  );
+}
+
+function getImageFormat(nameOrMime) {
+  if (!nameOrMime) return null;
+  const raw = String(nameOrMime).toLowerCase().trim();
+  if (raw.startsWith('image/')) {
+    const subtype = raw.slice(6).split(';')[0].trim();
+    if (subtype === 'webp') return 'WEBP';
+    if (subtype === 'jpeg' || subtype === 'jpg') return 'JPG';
+    if (subtype === 'png') return 'PNG';
+    return null;
+  }
+  const clean = raw.split('?')[0].split('#')[0];
+  if (clean.endsWith('.webp')) return 'WEBP';
+  if (clean.endsWith('.jpeg') || clean.endsWith('.jpg')) return 'JPG';
+  if (clean.endsWith('.png')) return 'PNG';
+  return null;
+}
+
+function resolveAllowedMime(asset) {
+  const rawMime = typeof asset?.mimeType === 'string'
+    ? asset.mimeType.split(';')[0].trim().toLowerCase()
+    : '';
+
+  if (rawMime) {
+    const normalized = rawMime === 'image/jpg' ? 'image/jpeg' : rawMime;
+    return ALLOWED_MIME_TYPES.includes(normalized) ? normalized : null;
+  }
+
+  const candidate = String(asset?.fileName || asset?.uri || '')
+    .split('?')[0]
+    .split('#')[0]
+    .toLowerCase();
+
+  if (candidate.endsWith('.jpg') || candidate.endsWith('.jpeg')) return 'image/jpeg';
+  if (candidate.endsWith('.png')) return 'image/png';
+  if (candidate.endsWith('.webp')) return 'image/webp';
+  return null;
+}
+
+function formatSupabaseError(err, fallback) {
+  const code = String(err?.code || '').trim();
+  const msg = String(err?.message || '').trim();
+  if (
+    code === '42501' ||
+    code === 'PGRST301' ||
+    /row-level security|permission denied|policy/i.test(msg)
+  ) {
+    return 'Permissão negada pelo banco de dados (RLS). Verifique sua sessão de administrador.';
+  }
+  if (code === '42P01' || code === 'PGRST205') {
+    return 'Tabela de metadados não encontrada no banco. Execute a migração pendente.';
+  }
+  if (msg && msg.includes('(RLS)')) {
+    return msg;
+  }
+  return fallback;
+}
+
+function safeRelease(ref) {
+  try {
+    ref?.release?.();
+  } catch {
+    // Ignore native release failures
+  }
+}
+
+async function convertImageToWebP(asset) {
+  let context = null;
+  let rendered = null;
+  let resizeContext = null;
+  let resizedRendered = null;
+
+  try {
+    context = ImageManipulator.manipulate(asset.uri);
+
+    if (asset.width && asset.height) {
+      if (asset.width > MAX_IMAGE_DIMENSION || asset.height > MAX_IMAGE_DIMENSION) {
+        context.resize(
+          asset.width >= asset.height
+            ? { width: MAX_IMAGE_DIMENSION }
+            : { height: MAX_IMAGE_DIMENSION }
+        );
+      }
+      rendered = await context.renderAsync();
+      return await rendered.saveAsync({
+        format: SaveFormat.WEBP,
+        compress: 0.82,
+        base64: true,
+      });
+    }
+
+    rendered = await context.renderAsync();
+    if (rendered.width > MAX_IMAGE_DIMENSION || rendered.height > MAX_IMAGE_DIMENSION) {
+      resizeContext = ImageManipulator.manipulate(rendered);
+      resizeContext.resize(
+        rendered.width >= rendered.height
+          ? { width: MAX_IMAGE_DIMENSION }
+          : { height: MAX_IMAGE_DIMENSION }
+      );
+      resizedRendered = await resizeContext.renderAsync();
+      return await resizedRendered.saveAsync({
+        format: SaveFormat.WEBP,
+        compress: 0.82,
+        base64: true,
+      });
+    }
+
+    return await rendered.saveAsync({
+      format: SaveFormat.WEBP,
+      compress: 0.82,
+      base64: true,
+    });
+  } finally {
+    safeRelease(resizedRendered);
+    safeRelease(resizeContext);
+    safeRelease(rendered);
+    safeRelease(context);
+  }
+}
 
 export default function AdminImagens() {
   const router = useRouter();
@@ -56,11 +188,20 @@ export default function AdminImagens() {
   const [imageToDelete, setImageToDelete] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Recategorize modal state
+  const [imageToRecategorize, setImageToRecategorize] = useState(null);
+  const [updatingCategory, setUpdatingCategory] = useState(null);
+
+  // Concurrency locks
+  const uploadingRef = useRef(false);
+  const updatingCategoryRef = useRef(false);
+  const deletingRef = useRef(false);
+
   const loadImages = useCallback(async () => {
     try {
       setRefreshing(true);
 
-      const [storageResults, dbResult] = await Promise.all([
+      const [storageResults, dbResult, metadataResult] = await Promise.all([
         Promise.all(
           STORAGE_FOLDERS.map(async ({ folder, category }) => {
             try {
@@ -83,6 +224,7 @@ export default function AdminImagens() {
                     name: file.name,
                     url: pubData?.publicUrl || '',
                     category,
+                    format: getImageFormat(file.metadata?.mimetype) || getImageFormat(file.name),
                     uploaded_at: file.created_at || file.updated_at || new Date().toISOString(),
                     source: 'storage',
                   };
@@ -96,9 +238,33 @@ export default function AdminImagens() {
           .from('uploaded_images')
           .select('id, name, mime_type, category, uploaded_at')
           .order('uploaded_at', { ascending: false }),
+        Promise.resolve(
+          supabase
+            .from('media_metadata')
+            .select('storage_path, category')
+        ).catch((err) => ({ data: null, error: err })),
       ]);
 
-      const storageImages = storageResults.flat();
+      const metadataMap = {};
+      if (metadataResult?.error) {
+        if (__DEV__) {
+          console.warn(
+            '[AdminImagens] media_metadata indisponível:',
+            metadataResult.error.message || metadataResult.error
+          );
+        }
+      } else if (Array.isArray(metadataResult?.data)) {
+        metadataResult.data.forEach((row) => {
+          if (row?.storage_path && VALID_CATEGORIES.has(row.category)) {
+            metadataMap[row.storage_path] = row.category;
+          }
+        });
+      }
+
+      const storageImages = storageResults.flat().map((item) => ({
+        ...item,
+        category: metadataMap[item.id] || item.category,
+      }));
 
       if (dbResult.error && storageImages.length === 0) {
         throw dbResult.error;
@@ -106,6 +272,8 @@ export default function AdminImagens() {
 
       const dbImages = (dbResult.data || []).map((row) => ({
         ...row,
+        category: VALID_CATEGORIES.has(row.category) ? row.category : 'general',
+        format: getImageFormat(row.mime_type) || getImageFormat(row.name),
         url: `${API_BASE_URL}/api/images/${row.id}`,
         source: 'database',
       }));
@@ -117,7 +285,7 @@ export default function AdminImagens() {
       setImages(combined);
     } catch (e) {
       console.error(e);
-      Alert.alert('Erro', 'Não foi possível carregar as imagens.');
+      showErrorAlert('Não foi possível carregar as imagens.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -146,83 +314,125 @@ export default function AdminImagens() {
 
   // ─── Fazer upload de uma nova imagem ──────────────────────────────
   const handlePickImage = async () => {
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permissionResult.granted) {
-      Alert.alert('Permissão necessária', 'Precisamos de permissão para acessar sua galeria.');
-      return;
-    }
-
-    const pickerResult = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      quality: 0.75,
-      base64: true,
-    });
-
-    if (pickerResult.canceled || !pickerResult.assets?.[0]) return;
-
-    const asset = pickerResult.assets[0];
-    if (!asset.uri && !asset.base64) {
-      Alert.alert('Erro', 'Não foi possível ler os dados da imagem.');
-      return;
-    }
-
-    const mimeType = (asset.mimeType || 'image/jpeg').toLowerCase();
-    if (!ALLOWED_MIME_TYPES.includes(mimeType)) {
-      Alert.alert('Formato não suportado', 'Use imagens nos formatos JPG, PNG ou WebP.');
-      return;
-    }
-
-    if (asset.base64 && asset.base64.length > MAX_BASE64_LENGTH) {
-      Alert.alert('Imagem muito grande', 'Escolha uma imagem menor que 2MB.');
-      return;
-    }
-
-    setUploading(true);
+    if (uploadingRef.current || uploading) return;
+    uploadingRef.current = true;
     try {
-      const ext = mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg';
-      const storagePath = `uploads/${uploadCategory || 'product'}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permissionResult.granted) {
+        showErrorAlert('Precisamos de permissão para acessar sua galeria.', 'Permissão necessária');
+        return;
+      }
+
+      const pickerResult = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        quality: 1,
+        base64: false,
+      });
+
+      if (pickerResult.canceled || !pickerResult.assets?.[0]) return;
+
+      const asset = pickerResult.assets[0];
+      if (!asset.uri) {
+        showErrorAlert('Não foi possível ler os dados da imagem.');
+        return;
+      }
+
+      const allowedMime = resolveAllowedMime(asset);
+      if (!allowedMime) {
+        showErrorAlert('Use imagens nos formatos JPG, PNG ou WebP.', 'Formato não suportado');
+        return;
+      }
+
+      setUploading(true);
+      const manipulated = await convertImageToWebP(asset);
+      const targetCategory = VALID_CATEGORIES.has(uploadCategory) ? uploadCategory : 'product';
+      const storagePath = `uploads/${targetCategory}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.webp`;
 
       let uploadedUrl = null;
-      if (asset.uri) {
+      if (manipulated?.uri) {
+        let blob = null;
         try {
-          const response = await fetch(asset.uri);
-          const blob = await response.blob();
-          const { error: storageError } = await supabase.storage
-            .from(STORAGE_BUCKET)
-            .upload(storagePath, blob, {
-              contentType: mimeType,
-              cacheControl: '31536000',
-              upsert: false,
-            });
-
-          if (!storageError) {
-            const { data: pubData } = supabase.storage
-              .from(STORAGE_BUCKET)
-              .getPublicUrl(storagePath);
-            if (pubData?.publicUrl) {
-              uploadedUrl = pubData.publicUrl;
-            }
+          const response = await fetch(manipulated.uri);
+          if (!response.ok) {
+            throw new Error(`Falha ao ler imagem convertida (HTTP ${response.status}).`);
           }
+          blob = await response.blob();
         } catch {
-          // Fallback para tabela uploaded_images
+          blob = null;
+        }
+
+        if (blob && blob.size > MAX_UPLOAD_BYTES) {
+          showErrorAlert('Escolha uma imagem menor que 2MB.', 'Imagem muito grande');
+          return;
+        }
+
+        if (blob) {
+          try {
+            const { error: storageError } = await supabase.storage
+              .from(STORAGE_BUCKET)
+              .upload(storagePath, blob, {
+                contentType: 'image/webp',
+                cacheControl: '31536000',
+                upsert: false,
+              });
+
+            if (!storageError) {
+              const { data: pubData } = supabase.storage
+                .from(STORAGE_BUCKET)
+                .getPublicUrl(storagePath);
+              if (pubData?.publicUrl) {
+                uploadedUrl = pubData.publicUrl;
+              }
+            }
+          } catch {
+            // Fallback para tabela uploaded_images
+          }
         }
       }
 
-      if (!uploadedUrl) {
-        if (!asset.base64) {
+      if (uploadedUrl) {
+        try {
+          const { error: metaError } = await supabase
+            .from('media_metadata')
+            .upsert(
+              {
+                storage_path: storagePath,
+                category: targetCategory,
+                updated_at: new Date().toISOString(),
+              },
+              { onConflict: 'storage_path' }
+            );
+          if (metaError && __DEV__) {
+            console.warn('[AdminImagens] Falha ao salvar media_metadata:', metaError.message || metaError);
+          }
+        } catch (metaErr) {
+          if (__DEV__) {
+            console.warn('[AdminImagens] Falha ao salvar media_metadata:', metaErr);
+          }
+        }
+      } else {
+        if (!manipulated?.base64) {
           throw new Error('Não foi possível ler os dados da imagem.');
         }
 
-        const fileName = asset.fileName || `image-${Date.now()}.${ext}`;
-        const id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        if (manipulated.base64.length > MAX_BASE64_LENGTH) {
+          showErrorAlert('Escolha uma imagem menor que 2MB.', 'Imagem muito grande');
+          return;
+        }
+
+        const baseName = asset.fileName
+          ? asset.fileName.replace(/\.[^.]+$/, '')
+          : `image-${Date.now()}`;
+        const fileName = `${baseName}.webp`;
+        const id = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
         const insertData = {
           id,
           name: fileName,
-          data: asset.base64,
-          mime_type: mimeType,
-          category: uploadCategory,
+          data: manipulated.base64,
+          mime_type: 'image/webp',
+          category: targetCategory,
           uploaded_at: new Date().toISOString(),
         };
 
@@ -234,13 +444,76 @@ export default function AdminImagens() {
       }
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Sucesso', 'Imagem enviada com sucesso!');
+      showSuccessAlert('Imagem convertida em WebP e enviada com sucesso!');
       await loadImages();
     } catch (e) {
       console.error(e);
-      Alert.alert('Erro', 'Não foi possível enviar a imagem.');
+      showErrorAlert(formatSupabaseError(e, 'Não foi possível enviar a imagem.'));
     } finally {
+      uploadingRef.current = false;
       setUploading(false);
+    }
+  };
+
+  // ─── Editar categoria de uma imagem existente ─────────────────────
+  const handleSelectNewCategory = async (newCategory) => {
+    if (!imageToRecategorize || updatingCategoryRef.current || updatingCategory) return;
+    if (imageToRecategorize.category === newCategory) {
+      setImageToRecategorize(null);
+      return;
+    }
+
+    const target = imageToRecategorize;
+    updatingCategoryRef.current = true;
+    try {
+      setUpdatingCategory(newCategory);
+      const isStorageItem =
+        target.source === 'storage' || String(target.id || '').includes('/');
+
+      if (isStorageItem) {
+        const { error } = await supabase
+          .from('media_metadata')
+          .upsert(
+            {
+              storage_path: target.id,
+              category: newCategory,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: 'storage_path' }
+          );
+        if (error) throw error;
+      } else {
+        const { data, error } = await supabase
+          .from('uploaded_images')
+          .update({ category: newCategory })
+          .eq('id', target.id)
+          .select('id');
+        if (error) throw error;
+        if (!data?.length) {
+          throw new Error('Permissão negada ou registro não encontrado (RLS).');
+        }
+      }
+
+      setImages((prev) =>
+        prev.map((item) =>
+          item.id === target.id ? { ...item, category: newCategory } : item
+        )
+      );
+      setImageToRecategorize(null);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      const nextMeta = getCategoryMeta(newCategory);
+      setTimeout(() => {
+        showSuccessAlert(`Categoria atualizada para ${nextMeta.label}.`);
+      }, 150);
+    } catch (e) {
+      console.error(e);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      showErrorAlert(
+        formatSupabaseError(e, 'Não foi possível atualizar a categoria da imagem.')
+      );
+    } finally {
+      updatingCategoryRef.current = false;
+      setUpdatingCategory(null);
     }
   };
 
@@ -255,11 +528,15 @@ export default function AdminImagens() {
 
   // ─── Deletar imagem com modal de confirmação ───────────────────────
   const handleDeletePress = (img) => {
+    if (uploadingRef.current || uploading || deletingRef.current || isDeleting || updatingCategoryRef.current || updatingCategory) {
+      return;
+    }
     setImageToDelete(img);
   };
 
   const handleConfirmDelete = async () => {
-    if (!imageToDelete) return;
+    if (!imageToDelete || deletingRef.current || isDeleting) return;
+    deletingRef.current = true;
     try {
       setIsDeleting(true);
       const isStorageItem =
@@ -270,20 +547,35 @@ export default function AdminImagens() {
           .from(STORAGE_BUCKET)
           .remove([imageToDelete.id]);
         if (error) throw error;
+
+        try {
+          await supabase
+            .from('media_metadata')
+            .delete()
+            .eq('storage_path', imageToDelete.id);
+        } catch {
+          // Best-effort cleanup caso media_metadata não exista
+        }
       } else {
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('uploaded_images')
           .delete()
-          .eq('id', imageToDelete.id);
+          .eq('id', imageToDelete.id)
+          .select('id');
         if (error) throw error;
+        if (!data?.length) {
+          throw new Error('Permissão negada ou registro não encontrado (RLS).');
+        }
       }
 
       setImages((prev) => prev.filter((i) => i.id !== imageToDelete.id));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setImageToDelete(null);
-    } catch {
-      Alert.alert('Erro', 'Não foi possível deletar a imagem.');
+    } catch (e) {
+      console.error(e);
+      showErrorAlert(formatSupabaseError(e, 'Não foi possível deletar a imagem.'));
     } finally {
+      deletingRef.current = false;
       setIsDeleting(false);
     }
   };
@@ -299,12 +591,18 @@ export default function AdminImagens() {
     return images.filter((img) => img.category === key).length;
   };
 
+  const isActionBusy = uploading || isDeleting || !!updatingCategory;
+  const modalSafeAreaStyle = {
+    paddingTop: Math.max(insets.top, SPACING[4]),
+    paddingBottom: Math.max(insets.bottom, SPACING[4]),
+  };
+
   return (
     <View style={[s.container, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={s.header}>
         <Pressable onPress={() => router.back()} style={s.backBtn} hitSlop={10}>
-          <Ionicons name="chevron-back" size={24} color="#1A1A1A" />
+          <Ionicons name="chevron-back" size={24} color={COLORS.text} />
         </Pressable>
         <View style={{ flex: 1 }}>
           <Text style={s.headerTitle}>Galeria de Mídia</Text>
@@ -312,9 +610,9 @@ export default function AdminImagens() {
         </View>
         <Pressable onPress={loadImages} style={s.refreshBtn} hitSlop={10} disabled={refreshing}>
           {refreshing ? (
-            <ActivityIndicator size="small" color="#E3A008" />
+            <ActivityIndicator size="small" color={COLORS.primary} />
           ) : (
-            <Ionicons name="refresh-outline" size={22} color="#1A1A1A" />
+            <Ionicons name="refresh-outline" size={22} color={COLORS.text} />
           )}
         </Pressable>
       </View>
@@ -324,7 +622,7 @@ export default function AdminImagens() {
         <View style={s.uploadCard}>
           <View style={s.uploadCardHeader}>
             <View style={s.uploadIconBadge}>
-              <Ionicons name="cloud-upload-outline" size={20} color="#E3A008" />
+              <Ionicons name="cloud-upload-outline" size={20} color={COLORS.primary} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={s.uploadCardTitle}>Enviar nova imagem</Text>
@@ -342,7 +640,14 @@ export default function AdminImagens() {
                   style={[s.uploadCatBtn, isSelected && { backgroundColor: cat.color, borderColor: cat.color }]}
                   onPress={() => setUploadCategory(cat.key)}
                 >
-                  <Text style={[s.uploadCatBtnText, isSelected && { color: '#FFF' }]}>{cat.label}</Text>
+                  <Ionicons
+                    name={cat.icon}
+                    size={14}
+                    color={isSelected ? COLORS.white : cat.color}
+                  />
+                  <Text style={[s.uploadCatBtnText, isSelected && { color: COLORS.white }]} numberOfLines={2}>
+                    {cat.label}
+                  </Text>
                 </Pressable>
               );
             })}
@@ -356,12 +661,12 @@ export default function AdminImagens() {
           >
             {uploading ? (
               <View style={s.uploadingRow}>
-                <ThreeDotsLoader color="#FFF" dotSize={7} />
-                <Text style={s.uploadActionBtnText}>Enviando imagem...</Text>
+                <ThreeDotsLoader color={COLORS.white} dotSize={7} />
+                <Text style={s.uploadActionBtnText}>Otimizando e enviando WebP...</Text>
               </View>
             ) : (
               <>
-                <Ionicons name="images-outline" size={20} color="#FFF" />
+                <Ionicons name="images-outline" size={20} color={COLORS.white} />
                 <Text style={s.uploadActionBtnText}>Escolher imagem da Galeria</Text>
               </>
             )}
@@ -372,18 +677,18 @@ export default function AdminImagens() {
         <View style={s.filterSection}>
           {/* Busca por nome */}
           <View style={s.searchContainer}>
-            <Ionicons name="search-outline" size={16} color="#9CA3AF" style={s.searchIcon} />
+            <Ionicons name="search-outline" size={16} color={COLORS.textMuted} style={s.searchIcon} />
             <TextInput
               style={s.searchInput}
               placeholder="Buscar imagem por nome..."
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={COLORS.textMuted}
               value={searchQuery}
               onChangeText={setSearchQuery}
               autoCapitalize="none"
             />
             {searchQuery.length > 0 && (
               <Pressable onPress={() => setSearchQuery('')} hitSlop={10}>
-                <Ionicons name="close-circle" size={16} color="#9CA3AF" />
+                <Ionicons name="close-circle" size={16} color={COLORS.textMuted} />
               </Pressable>
             )}
           </View>
@@ -415,7 +720,7 @@ export default function AdminImagens() {
           ) : filteredImages.length === 0 ? (
           <View style={s.empty}>
             <View style={s.emptyIconContainer}>
-              <Ionicons name="images-outline" size={40} color="#D1D5DB" />
+              <Ionicons name="images-outline" size={40} color={COLORS.textMuted} />
             </View>
             <Text style={s.emptyTitle}>Nenhuma imagem encontrada</Text>
             <Text style={s.emptyText}>
@@ -427,10 +732,7 @@ export default function AdminImagens() {
             {filteredImages.map((img) => {
               const isCopied = copiedId === img.id;
               const dim = dimensions[img.id];
-              const categoryColor =
-                img.category === 'product' ? '#D97706' : img.category === 'promo' ? '#EA580C' : '#2563EB';
-              const categoryLabel =
-                img.category === 'product' ? 'Produto' : img.category === 'promo' ? 'Promoção' : 'Geral';
+              const categoryMeta = getCategoryMeta(img.category);
 
               return (
                 <View key={img.id} style={s.imgCard}>
@@ -444,15 +746,44 @@ export default function AdminImagens() {
 
                     {/* Top Badges */}
                     <View style={s.overlayBadges}>
-                      <View style={[s.categoryTag, { backgroundColor: categoryColor }]}>
-                        <Text style={s.categoryTagText}>{categoryLabel}</Text>
-                      </View>
-                      {dim && (
-                        <View style={s.dimensionBadge}>
-                          <Text style={s.dimensionBadgeText}>{dim}</Text>
-                        </View>
-                      )}
+                      <Pressable
+                        style={({ pressed }) => [
+                          s.categoryTag,
+                          { backgroundColor: categoryMeta.color },
+                          pressed && !isActionBusy && { opacity: 0.85 },
+                          isActionBusy && { opacity: 0.7 },
+                        ]}
+                        onPress={() => setImageToRecategorize(img)}
+                        disabled={isActionBusy}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      >
+                        <Text style={s.categoryTagText} numberOfLines={1}>
+                          {categoryMeta.label}
+                        </Text>
+                        <Ionicons name="pencil" size={9} color={COLORS.white} />
+                      </Pressable>
                     </View>
+
+                    {/* Format & Dimension Badges */}
+                    {(img.format || dim) && (
+                      <View style={s.bottomBadges}>
+                        {img.format && (
+                          <View
+                            style={[
+                              s.formatBadge,
+                              img.format === 'WEBP' && s.formatBadgeWebp,
+                            ]}
+                          >
+                            <Text style={s.formatBadgeText} numberOfLines={1}>{img.format}</Text>
+                          </View>
+                        )}
+                        {dim && (
+                          <View style={s.dimensionBadge}>
+                            <Text style={s.dimensionBadgeText} numberOfLines={1}>{dim}</Text>
+                          </View>
+                        )}
+                      </View>
+                    )}
                   </View>
 
                   {/* Card Info & Actions */}
@@ -466,19 +797,25 @@ export default function AdminImagens() {
                       <Pressable
                         style={[s.actionBtn, isCopied && s.actionBtnCopied]}
                         onPress={() => handleCopyUrl(img)}
+                        hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
                       >
                         <Ionicons
                           name={isCopied ? 'checkmark-circle' : 'copy-outline'}
                           size={13}
-                          color={isCopied ? '#059669' : '#4B5563'}
+                          color={isCopied ? COLORS.success : COLORS.textSecondary}
                         />
                         <Text style={[s.actionBtnText, isCopied && s.actionBtnTextCopied]}>
                           {isCopied ? 'Copiado!' : 'Copiar URL'}
                         </Text>
                       </Pressable>
 
-                      <Pressable style={s.deleteBtn} onPress={() => handleDeletePress(img)}>
-                        <Ionicons name="trash-outline" size={14} color="#DC2626" />
+                      <Pressable
+                        style={[s.deleteBtn, isActionBusy && { opacity: 0.5 }]}
+                        onPress={() => handleDeletePress(img)}
+                        disabled={isActionBusy}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Ionicons name="trash-outline" size={14} color={COLORS.error} />
                       </Pressable>
                     </View>
                   </View>
@@ -489,68 +826,171 @@ export default function AdminImagens() {
         )}
       </ScrollView>
 
-      {/* Deletion Confirmation Modal */}
-      <Modal visible={!!imageToDelete} transparent statusBarTranslucent animationType="fade" onRequestClose={() => setImageToDelete(null)}>
-        <View style={s.modalOverlay}>
+      {/* Quick Category Edit Modal */}
+      <Modal
+        visible={!!imageToRecategorize}
+        transparent
+        statusBarTranslucent
+        animationType="fade"
+        onRequestClose={() => !updatingCategory && setImageToRecategorize(null)}
+      >
+        <View style={[s.modalOverlay, modalSafeAreaStyle]}>
           <View style={s.modalContent}>
-            <View style={s.modalHeader}>
-              <View style={s.modalAlertIcon}>
-                <Ionicons name="warning-outline" size={24} color="#DC2626" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.modalTitle}>Excluir Imagem?</Text>
-                <Text style={s.modalSub}>Esta ação é irreversível e removerá a imagem do sistema.</Text>
-              </View>
-            </View>
-
-            {imageToDelete && (
-              <View style={s.modalPreviewCard}>
-                <Image
-                  source={{ uri: imageToDelete.url || `${API_BASE_URL}/api/images/${imageToDelete.id}` }}
-                  style={s.modalThumb}
-                />
+            <ScrollView
+              bounces={false}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={s.modalScrollContent}
+            >
+              <View style={s.modalHeader}>
+                <View style={s.modalEditIcon}>
+                  <Ionicons name="pricetag-outline" size={22} color={COLORS.primary} />
+                </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={s.modalFileName} numberOfLines={2}>
-                    {imageToDelete.name}
-                  </Text>
-                  <Text style={s.modalCategoryText}>
-                    Categoria:{' '}
-                    {imageToDelete.category === 'product'
-                      ? 'Produto'
-                      : imageToDelete.category === 'promo'
-                      ? 'Promoção'
-                      : 'Geral'}
-                  </Text>
+                  <Text style={s.modalTitle}>Alterar Categoria</Text>
+                  <Text style={s.modalSub}>A URL da imagem permanece inalterada.</Text>
                 </View>
               </View>
-            )}
 
-            <View style={s.modalActionRow}>
-              <Pressable
-                style={s.modalCancelBtn}
-                onPress={() => setImageToDelete(null)}
-                disabled={isDeleting}
-              >
-                <Text style={s.modalCancelText}>Cancelar</Text>
-              </Pressable>
+              {imageToRecategorize && (
+                <View style={s.modalPreviewCard}>
+                  <Image
+                    source={{
+                      uri: imageToRecategorize.url || `${API_BASE_URL}/api/images/${imageToRecategorize.id}`,
+                    }}
+                    style={s.modalThumb}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.modalFileName} numberOfLines={2}>
+                      {imageToRecategorize.name}
+                    </Text>
+                    <Text style={s.modalCategoryText}>
+                      Atual: {getCategoryMeta(imageToRecategorize.category).label}
+                    </Text>
+                  </View>
+                </View>
+              )}
 
-              <Pressable
-                style={[s.modalConfirmBtn, isDeleting && { opacity: 0.7 }]}
-                onPress={handleConfirmDelete}
-                disabled={isDeleting}
-              >
-                {isDeleting ? (
-                  <ThreeDotsLoader color="#FFF" dotSize={7} />
-                ) : (
-                  <>
-                    <Ionicons name="trash" size={16} color="#FFF" />
-                    <Text style={s.modalConfirmText}>Excluir</Text>
-                  </>
-                )}
-              </Pressable>
-            </View>
+              <View style={s.categoryOptionsList}>
+                {UPLOAD_CATEGORIES.map((cat) => {
+                  const isCurrent = imageToRecategorize?.category === cat.key;
+                  return (
+                    <Pressable
+                      key={cat.key}
+                      style={({ pressed }) => [
+                        s.categoryOptionItem,
+                        isCurrent && { borderColor: cat.color, backgroundColor: `${cat.color}12` },
+                        pressed && !updatingCategory && { opacity: 0.8 },
+                      ]}
+                      onPress={() => handleSelectNewCategory(cat.key)}
+                      disabled={!!updatingCategory}
+                    >
+                      <View style={[s.categoryOptionIconWrap, { backgroundColor: `${cat.color}18` }]}>
+                        <Ionicons name={cat.icon} size={16} color={cat.color} />
+                      </View>
+                      <Text
+                        style={[
+                          s.categoryOptionLabel,
+                          isCurrent && { color: cat.color, fontWeight: '800' },
+                        ]}
+                      >
+                        {cat.label}
+                      </Text>
+                      {updatingCategory === cat.key ? (
+                        <ActivityIndicator size="small" color={cat.color} />
+                      ) : isCurrent ? (
+                        <Ionicons name="checkmark-circle" size={18} color={cat.color} />
+                      ) : (
+                        <View style={[s.categoryOptionDot, { backgroundColor: cat.color }]} />
+                      )}
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <View style={s.modalActionRow}>
+                <Pressable
+                  style={[s.modalCancelBtn, !!updatingCategory && { opacity: 0.5 }]}
+                  onPress={() => setImageToRecategorize(null)}
+                  disabled={!!updatingCategory}
+                >
+                  <Text style={s.modalCancelText}>Cancelar</Text>
+                </Pressable>
+              </View>
+            </ScrollView>
           </View>
-          <ThemedAlertHost />
+          {!!imageToRecategorize && <ThemedAlertHost />}
+        </View>
+      </Modal>
+
+      {/* Deletion Confirmation Modal */}
+      <Modal
+        visible={!!imageToDelete}
+        transparent
+        statusBarTranslucent
+        animationType="fade"
+        onRequestClose={() => !isDeleting && setImageToDelete(null)}
+      >
+        <View style={[s.modalOverlay, modalSafeAreaStyle]}>
+          <View style={s.modalContent}>
+            <ScrollView
+              bounces={false}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={s.modalScrollContent}
+            >
+              <View style={s.modalHeader}>
+                <View style={s.modalAlertIcon}>
+                  <Ionicons name="warning-outline" size={24} color={COLORS.error} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.modalTitle}>Excluir Imagem?</Text>
+                  <Text style={s.modalSub}>Esta ação é irreversível e removerá a imagem do sistema.</Text>
+                </View>
+              </View>
+
+              {imageToDelete && (
+                <View style={s.modalPreviewCard}>
+                  <Image
+                    source={{ uri: imageToDelete.url || `${API_BASE_URL}/api/images/${imageToDelete.id}` }}
+                    style={s.modalThumb}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.modalFileName} numberOfLines={2}>
+                      {imageToDelete.name}
+                    </Text>
+                    <Text style={s.modalCategoryText}>
+                      Categoria: {getCategoryMeta(imageToDelete.category).label}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              <View style={s.modalActionRow}>
+                <Pressable
+                  style={[s.modalCancelBtn, isDeleting && { opacity: 0.5 }]}
+                  onPress={() => setImageToDelete(null)}
+                  disabled={isDeleting}
+                >
+                  <Text style={s.modalCancelText}>Cancelar</Text>
+                </Pressable>
+
+                <Pressable
+                  style={[s.modalConfirmBtn, isDeleting && { opacity: 0.7 }]}
+                  onPress={handleConfirmDelete}
+                  disabled={isDeleting}
+                >
+                  {isDeleting ? (
+                    <ThreeDotsLoader color={COLORS.white} dotSize={7} />
+                  ) : (
+                    <>
+                      <Ionicons name="trash" size={16} color={COLORS.white} />
+                      <Text style={s.modalConfirmText}>Excluir</Text>
+                    </>
+                  )}
+                </Pressable>
+              </View>
+            </ScrollView>
+          </View>
+          {!!imageToDelete && <ThemedAlertHost />}
         </View>
       </Modal>
     </View>
@@ -558,33 +998,33 @@ export default function AdminImagens() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8F9FA' },
+  container: { flex: 1, backgroundColor: COLORS.backgroundLight },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFF',
-    paddingHorizontal: 16,
+    backgroundColor: COLORS.white,
+    paddingHorizontal: SPACING[4],
     paddingBottom: 14,
     paddingTop: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
-    gap: 12,
+    borderBottomColor: COLORS.borderLight,
+    gap: SPACING[3],
   },
-  backBtn: { padding: 4 },
-  headerTitle: { fontSize: 18, fontWeight: '800', color: '#1A1A1A' },
-  headerSub: { fontSize: 11, color: '#6B7280', marginTop: 1 },
+  backBtn: { padding: SPACING[1] },
+  headerTitle: { fontSize: 18, fontWeight: '800', color: COLORS.text },
+  headerSub: { fontSize: 11, color: COLORS.textSecondary, marginTop: 1 },
   refreshBtn: { padding: 6 },
 
-  scrollContent: { padding: 16, paddingBottom: 40 },
+  scrollContent: { padding: SPACING[4], paddingBottom: SPACING[10] },
 
   // Upload Card
   uploadCard: {
-    backgroundColor: '#FFF',
-    borderRadius: 20,
-    padding: 16,
+    backgroundColor: COLORS.white,
+    borderRadius: RADIUS['2xl'],
+    padding: SPACING[4],
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    marginBottom: 16,
+    borderColor: COLORS.border,
+    marginBottom: SPACING[4],
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
@@ -592,108 +1032,119 @@ const s = StyleSheet.create({
     elevation: 2,
     gap: 14,
   },
-  uploadCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  uploadCardHeader: { flexDirection: 'row', alignItems: 'center', gap: SPACING[3] },
   uploadIconBadge: {
     width: 40,
     height: 40,
-    borderRadius: 12,
-    backgroundColor: '#FEF3C7',
+    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.warningBg,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  uploadCardTitle: { fontSize: 15, fontWeight: '800', color: '#1A1A1A' },
-  uploadCardSub: { fontSize: 11, color: '#6B7280', marginTop: 1 },
-  uploadCategoryRow: { flexDirection: 'row', gap: 8 },
+  uploadCardTitle: { fontSize: 15, fontWeight: '800', color: COLORS.text },
+  uploadCardSub: { fontSize: 11, color: COLORS.textSecondary, marginTop: 1 },
+  uploadCategoryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING[2] },
   uploadCatBtn: {
-    flex: 1,
-    height: 36,
-    borderRadius: 10,
+    flexBasis: '47%',
+    flexGrow: 1,
+    minHeight: 44,
+    borderRadius: RADIUS.lg,
     borderWidth: 1.5,
-    borderColor: '#E5E7EB',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F9FAFB',
-  },
-  uploadCatBtnText: { fontSize: 12, fontWeight: '700', color: '#4B5563' },
-  uploadActionBtn: {
-    height: 46,
-    borderRadius: 14,
-    backgroundColor: '#E3A008',
+    borderColor: COLORS.border,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    shadowColor: '#E3A008',
+    paddingHorizontal: 6,
+    paddingVertical: 6,
+    gap: 4,
+    backgroundColor: COLORS.backgroundElevated,
+  },
+  uploadCatBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.textSecondary,
+    flexShrink: 1,
+    textAlign: 'center',
+  },
+  uploadActionBtn: {
+    minHeight: 46,
+    borderRadius: 14,
+    backgroundColor: COLORS.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING[2],
+    shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 6,
     elevation: 3,
   },
-  uploadingRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  uploadActionBtnText: { fontSize: 13, fontWeight: '800', color: '#FFF' },
+  uploadingRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING[2] },
+  uploadActionBtnText: { fontSize: 13, fontWeight: '800', color: COLORS.white },
 
   // Filter Section
-  filterSection: { marginBottom: 16, gap: 10 },
+  filterSection: { marginBottom: SPACING[4], gap: 10 },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFF',
+    backgroundColor: COLORS.white,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 12,
-    paddingHorizontal: 12,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.lg,
+    paddingHorizontal: SPACING[3],
     height: 40,
   },
-  searchIcon: { marginRight: 8 },
-  searchInput: { flex: 1, fontSize: 13, color: '#1A1A1A', paddingVertical: 0 },
+  searchIcon: { marginRight: SPACING[2] },
+  searchInput: { flex: 1, fontSize: 13, color: COLORS.text, paddingVertical: 0 },
   categoryPillRow: { flexDirection: 'row', gap: 6, paddingVertical: 2 },
   categoryPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFF',
+    backgroundColor: COLORS.white,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: COLORS.border,
     borderRadius: 10,
-    paddingHorizontal: 12,
+    paddingHorizontal: SPACING[3],
     paddingVertical: 6,
     gap: 6,
   },
-  categoryPillActive: { backgroundColor: '#1A1A1A', borderColor: '#1A1A1A' },
-  categoryPillText: { fontSize: 12, fontWeight: '700', color: '#4B5563' },
-  categoryPillTextActive: { color: '#FFF' },
+  categoryPillActive: { backgroundColor: COLORS.text, borderColor: COLORS.text },
+  categoryPillText: { fontSize: 12, fontWeight: '700', color: COLORS.textSecondary },
+  categoryPillTextActive: { color: COLORS.white },
   countBadge: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: COLORS.grayLight,
     borderRadius: 6,
     paddingHorizontal: 6,
     paddingVertical: 1,
   },
-  countBadgeActive: { backgroundColor: '#374151' },
-  countBadgeText: { fontSize: 10, fontWeight: '700', color: '#6B7280' },
-  countBadgeTextActive: { color: '#F9FAFB' },
+  countBadgeActive: { backgroundColor: COLORS.textSecondary },
+  countBadgeText: { fontSize: 10, fontWeight: '700', color: COLORS.textSecondary },
+  countBadgeTextActive: { color: COLORS.white },
 
   // Grid
   centerLoading: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 10 },
-  loadingText: { fontSize: 12, fontWeight: '600', color: '#6B7280' },
-  empty: { alignItems: 'center', paddingVertical: 60, gap: 8 },
+  loadingText: { fontSize: 12, fontWeight: '600', color: COLORS.textSecondary },
+  empty: { alignItems: 'center', paddingVertical: 60, gap: SPACING[2] },
   emptyIconContainer: {
     width: 64,
     height: 64,
-    borderRadius: 32,
-    backgroundColor: '#F3F4F6',
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.grayLight,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 4,
+    marginBottom: SPACING[1],
   },
-  emptyTitle: { fontSize: 14, fontWeight: '800', color: '#1A1A1A' },
-  emptyText: { color: '#9CA3AF', fontWeight: '500', fontSize: 12, textAlign: 'center' },
+  emptyTitle: { fontSize: 14, fontWeight: '800', color: COLORS.text },
+  emptyText: { color: COLORS.textMuted, fontWeight: '500', fontSize: 12, textAlign: 'center' },
 
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING[3] },
   imgCard: {
     width: '48%',
-    backgroundColor: '#FFF',
+    backgroundColor: COLORS.white,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: COLORS.border,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -701,7 +1152,7 @@ const s = StyleSheet.create({
     shadowRadius: 6,
     elevation: 1,
   },
-  imageWrapper: { width: '100%', height: 120, position: 'relative', backgroundColor: '#F3F4F6' },
+  imageWrapper: { width: '100%', height: 120, position: 'relative', backgroundColor: COLORS.grayLight },
   gridImage: { width: '100%', height: '100%' },
   overlayBadges: {
     position: 'absolute',
@@ -709,40 +1160,74 @@ const s = StyleSheet.create({
     left: 6,
     right: 6,
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     alignItems: 'center',
   },
-  categoryTag: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  categoryTagText: { fontSize: 9, fontWeight: '800', color: '#FFF', textTransform: 'uppercase' },
+  categoryTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    maxWidth: '100%',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  categoryTagText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: COLORS.white,
+    textTransform: 'uppercase',
+    flexShrink: 1,
+  },
+  bottomBadges: {
+    position: 'absolute',
+    bottom: 6,
+    right: 6,
+    left: 6,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 4,
+  },
+  formatBadge: {
+    backgroundColor: 'rgba(17,24,39,0.78)',
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  formatBadgeWebp: {
+    backgroundColor: 'rgba(5,150,105,0.9)',
+  },
+  formatBadgeText: { fontSize: 8, fontWeight: '800', color: COLORS.white, letterSpacing: 0.3 },
   dimensionBadge: {
     backgroundColor: 'rgba(0,0,0,0.7)',
     paddingHorizontal: 5,
     paddingVertical: 2,
     borderRadius: 6,
   },
-  dimensionBadgeText: { fontSize: 8, fontWeight: '700', color: '#FFF' },
+  dimensionBadgeText: { fontSize: 8, fontWeight: '700', color: COLORS.white },
 
-  imgCardBody: { padding: 10, gap: 4 },
-  imgName: { fontSize: 11, fontWeight: '700', color: '#1A1A1A' },
-  imgDate: { fontSize: 9, fontWeight: '500', color: '#9CA3AF' },
-  imgCardActions: { flexDirection: 'row', gap: 6, marginTop: 4 },
+  imgCardBody: { padding: 10, gap: SPACING[1] },
+  imgName: { fontSize: 11, fontWeight: '700', color: COLORS.text },
+  imgDate: { fontSize: 9, fontWeight: '500', color: COLORS.textMuted },
+  imgCardActions: { flexDirection: 'row', gap: 6, marginTop: SPACING[1] },
   actionBtn: {
     flex: 1,
-    height: 28,
-    borderRadius: 8,
-    backgroundColor: '#F3F4F6',
+    minHeight: 36,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.grayLight,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
+    gap: SPACING[1],
   },
   actionBtnCopied: { backgroundColor: '#ECFDF5' },
-  actionBtnText: { fontSize: 10, fontWeight: '700', color: '#4B5563' },
-  actionBtnTextCopied: { color: '#059669' },
+  actionBtnText: { fontSize: 10, fontWeight: '700', color: COLORS.textSecondary },
+  actionBtnTextCopied: { color: COLORS.success },
   deleteBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
+    minWidth: 36,
+    minHeight: 36,
+    borderRadius: RADIUS.md,
     backgroundColor: '#FEE2E2',
     alignItems: 'center',
     justifyContent: 'center',
@@ -754,66 +1239,108 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    paddingHorizontal: SPACING[5],
   },
   modalContent: {
     width: '100%',
     maxWidth: 380,
-    backgroundColor: '#FFF',
+    maxHeight: '85%',
+    backgroundColor: COLORS.white,
     borderRadius: 24,
-    padding: 20,
-    gap: 16,
+    padding: SPACING[5],
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.15,
     shadowRadius: 16,
     elevation: 8,
   },
-  modalHeader: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
+  modalScrollContent: {
+    gap: SPACING[4],
+  },
+  modalHeader: { flexDirection: 'row', gap: SPACING[3], alignItems: 'flex-start' },
   modalAlertIcon: {
     width: 40,
     height: 40,
-    borderRadius: 12,
+    borderRadius: RADIUS.lg,
     backgroundColor: '#FEE2E2',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  modalTitle: { fontSize: 16, fontWeight: '800', color: '#1A1A1A' },
-  modalSub: { fontSize: 11, color: '#6B7280', marginTop: 2, lineHeight: 16 },
+  modalEditIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.warningBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalTitle: { fontSize: 16, fontWeight: '800', color: COLORS.text },
+  modalSub: { fontSize: 11, color: COLORS.textSecondary, marginTop: 2, lineHeight: 16 },
   modalPreviewCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: COLORS.backgroundElevated,
     borderRadius: 14,
     padding: 10,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: COLORS.border,
   },
-  modalThumb: { width: 44, height: 44, borderRadius: 10, backgroundColor: '#E5E7EB' },
-  modalFileName: { fontSize: 11, fontWeight: '700', color: '#1A1A1A' },
-  modalCategoryText: { fontSize: 10, color: '#6B7280', marginTop: 2 },
-  modalActionRow: { flexDirection: 'row', gap: 10, marginTop: 4 },
-  modalCancelBtn: {
-    flex: 1,
-    height: 42,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
+  modalThumb: { width: 44, height: 44, borderRadius: 10, backgroundColor: COLORS.grayBorder },
+  modalFileName: { fontSize: 11, fontWeight: '700', color: COLORS.text },
+  modalCategoryText: { fontSize: 10, color: COLORS.textSecondary, marginTop: 2 },
+  categoryOptionsList: { gap: SPACING[2] },
+  categoryOptionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 44,
+    gap: 10,
+    paddingHorizontal: SPACING[3],
+    paddingVertical: 10,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.white,
+  },
+  categoryOptionIconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: RADIUS.md,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFF',
   },
-  modalCancelText: { fontSize: 13, fontWeight: '700', color: '#4B5563' },
+  categoryOptionLabel: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  categoryOptionDot: {
+    width: 8,
+    height: 8,
+    borderRadius: RADIUS.full,
+  },
+  modalActionRow: { flexDirection: 'row', gap: 10, marginTop: SPACING[1] },
+  modalCancelBtn: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.white,
+  },
+  modalCancelText: { fontSize: 13, fontWeight: '700', color: COLORS.textSecondary },
   modalConfirmBtn: {
     flex: 1,
-    height: 42,
-    borderRadius: 12,
-    backgroundColor: '#DC2626',
+    minHeight: 44,
+    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.error,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
   },
-  modalConfirmText: { fontSize: 13, fontWeight: '800', color: '#FFF' },
+  modalConfirmText: { fontSize: 13, fontWeight: '800', color: COLORS.white },
 });
