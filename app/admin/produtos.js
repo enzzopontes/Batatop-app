@@ -13,6 +13,7 @@ import * as Haptics from 'expo-haptics';
 import { AdminListSkeleton } from '../../components/Skeleton';
 import { ThemedAlertHost } from '../../components/ThemedAlert';
 import SwipeableBottomSheetModal from '../../components/SwipeableBottomSheetModal';
+import ProductImagePicker from '../../components/admin/ProductImagePicker';
 import { resolveProductImage } from '../../utils/resolveProductImage';
 
 function resolveImageUrl(image_url) {
@@ -157,6 +158,26 @@ export default function AdminProdutos() {
     if (isNaN(priceNum) || priceNum <= 0) {
       Alert.alert('Atenção', 'Preço inválido.');
       return;
+    }
+    const trimmedImageUrl = image_url.trim();
+    if (trimmedImageUrl) {
+      const isAllowedImageUrl =
+        !trimmedImageUrl.includes('..') &&
+        (/^https:\/\//i.test(trimmedImageUrl) ||
+          /^\/products\//i.test(trimmedImageUrl) ||
+          /^\/api\/images\//i.test(trimmedImageUrl) ||
+          (!trimmedImageUrl.includes(':') &&
+            !trimmedImageUrl.startsWith('/') &&
+            !trimmedImageUrl.includes('\\') &&
+            !/[\r\n\t]/.test(trimmedImageUrl)));
+
+      if (!isAllowedImageUrl) {
+        Alert.alert(
+          'URL de imagem inválida',
+          'Informe uma URL https://, um caminho /products/ ou /api/images/, ou um nome de arquivo válido.'
+        );
+        return;
+      }
     }
 
     setSaving(true);
@@ -402,6 +423,14 @@ export default function AdminProdutos() {
     };
   }, [products, adicionais]);
 
+  const usedImageUrls = useMemo(
+    () =>
+      products
+        .filter((p) => p.image_url && p.image_url.trim() && p.id !== editingProduct?.id)
+        .map((p) => p.image_url),
+    [products, editingProduct]
+  );
+
   return (
     <View style={[s.container, { paddingTop: insets.top }]}>
       {/* Header */}
@@ -551,7 +580,7 @@ export default function AdminProdutos() {
               <Ionicons name="close" size={20} color="#1A1A1A" />
             </Pressable>
           </View>
-            <ScrollView contentContainerStyle={s.modalBody}>
+            <ScrollView contentContainerStyle={s.modalBody} keyboardShouldPersistTaps="handled">
               <Field
                 label="Nome *"
                 placeholder="Ex: Batata Strogonoff"
@@ -572,11 +601,18 @@ export default function AdminProdutos() {
                 onChangeText={(v) => setProdForm((f) => ({ ...f, price: v }))}
                 keyboardType="decimal-pad"
               />
+              <ProductImagePicker
+                value={prodForm.image_url}
+                onChange={(url) => setProdForm((p) => ({ ...p, image_url: url }))}
+                usedUrls={usedImageUrls}
+                visible={prodModalVisible}
+              />
               <Field
-                label="URL da Imagem"
+                label="Ou cole a URL manualmente (opcional)"
                 placeholder="/products/foto.jpg ou https://..."
                 value={prodForm.image_url}
                 onChangeText={(v) => setProdForm((f) => ({ ...f, image_url: v }))}
+                compact
               />
 
               <Text style={s.fieldLabel}>Categoria *</Text>
@@ -834,18 +870,24 @@ function ProductCard({ product, onEdit, onDelete, onToggle }) {
   );
 }
 
-function Field({ label, placeholder, value, onChangeText, multiline, keyboardType }) {
+function Field({ label, placeholder, value, onChangeText, multiline, keyboardType, compact }) {
   return (
     <View style={{ marginBottom: 14 }}>
-      <Text style={s.fieldLabel}>{label}</Text>
+      <Text style={[s.fieldLabel, compact && s.fieldLabelCompact]}>{label}</Text>
       <TextInput
-        style={[s.input, multiline && { height: 75, textAlignVertical: 'top' }]}
+        style={[
+          s.input,
+          compact && s.inputCompact,
+          multiline && { height: 75, textAlignVertical: 'top' },
+        ]}
         placeholder={placeholder}
         value={value}
         onChangeText={onChangeText}
         multiline={multiline}
         keyboardType={keyboardType || 'default'}
         placeholderTextColor="#9CA3AF"
+        autoCapitalize={compact ? 'none' : undefined}
+        autoCorrect={compact ? false : undefined}
       />
     </View>
   );
@@ -1071,6 +1113,13 @@ const s = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
+  fieldLabelCompact: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#6B7280',
+    textTransform: 'none',
+    letterSpacing: 0,
+  },
   input: {
     backgroundColor: '#FFF',
     borderWidth: 1,
@@ -1081,6 +1130,13 @@ const s = StyleSheet.create({
     fontSize: 14,
     color: '#1A1A1A',
     fontWeight: '600',
+  },
+  inputCompact: {
+    paddingVertical: 8,
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#4B5563',
+    backgroundColor: '#F9FAFB',
   },
 
   categoryRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
