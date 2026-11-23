@@ -59,6 +59,44 @@ function mimeFromExtension(source) {
   return '';
 }
 
+const BASE64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+function decodeBase64Prefix(base64, maxBytes = 12) {
+  const clean = base64.replace(/\s+/g, '');
+  const bytes = [];
+  for (let i = 0; i + 3 < clean.length && bytes.length < maxBytes; i += 4) {
+    const c1 = BASE64_CHARS.indexOf(clean[i]);
+    const c2 = BASE64_CHARS.indexOf(clean[i + 1]);
+    const c3 = clean[i + 2] === '=' ? -1 : BASE64_CHARS.indexOf(clean[i + 2]);
+    const c4 = clean[i + 3] === '=' ? -1 : BASE64_CHARS.indexOf(clean[i + 3]);
+    if (c1 < 0 || c2 < 0 || (clean[i + 2] !== '=' && c3 < 0) || (clean[i + 3] !== '=' && c4 < 0)) {
+      return null;
+    }
+    bytes.push((c1 << 2) | (c2 >> 4));
+    if (c3 >= 0 && bytes.length < maxBytes) {
+      bytes.push(((c2 & 15) << 4) | (c3 >> 2));
+    }
+    if (c4 >= 0 && bytes.length < maxBytes) {
+      bytes.push(((c3 & 3) << 6) | c4);
+    }
+  }
+  return bytes;
+}
+
+function hasValidImageMagicBytes(base64, mimeType) {
+  if (typeof base64 !== 'string' || !base64) return false;
+  const trimmed = base64.trim();
+  if (mimeType === 'image/jpeg') return trimmed.startsWith('/9j/');
+  if (mimeType === 'image/png') return trimmed.startsWith('iVBORw0KGgo');
+  if (mimeType === 'image/webp') {
+    if (!trimmed.startsWith('UklGR')) return false;
+    const header = decodeBase64Prefix(trimmed.slice(0, 24), 12);
+    if (!header || header.length < 12) return false;
+    return header[8] === 0x57 && header[9] === 0x45 && header[10] === 0x42 && header[11] === 0x50;
+  }
+  return false;
+}
+
 function sanitizeFileName(rawName, fallbackExt, prefix = 'product') {
   const fallback = `${prefix}-${Date.now()}.${fallbackExt}`;
   if (!rawName || typeof rawName !== 'string') return fallback;
@@ -381,11 +419,11 @@ export default function ProductImagePicker({
 
       // Converte automaticamente PNG, JPG, HEIC, etc. para WebP antes do upload
       if (uploadUri && ImageManipulator?.manipulateAsync && ImageManipulator?.SaveFormat?.WEBP) {
+        const actions =
+          typeof asset.width === 'number' && asset.width > 1200
+            ? [{ resize: { width: 1200 } }]
+            : [];
         try {
-          const actions =
-            typeof asset.width === 'number' && asset.width > 1200
-              ? [{ resize: { width: 1200 } }]
-              : [];
           const manipulated = await ImageManipulator.manipulateAsync(uploadUri, actions, {
             compress: 0.8,
             format: ImageManipulator.SaveFormat.WEBP,
@@ -393,13 +431,27 @@ export default function ProductImagePicker({
           });
           if (manipulated?.uri) {
             uploadUri = manipulated.uri;
-            if (manipulated.base64) {
-              uploadBase64 = manipulated.base64;
-            }
+            uploadBase64 = manipulated.base64 || null;
             mimeType = 'image/webp';
           }
-        } catch {
-          // Fallback seguro para formato original caso o módulo nativo não suporte WebP no build atual
+        } catch (webpError) {
+          console.warn('Conversão para WebP falhou, tentando fallback JPEG:', webpError);
+          if (ImageManipulator?.SaveFormat?.JPEG) {
+            try {
+              const jpegManipulated = await ImageManipulator.manipulateAsync(uploadUri, actions, {
+                compress: 0.8,
+                format: ImageManipulator.SaveFormat.JPEG,
+                base64: true,
+              });
+              if (jpegManipulated?.uri) {
+                uploadUri = jpegManipulated.uri;
+                uploadBase64 = jpegManipulated.base64 || null;
+                mimeType = 'image/jpeg';
+              }
+            } catch {
+              // Fallback seguro para formato original caso o módulo nativo não suporte WebP no build atual
+            }
+          }
         }
       }
 
@@ -430,6 +482,11 @@ export default function ProductImagePicker({
 
       if (blob && (typeof blob.size !== 'number' || blob.size <= 0 || blob.size > MAX_FILE_SIZE_BYTES)) {
         Alert.alert('Imagem muito grande', 'Escolha uma imagem válida com até 5MB.');
+        return;
+      }
+
+      if (uploadBase64 && !hasValidImageMagicBytes(uploadBase64, mimeType)) {
+        Alert.alert('Imagem inválida', 'O conteúdo do arquivo não corresponde a uma imagem válida (JPG, PNG ou WebP).');
         return;
       }
 
@@ -757,7 +814,9 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   uploadBtn: {
-    height: 42,
+    minHeight: 44,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     borderRadius: 12,
     backgroundColor: '#E3A008',
     flexDirection: 'row',
@@ -766,6 +825,8 @@ const s = StyleSheet.create({
     gap: 8,
   },
   uploadBtnText: {
+    flexShrink: 1,
+    textAlign: 'center',
     fontSize: 13,
     fontWeight: '800',
     color: '#1A1A1A',
