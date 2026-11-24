@@ -114,25 +114,25 @@ export default function PrimaryButton({
           <View style={styles.spaceBetweenContainer}>
             <View style={styles.leftGroup}>
               {leftIcon && <View style={styles.leftIconContainer}>{leftIcon}</View>}
-              <Text style={[styles.title, textStyle]}>{title}</Text>
+              <Text style={[styles.title, textStyle]} numberOfLines={1}>{title}</Text>
             </View>
             {badge != null && (
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>{badge}</Text>
               </View>
             )}
-            {rightText && <Text style={[styles.rightText, textStyle]}>{rightText}</Text>}
+            {rightText && <Text style={[styles.rightText, textStyle]} numberOfLines={1}>{rightText}</Text>}
           </View>
         ) : (
           <>
             {leftIcon && <View style={styles.leftIconContainer}>{leftIcon}</View>}
-            <Text style={[styles.title, textStyle]}>{title}</Text>
+            <Text style={[styles.title, textStyle]} numberOfLines={1}>{title}</Text>
             {badge != null && (
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>{badge}</Text>
               </View>
             )}
-            {rightText && <Text style={[styles.rightText, textStyle]}>{rightText}</Text>}
+            {rightText && <Text style={[styles.rightText, textStyle]} numberOfLines={1}>{rightText}</Text>}
           </>
         )}
       </Animated.View>
@@ -183,20 +183,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 8,
   },
   leftGroup: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexShrink: 1,
   },
   title: {
     color: COLORS.white,
     fontSize: 15,
     fontWeight: '700',
+    flexShrink: 1,
   },
   rightText: {
     color: COLORS.white,
     fontSize: 15,
     fontWeight: '700',
+    flexShrink: 0,
     marginLeft: 6,
   },
   badge: {

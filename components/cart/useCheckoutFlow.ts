@@ -301,10 +301,10 @@ export function useCheckoutFlow() {
       }
     }
   }
-  const baseTotal = Math.max(0, subtotal - discount) + deliveryFee;
+  const baseTotal = Math.round((Math.max(0, subtotal - discount) + deliveryFee) * 100) / 100;
   const total =
     selectedInstallment && selectedInstallment.installments > 1 && paymentMethod === 'cartão de crédito'
-      ? selectedInstallment.totalAmount
+      ? Math.round(selectedInstallment.totalAmount * 100) / 100
       : baseTotal;
 
   const installmentLabel = useMemo(() => {
@@ -640,7 +640,7 @@ export function useCheckoutFlow() {
       if (isNaN(numericChange) || numericChange <= 0) {
         return 'Valor de troco inválido';
       }
-      if (numericChange < total) {
+      if (Math.round(numericChange * 100) < Math.round(total * 100)) {
         return `O valor do troco (R$ ${numericChange.toFixed(2).replace('.', ',')}) não pode ser menor que o total do pedido (R$ ${total.toFixed(2).replace('.', ',')})`;
       }
     }
@@ -1115,7 +1115,7 @@ export function useCheckoutFlow() {
         showErrorAlert('Por favor, informe um valor de troco válido.', 'Troco inválido');
         return;
       }
-      if (numericChange < total) {
+      if (Math.round(numericChange * 100) < Math.round(total * 100)) {
         showErrorAlert(`O valor do troco (R$ ${numericChange.toFixed(2).replace('.', ',')}) não pode ser menor que o total do pedido (R$ ${total.toFixed(2).replace('.', ',')}).`, 'Troco insuficiente');
         return;
       }
@@ -1181,6 +1181,8 @@ export function useCheckoutFlow() {
       preco: product.precoFormatado || `R$ ${Number(product.preco).toFixed(2).replace('.', ',')}`,
       precoNum: Math.round(Number(product.preco) * 100),
       imagem: product.imagem,
+      categoria: product.categoria || product.category || '',
+      category: product.category || product.categoria || '',
       quantidade: 1,
       adicionais: [],
       observacoes: '',

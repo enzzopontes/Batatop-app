@@ -376,11 +376,23 @@ export default function ProdutoDetail() {
 
   const calcularPrecoTotal = () => {
     if (!produto) return 0;
-    return (produto.preco + totalAdicionais) * quantidade;
+    const basePrice = Number.isFinite(Number(produto.preco)) ? Number(produto.preco) : 0;
+    const extrasPrice = Number.isFinite(Number(totalAdicionais)) ? Number(totalAdicionais) : 0;
+    const produtoCents = Math.round((basePrice + extrasPrice) * 100) * quantidade;
+    const bebidasCents = bebidas.reduce((acc, bebida) => {
+      const qty = bebidasSelecionadas[bebida.id] || 0;
+      if (qty <= 0) return acc;
+      const drinkPrice = Number.isFinite(Number(bebida.price)) ? Number(bebida.price) : 0;
+      return acc + Math.round(drinkPrice * 100) * qty;
+    }, 0);
+    return (produtoCents + bebidasCents) / 100;
   };
 
-  const formatPreco = (valor) =>
-    valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const formatPreco = (valor) => {
+    const parsed = Number(valor);
+    const safe = Number.isFinite(parsed) ? parsed : 0;
+    return `R$ ${safe.toFixed(2).replace('.', ',')}`;
+  };
 
   // Monta a lista de itens que iriam pro carrinho (produto principal +
   // bebidas avulsas), sem efeito colateral nenhum. Extraído do handler de
@@ -658,7 +670,7 @@ export default function ProdutoDetail() {
                       <View style={s.adicionalInfo}>
                         <Text style={s.adicionalNome}>{item.name}</Text>
                         <Text style={s.adicionalPreco}>
-                          + R$ {item.price.toFixed(2).replace('.', ',')}
+                          + R$ {(Number.isFinite(Number(item.price)) ? Number(item.price) : 0).toFixed(2).replace('.', ',')}
                         </Text>
                       </View>
                       <View style={[s.adicionalQtyContainer, qty > 0 && s.adicionalQtyContainerAtivo]}>
@@ -709,7 +721,7 @@ export default function ProdutoDetail() {
                     <View style={s.adicionalInfo}>
                       <Text style={s.adicionalNome}>{bebida.name}</Text>
                       <Text style={s.adicionalPreco}>
-                        + R$ {bebida.price.toFixed(2).replace('.', ',')}
+                        + R$ {(Number.isFinite(Number(bebida.price)) ? Number(bebida.price) : 0).toFixed(2).replace('.', ',')}
                       </Text>
                     </View>
                     <View style={s.bebidaRight}>
@@ -896,13 +908,14 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
     paddingVertical: 14,
   },
   adicionalItemDivider: {
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
-  adicionalInfo: { flex: 1 },
+  adicionalInfo: { flex: 1, paddingRight: 8 },
   adicionalNome: { fontSize: 15, fontWeight: '600', color: COLORS.text },
   adicionalPreco: { fontSize: 13, color: '#FFB800', marginTop: 2 },
   // Pílula flutuante "- 1 +": só aparece com fundo/sombra quando tem

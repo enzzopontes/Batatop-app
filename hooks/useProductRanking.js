@@ -59,22 +59,26 @@ export const useProductRanking = () => {
       });
 
       // 5. Mapeia no formato esperado pelas telas do aplicativo React Native
-      const produtosRankeados = sortedProducts.map((produto, index) => ({
-        id: produto.id,
-        nome: produto.name,
-        descricao: produto.description,
-        descricaoLonga: produto.description,
-        preco: produto.price,
-        precoFormatado: `R$ ${produto.price.toFixed(2).replace('.', ',')}`,
-        categoria: produto.category ? produto.category.charAt(0).toUpperCase() + produto.category.slice(1) : 'Outros',
-        imagem: resolveProductImage(produto.image_url, null),
-        vendas: salesCounts[produto.id] || 0,
-        avaliacoes: 4.5,
-        avaliacoesCount: 0,
-        tempo: '15-20',
-        destaque: produto.available,
-        disponivel: produto.available,
-      }));
+      const produtosRankeados = sortedProducts.map((produto, index) => {
+        const parsedPrice = Number(produto.price);
+        const safePrice = Number.isFinite(parsedPrice) ? parsedPrice : 0;
+        return {
+          id: produto.id,
+          nome: produto.name,
+          descricao: produto.description,
+          descricaoLonga: produto.description,
+          preco: safePrice,
+          precoFormatado: `R$ ${safePrice.toFixed(2).replace('.', ',')}`,
+          categoria: produto.category ? produto.category.charAt(0).toUpperCase() + produto.category.slice(1) : 'Outros',
+          imagem: resolveProductImage(produto.image_url, null),
+          vendas: salesCounts[produto.id] || 0,
+          avaliacoes: 4.5,
+          avaliacoesCount: 0,
+          tempo: '15-20',
+          destaque: produto.available,
+          disponivel: produto.available,
+        };
+      });
 
       setProdutos(produtosRankeados);
       setError(null);
