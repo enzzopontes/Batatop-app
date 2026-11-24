@@ -13,10 +13,12 @@ import { requestAuthSheet } from '../../utils/authSheetRequest';
 import ProfileAccordionItem from '../../components/ProfileAccordionItem';
 import { isAdminUser, checkIsAdmin } from '../../utils/isAdmin';
 import { ProfileSkeleton } from '../../components/Skeleton';
+import { ScrollReveal, useRevealScope } from '../../components/ui/ScrollReveal';
 
 export default function Profile() {
   const router = useRouter();
   const { onScroll, resetHeader } = useScrollHandler();
+  const reveal = useRevealScope('profile');
   const insets = useSafeAreaInsets();
 
   const [user, setUser] = useState(null);
@@ -126,10 +128,13 @@ export default function Profile() {
     return (
       <View style={sg.container}>
         <ScrollView
+          onScroll={reveal.onScroll}
+          scrollEventThrottle={16}
           contentContainerStyle={[sg.scrollContent, { paddingTop: Math.max(insets.top, 16) + 12 }]}
           showsVerticalScrollIndicator={false}
         >
           {/* Header */}
+<ScrollReveal scope={reveal} revealKey="profile_guest-header">
           <View style={sg.headerRow}>
             <Text style={sg.headerText}>Falta pouco para matar sua fome!</Text>
             <View style={sg.illustrationWrapper}>
@@ -140,12 +145,14 @@ export default function Profile() {
               />
             </View>
           </View>
+</ScrollReveal>
 
           <Pressable style={sg.loginButton} onPress={() => requestAuthSheet()}>
             <Text style={sg.loginButtonText}>Entrar ou cadastrar-se</Text>
           </Pressable>
 
           {/* Notificações — sem accordion, abre a page direto (gated) */}
+<ScrollReveal scope={reveal} revealKey="profile_guest-notifications">
           <Pressable
             style={sg.simpleRow}
             onPress={() => requireAuth(() => router.push('/notifications'))}
@@ -157,8 +164,10 @@ export default function Profile() {
             <Ionicons name="chevron-forward" size={15} color="#B0B0B0" />
           </Pressable>
           <View style={sg.divider} />
+</ScrollReveal>
 
           {/* Conta -> só Endereços */}
+          <ScrollReveal scope={reveal} revealKey="profile_guest-conta">
           <ProfileAccordionItem
             icon="person-outline"
             title="Conta"
@@ -170,8 +179,10 @@ export default function Profile() {
               },
             ]}
           />
+          </ScrollReveal>
 
           {/* Ajuda e Termos */}
+          <ScrollReveal scope={reveal} revealKey="profile_guest-ajuda">
           <ProfileAccordionItem
             icon="help-circle-outline"
             title="Ajuda e Termos"
@@ -183,6 +194,7 @@ export default function Profile() {
               { label: 'Política de Reembolso (CDC)', onPress: () => router.push({ pathname: '/ajuda/artigo/politica-de-cancelamento', params: { headerTitle: 'REEMBOLSO E CANCELAMENTO' } }) },
             ]}
           />
+          </ScrollReveal>
 
           <View style={{ alignItems: 'center', marginTop: 18, marginBottom: 20 }}>
             <Text style={sg.versionText}>BatataTop Delivery • Versão 2.2.0</Text>
@@ -227,7 +239,7 @@ export default function Profile() {
       <ScrollView
         style={s.scroll}
         showsVerticalScrollIndicator={false}
-        onScroll={onScroll}
+        onScroll={(e) => { onScroll(e); reveal.onScroll(); }}
         scrollEventThrottle={16}
         contentContainerStyle={{
           paddingTop: Math.max(insets.top, 16) + 12,
@@ -237,6 +249,7 @@ export default function Profile() {
       >
         {/* Header: avatar + nome — igual ao print de referência (sem card,
             sem e-mail/CPF aqui; isso mora em "Dados da conta" agora) */}
+<ScrollReveal scope={reveal} revealKey="profile_header">
         <View style={s.profileHeaderRow}>
           <View style={s.avatarWrapper}>
             {customAvatarUrl ? (
@@ -255,12 +268,14 @@ export default function Profile() {
             {displayName}
           </Text>
         </View>
+</ScrollReveal>
 
         {/* Card de pagamento — branco, igual à referência: logo Batata Top
             e a linha "Pagamentos" dentro do mesmo card branco, com a
             "curva" de espiada (mesma técnica do card bloqueado do
             CouponCard) revelando a caixa cinza "Gerencie suas formas de
             pagamento" por baixo. */}
+<ScrollReveal scope={reveal} revealKey="profile_payment">
         <Pressable style={s.paymentCardWrapper} onPress={() => router.push('/profile/payments')}>
           <View style={s.paymentTopCard}>
             <Image
@@ -282,10 +297,12 @@ export default function Profile() {
             <Text style={s.paymentHintText}>Gerencie suas formas de pagamento</Text>
           </View>
         </Pressable>
+</ScrollReveal>
 
         {/* Linhas simples (sem accordion) — Notificações continua igual ao
             print; "Conversas" e "Clube Batata Top" foram removidos a
             pedido (não existe rota/feature pra eles no projeto ainda). */}
+<ScrollReveal scope={reveal} revealKey="profile_notifications">
         <Pressable style={s.simpleRow} onPress={() => router.push('/notifications')}>
           <View style={s.simpleIconBox}>
             <Ionicons name="notifications-outline" size={19} color="#7A7A7A" />
@@ -301,12 +318,13 @@ export default function Profile() {
           <Ionicons name="chevron-forward" size={15} color="#B0B0B0" />
         </Pressable>
         <View style={s.simpleDivider} />
+</ScrollReveal>
 
         {/* Painel Administrativo — não está no print (é feature própria do
             app, não do iFood), mas mantido pra não perder funcionalidade
             existente. Só aparece pra admin. */}
         {isAdmin && (
-          <>
+          <ScrollReveal scope={reveal} revealKey="profile_admin">
             <Pressable style={s.simpleRow} onPress={() => router.push('/admin')}>
               <View style={[s.simpleIconBox, s.adminIconBox]}>
                 <Ionicons name="shield-half-outline" size={19} color="#D97706" />
@@ -315,10 +333,11 @@ export default function Profile() {
               <Ionicons name="chevron-forward" size={15} color="#B0B0B0" />
             </Pressable>
             <View style={s.simpleDivider} />
-          </>
+          </ScrollReveal>
         )}
 
         {/* Recompensas e Benefícios */}
+        <ScrollReveal scope={reveal} revealKey="profile_acc-recompensas">
         <ProfileAccordionItem
           icon="gift-outline"
           title="Recompensas e Benefícios"
@@ -327,8 +346,10 @@ export default function Profile() {
             { label: 'Cupons', onPress: () => router.push('/cupons') },
           ]}
         />
+        </ScrollReveal>
 
         {/* Conta */}
+        <ScrollReveal scope={reveal} revealKey="profile_acc-conta">
         <ProfileAccordionItem
           icon="person-outline"
           title="Conta"
@@ -338,8 +359,10 @@ export default function Profile() {
             { label: 'Dados da conta', onPress: () => router.push('/profile/data') },
           ]}
         />
+        </ScrollReveal>
 
         {/* Configurações */}
+        <ScrollReveal scope={reveal} revealKey="profile_acc-configuracoes">
         <ProfileAccordionItem
           icon="settings-outline"
           title="Configurações"
@@ -350,8 +373,10 @@ export default function Profile() {
             { label: 'Sair da conta', onPress: handleLogout, danger: true },
           ]}
         />
+        </ScrollReveal>
 
         {/* Ajuda e Termos */}
+        <ScrollReveal scope={reveal} revealKey="profile_acc-ajuda">
         <ProfileAccordionItem
           icon="help-circle-outline"
           title="Ajuda e Termos"
@@ -363,6 +388,7 @@ export default function Profile() {
             { label: 'Política de Reembolso (CDC)', onPress: () => router.push({ pathname: '/ajuda/artigo/politica-de-cancelamento', params: { headerTitle: 'REEMBOLSO E CANCELAMENTO' } }) },
           ]}
         />
+        </ScrollReveal>
 
         <View style={{ alignItems: 'center', marginTop: 18, marginBottom: 20 }}>
           <Text style={s.versionText}>BatataTop Delivery • Versão 2.2.0</Text>

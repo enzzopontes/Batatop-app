@@ -29,6 +29,7 @@ import * as Location from 'expo-location';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../constants/theme';
 import { useProductRanking } from '../hooks/useProductRanking';
 import BannerCarousel from '../components/BannerCarousel';
+import { ScrollReveal, useRevealScope } from '../components/ui/ScrollReveal';
 import CategoriasFlutuantes from '../components/CategoriasFlutuantes';
 import RestaurantHeaderCard from '../components/RestaurantHeaderCard';
 import { CATEGORIAS, handleCategoriaPress } from '../constants/categorias';
@@ -187,6 +188,7 @@ export default function Home() {
   const headerHeight = useHeaderHeight();
   const headerHidden = useHeaderHidden();
   const scrollRef = useRef(null);
+  const reveal = useRevealScope('home');
   const couponScrollRef = useRef(null);
   const couponTimerRef = useRef(null);
   const couponIndexRef = useRef(0);
@@ -380,13 +382,14 @@ export default function Home() {
         style={s.scroll}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: SPACING[10] }}
-        onScroll={onScroll}
+        onScroll={(e) => { onScroll(e); reveal.onScroll(); }}
         scrollEventThrottle={16}
       >
         {/* Espaço reservado pro header — fixo, não empurra mais nada */}
         <View style={{ height: headerSpacerHeight }} />
 
         {/* Capa da Batata igual ao site (Hero) com gradiente suave na base */}
+        <ScrollReveal scope={reveal} revealKey="home_hero">
         <View style={s.heroCoverContainer}>
           <ExpoImage
             source={require('../assets/products/costela.jpg')}
@@ -400,10 +403,11 @@ export default function Home() {
             style={s.heroCoverGradient}
           />
         </View>
+        </ScrollReveal>
 
-        <View style={s.headerCardWrap}>
+        <ScrollReveal scope={reveal} revealKey="home_header-card" style={s.headerCardWrap}>
           <RestaurantHeaderCard />
-        </View>
+        </ScrollReveal>
 
         {/* ══════════════════ CATEGORIAS (estilo iFood, grid 3x2) ══════════════════ */}
         <View
@@ -412,9 +416,9 @@ export default function Home() {
         >
           <View style={s.catGrid}>
             {CATEGORIAS.map((cat) => (
+              <ScrollReveal key={cat.label} scope={reveal} revealKey={`home_cat_${cat.label}`} style={s.catGridSlot}>
               <Pressable
-                key={cat.label}
-                style={[s.catGridItem, cat.disabled && s.catGridItemDisabled]}
+                style={[s.catGridPress, cat.disabled && s.catGridItemDisabled]}
                 disabled={cat.disabled}
                 onPress={() => handleCategoriaPress(router, cat)}
               >
@@ -423,17 +427,18 @@ export default function Home() {
                 </View>
                 <Text style={s.catGridLabel} numberOfLines={1}>{cat.label}</Text>
               </Pressable>
+              </ScrollReveal>
             ))}
           </View>
         </View>
 
         {/* ══════════════════ BANNERS (carrossel) ══════════════════ */}
-        <View style={s.section}>
+        <ScrollReveal scope={reveal} revealKey="home_banners" style={s.section}>
           <BannerCarousel />
-        </View>
+        </ScrollReveal>
 
         {/* ══════════════════ DESTAQUES (scroll horizontal) ══════════════════ */}
-        <View style={s.section}>
+        <ScrollReveal scope={reveal} revealKey="home_destaques" style={s.section}>
           <View style={s.sectionRow}>
             <Text style={s.sectionTitle}>Destaques</Text>
             <Pressable onPress={() => router.push('/cardapio')} style={s.verTodos}>
@@ -455,11 +460,11 @@ export default function Home() {
               ))}
             </ScrollView>
           )}
-        </View>
+        </ScrollReveal>
 
         {/* ══════════════════ CUPONS (estilo idêntico à página de cupons, com rotação automática igual ao site) ══════════════════ */}
         {displayCoupons && displayCoupons.length > 0 ? (
-          <View style={s.section}>
+          <ScrollReveal scope={reveal} revealKey="home_cupons" style={s.section}>
             <View style={s.sectionRow}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <View style={s.cupomSectionIcon}>
@@ -548,11 +553,11 @@ export default function Home() {
                 ))}
               </View>
             ) : null}
-          </View>
+          </ScrollReveal>
         ) : null}
 
         <View style={s.section}>
-          <View style={s.cardapioHeaderWrap}>
+          <ScrollReveal scope={reveal} revealKey="home_batatas_header" style={s.cardapioHeaderWrap}>
             <View style={s.cardapioHeaderRow}>
               <View style={s.cardapioHeaderLeft}>
                 <MaterialCommunityIcons name="carrot" size={30} color={COLORS.primary} />
@@ -564,21 +569,23 @@ export default function Home() {
               </Pressable>
             </View>
             <Text style={s.cardapioDesc}>Crocantes por fora, recheadas por dentro e feitas na hora</Text>
-          </View>
+          </ScrollReveal>
 
           {loading ? (
             <HomeGridSkeleton count={4} />
           ) : (
             <View style={s.prodGrid}>
               {maisPedidos.map((p, i) => (
-                <ProdutoCard key={p.id} produto={p} index={i} />
+                <ScrollReveal key={p.id} scope={reveal} revealKey={`home_batata_${p.id}`}>
+                  <ProdutoCard produto={p} index={i} />
+                </ScrollReveal>
               ))}
             </View>
           )}
         </View>
 
         <View style={s.section}>
-          <View style={s.cardapioHeaderWrap}>
+          <ScrollReveal scope={reveal} revealKey="home_macarrao_header" style={s.cardapioHeaderWrap}>
             <View style={s.cardapioHeaderRow}>
               <View style={s.cardapioHeaderLeft}>
                 <MaterialCommunityIcons name="pasta" size={30} color={COLORS.primary} />
@@ -590,14 +597,16 @@ export default function Home() {
               </Pressable>
             </View>
             <Text style={s.cardapioDesc}>Massas artesanais com molhos irresistíveis</Text>
-          </View>
+          </ScrollReveal>
 
           {loading ? (
             <HomeGridSkeleton count={4} />
           ) : (
             <View style={s.prodGrid}>
               {maisPedidosMacarrao.map((p, i) => (
-                <ProdutoCard key={p.id} produto={p} index={i} />
+                <ScrollReveal key={p.id} scope={reveal} revealKey={`home_macarrao_${p.id}`}>
+                  <ProdutoCard produto={p} index={i} />
+                </ScrollReveal>
               ))}
             </View>
           )}
@@ -714,6 +723,8 @@ const s = StyleSheet.create({
     width: '30%', // 3 colunas (era 48% / 2 colunas)
     alignItems: 'center',
   },
+  catGridSlot: { width: '30%' },
+  catGridPress: { width: '100%', alignItems: 'center' },
   catGridItemDisabled: {
     opacity: 0.5,
   },

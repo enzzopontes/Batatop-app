@@ -12,6 +12,7 @@ import {
   Animated,
   StatusBar,
 } from 'react-native';
+import { ScrollReveal, useRevealScope } from '../components/ui/ScrollReveal';
 import { useRouter } from 'expo-router';
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Ionicons } from '@expo/vector-icons';
@@ -526,6 +527,7 @@ function CompletedOrderCard({
 
 // ─── Tela Principal de Pedidos ────────────────────────────────────────────────
 export default function PedidosScreen() {
+  const reveal = useRevealScope('pedidos');
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const tabBarHeight = useTabBarHeight();
@@ -898,17 +900,20 @@ export default function PedidosScreen() {
           },
         ]}
         showsVerticalScrollIndicator={false}
+        onScroll={reveal.onScroll}
+        scrollEventThrottle={16}
       >
         {/* ── ZONA "EM ANDAMENTO" (TOPO) ─────────────────────────────────── */}
         {activeOrders.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionHeaderTitle}>Em andamento</Text>
             {activeOrders.map((order) => (
+              <ScrollReveal key={order.id} scope={reveal} revealKey={`pedidos_${order.id}`}>
               <ActiveOrderCard
-                key={order.id}
                 order={order}
                 onDetails={handleDetails}
               />
+              </ScrollReveal>
             ))}
           </View>
         )}
@@ -922,8 +927,8 @@ export default function PedidosScreen() {
               <View key={dateKey} style={styles.dateGroup}>
                 <Text style={styles.dateGroupTitle}>{dateKey}</Text>
                 {groupedHistory[dateKey].map((order) => (
+                  <ScrollReveal key={order.id} scope={reveal} revealKey={`pedidos_${order.id}`}>
                   <CompletedOrderCard
-                    key={order.id}
                     order={order}
                     onDetails={handleDetails}
                     onOpenFeedback={handleOpenFeedback}
@@ -931,6 +936,7 @@ export default function PedidosScreen() {
                     onReorder={handleReorder}
                     onHelp={handleHelp}
                   />
+                  </ScrollReveal>
                 ))}
               </View>
             ))}

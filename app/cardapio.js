@@ -20,6 +20,7 @@ import { CardapioGridSkeleton } from '../components/Skeleton';
 import { useProductRanking } from '../hooks/useProductRanking';
 import { useBuscarProdutos } from '../hooks/useProdutos';
 import { useCart } from '../utils/cartStore';
+import { ScrollReveal, useRevealScope, REVEAL_VIEWABILITY_CONFIG } from '../components/ui/ScrollReveal';
 
 // MAPEAMENTO: label visível → valor exato no campo `category` do Supabase
 const CATEGORIA_MAP = {
@@ -95,7 +96,7 @@ const ProdutoCard = memo(function ProdutoCard({ produto }) {
     : { uri: produto.imagem };
 
   return (
-    <Pressable style={s.prodCard} onPress={() => router.push(`/produto/${produto.id}`)}>
+    <Pressable style={[s.prodCard, s.prodCardFill]} onPress={() => router.push(`/produto/${produto.id}`)}>
       <View style={s.prodImgWrapper}>
         <ExpoImage
           source={imageSource}
@@ -185,6 +186,7 @@ export default function Cardapio() {
   const { count: totalItens } = useCart();
 
   const scrollRef = useRef(null);
+  const reveal = useRevealScope('cardapio');
   // guarda o Y de cada seção dentro do ScrollView, preenchido pelo onLayout
   // de cada seção — usado tanto pra rolar até lá quanto pra saber qual aba
   // destacar enquanto o usuário rola manualmente
@@ -226,6 +228,7 @@ export default function Cardapio() {
   // enquanto o usuário rola manualmente, vai destacando a aba da seção
   // que está aparecendo na tela — igual ao iFood
   const handleScroll = (e) => {
+    reveal.onScroll();
     if (scrollandoProgramaticamente.current) return;
     const offsetY = e.nativeEvent.contentOffset.y;
     let atual = 'Todas';
@@ -238,7 +241,14 @@ export default function Cardapio() {
     setTabAtiva((prev) => (prev === atual ? prev : atual));
   };
 
-  const renderBuscadoItem = useCallback(({ item }) => <ProdutoCard produto={item} />, []);
+  const renderBuscadoItem = useCallback(
+    ({ item }) => (
+      <ScrollReveal scope={reveal} revealKey={`cardapio_produto_${item.id}`} style={s.prodCardSlot}>
+        <ProdutoCard produto={item} />
+      </ScrollReveal>
+    ),
+    [reveal]
+  );
   const keyExtractorBuscado = useCallback((item) => String(item.id), []);
 
   return (
@@ -325,6 +335,10 @@ export default function Cardapio() {
             initialNumToRender={6}
             maxToRenderPerBatch={6}
             windowSize={5}
+            onScroll={reveal.onScroll}
+            scrollEventThrottle={16}
+            onViewableItemsChanged={reveal.onViewableItemsChanged}
+            viewabilityConfig={REVEAL_VIEWABILITY_CONFIG}
             removeClippedSubviews={true}
             ListEmptyComponent={
               <View style={s.center}>
@@ -353,13 +367,13 @@ export default function Cardapio() {
               style={s.section}
               onLayout={(e) => { sectionsY.current[secao.tab] = e.nativeEvent.layout.y; }}
             >
-              <View style={s.cardapioHeaderWrap}>
+              <ScrollReveal scope={reveal} revealKey={`cardapio_header_${secao.filtro}`} style={s.cardapioHeaderWrap}>
                 <View style={s.cardapioHeaderLeft}>
                   <MaterialCommunityIcons name={secao.icon} size={30} color={COLORS.primary} />
                   <Text style={s.cardapioTitle} numberOfLines={1}>{secao.titulo}</Text>
                 </View>
                 <Text style={s.cardapioDesc}>{secao.descricao}</Text>
-              </View>
+              </ScrollReveal>
 
               {secao.produtos.length === 0 ? (
                 <View style={s.center}>
@@ -368,7 +382,9 @@ export default function Cardapio() {
               ) : (
                 <View style={s.prodGrid}>
                   {secao.produtos.map((p) => (
-                    <ProdutoCard key={p.id} produto={p} />
+                    <ScrollReveal key={p.id} scope={reveal} revealKey={`cardapio_produto_${p.id}`} style={s.prodCardSlot}>
+                      <ProdutoCard produto={p} />
+                    </ScrollReveal>
                   ))}
                 </View>
               )}
@@ -566,6 +582,8 @@ const s = StyleSheet.create({
     overflow: 'hidden',
     ...SHADOWS.sm,
   },
+  prodCardSlot: { width: '47%' },
+  prodCardFill: { width: '100%' },
   prodImgWrapper: {
     width: '100%',
     height: 140,
