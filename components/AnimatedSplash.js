@@ -1,74 +1,94 @@
-import { useState, useEffect, useRef } from 'react';
-import { View, Image, StyleSheet } from 'react-native';
-import { useVideoPlayer, VideoView } from 'expo-video';
+import { useEffect, useRef } from 'react';
+import { Animated, Easing, Image, StyleSheet } from 'react-native';
+import * as SplashScreen from 'expo-splash-screen';
+import { isAppReady, subscribeAppReady } from '../utils/appReady';
 
-const BRAND_RED = '#8F0B0F';
+const SPLASH_BG = '#121212';
+const MIN_SHOW_MS = 250;
+const MAX_WAIT_MS = 1600;
+const FADE_OUT_MS = 160;
 
 export default function AnimatedSplash({ onFinish }) {
-  const [videoReady, setVideoReady] = useState(false);
   const finishedRef = useRef(false);
+  const fadingRef = useRef(false);
+  const nativeHiddenRef = useRef(false);
+  const onFinishRef = useRef(onFinish);
+  onFinishRef.current = onFinish;
 
-  const safeFinish = () => {
-    if (!finishedRef.current) {
-      finishedRef.current = true;
-      onFinish?.();
+  const opacityAnim = useRef(new Animated.Value(1)).current;
+
+  const hideNativeSplashOnce = () => {
+    if (!nativeHiddenRef.current) {
+      nativeHiddenRef.current = true;
+      SplashScreen.hideAsync().catch(() => {});
     }
   };
 
-  const player = useVideoPlayer(require('../assets/splash-animation.mp4'), (playerInstance) => {
-    playerInstance.loop = false;
-    playerInstance.play();
-  });
-
   useEffect(() => {
-    // Fallback de segurança: vídeo tem 2.9s. Se travar decoder ou evento falhar, libera tela após 3.2s
-    const fallbackTimer = setTimeout(() => {
-      safeFinish();
-    }, 3200);
-
-    if (player.status === 'readyToPlay') {
-      setVideoReady(true);
-    }
-
-    const statusSubscription = player.addListener('statusChange', ({ status, error }) => {
-      if (status === 'readyToPlay') {
-        setVideoReady(true);
-      } else if (status === 'error') {
-        console.warn('Erro ao tocar splash:', error);
-        safeFinish();
+    const safeFinish = () => {
+      if (!finishedRef.current) {
+        finishedRef.current = true;
+        onFinishRef.current?.();
       }
-    });
+    };
 
-    const finishSubscription = player.addListener('playToEnd', () => {
-      safeFinish();
+    const startFadeOut = () => {
+      if (fadingRef.current) return;
+      fadingRef.current = true;
+      hideNativeSplashOnce();
+      Animated.timing(opacityAnim, {
+        toValue: 0,
+        duration: FADE_OUT_MS,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }).start(() => {
+        safeFinish();
+      });
+    };
+
+    // Fallback para garantir que a splash nativa nunca fique presa
+    const nativeFallback = setTimeout(hideNativeSplashOnce, 80);
+
+    let minDone = false;
+    let readyDone = isAppReady();
+
+    const maybeFinish = () => {
+      if (minDone && readyDone) {
+        startFadeOut();
+      }
+    };
+
+    const minTimer = setTimeout(() => {
+      minDone = true;
+      maybeFinish();
+    }, MIN_SHOW_MS);
+
+    const maxTimer = setTimeout(() => {
+      startFadeOut();
+    }, MAX_WAIT_MS);
+
+    const unsubscribe = subscribeAppReady(() => {
+      readyDone = true;
+      maybeFinish();
     });
 
     return () => {
-      clearTimeout(fallbackTimer);
-      statusSubscription.remove();
-      finishSubscription.remove();
+      clearTimeout(nativeFallback);
+      clearTimeout(minTimer);
+      clearTimeout(maxTimer);
+      unsubscribe();
     };
-  }, [player]);
+  }, [opacityAnim]);
 
   return (
-    <View style={styles.container}>
-      {!videoReady && (
-        <View style={styles.loadingScreen}>
-          <Image
-            source={require('../assets/logo.png')}
-            style={styles.logo}
-            resizeMode="contain"
-          />
-        </View>
-      )}
-
-      <VideoView
-        player={player}
-        style={[StyleSheet.absoluteFillObject, { opacity: videoReady ? 1 : 0 }]}
-        contentFit="cover"
-        nativeControls={false}
+    <Animated.View style={[styles.container, { opacity: opacityAnim }]}>
+      <Image
+        source={require('../assets/splash-logo.png')}
+        style={styles.logo}
+        resizeMode="contain"
+        onLoad={hideNativeSplashOnce}
       />
-    </View>
+    </Animated.View>
   );
 }
 
@@ -77,16 +97,12 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     zIndex: 9999,
     elevation: 9999,
-    backgroundColor: BRAND_RED,
-  },
-  loadingScreen: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: BRAND_RED,
+    backgroundColor: SPLASH_BG,
     alignItems: 'center',
     justifyContent: 'center',
   },
   logo: {
-    width: 180,
-    height: 180,
+    width: 210,
+    height: 210,
   },
 });

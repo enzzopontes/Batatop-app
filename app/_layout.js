@@ -1,4 +1,5 @@
 import { Stack, useRouter, usePathname } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
 import {
   View, Text, StatusBar, StyleSheet, Pressable,
   ScrollView, Animated, Image, Easing,
@@ -14,6 +15,7 @@ import { getEffectiveSession, subscribeAuthUiChange, initAuthStateListener } fro
 import { getPendingAddress, subscribePendingAddressChange, formatPendingAddressLabel } from '../utils/pendingAddress';
 import { getPendingCartIntent, clearPendingCartIntent } from '../utils/pendingCartIntent';
 import { subscribeAuthSheetRequest } from '../utils/authSheetRequest';
+import { signalAppReady } from '../utils/appReady';
 import { configureNotificationAudio } from '../utils/notificationSound';
 import AdminPushRegistration from '../components/AdminPushRegistration';
 import EntrarBanner from '../components/EntrarBanner';
@@ -21,6 +23,8 @@ import AuthBottomSheet from '../components/AuthBottomSheet';
 import AnimatedSplash from '../components/AnimatedSplash';
 import CartBar from '../components/CartBar';
 import { ThemedAlertHost } from '../components/ThemedAlert';
+
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 /* ============================================================
    CONTEXTO DE DIREÇÃO DE NAVEGAÇÃO
@@ -822,6 +826,18 @@ export default function RootLayout() {
     configureNotificationAudio();
   }, []);
 
+  useEffect(() => {
+    if (!showSplash) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [showSplash]);
+
+  useEffect(() => {
+    if (pathname && pathname !== '/' && pathname !== '/index') {
+      signalAppReady();
+    }
+  }, [pathname]);
+
   return (
     <KeyboardProvider>
     <NavContext.Provider value={{ animation, setAnimation, lastRoute, setLastRoute }}>
@@ -840,40 +856,34 @@ export default function RootLayout() {
         translucent={showSplash || authSheetVisible || pathname.includes('payments')}
         barStyle={showSplash || authSheetVisible ? 'light-content' : 'dark-content'}
       />
-      {showSplash ? (
-        // Enquanto a splash roda, NADA do resto do app é montado.
-        // Isso evita que o carregamento do Header/Stack/Supabase etc.
-        // concorra com a thread de JS e engasgue os primeiros frames do vídeo.
+      <AdminPushRegistration />
+      <View style={{ flex: 1 }}>
+        {!pathname.includes('cupons') && (
+          <Header
+            onHeightChange={setHeaderHeight}
+            onRegisterReset={(fn) => { resetHeaderRef.current = fn; }}
+          />
+        )}
+        <View style={{ flex: 1 }}>
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: '#F8F9FA' },
+              animation,
+            }}
+          />
+        </View>
+        {!pathname.includes('addresses') && !pathname.includes('auth') && !authSheetVisible && (
+          <CartBar tabBarHeight={tabBarHeight} isAuthVisible={authSheetVisible} />
+        )}
+        <BottomTabBar onHeightChange={setTabBarHeight} />
+        {!pathname.includes('welcome') && !pathname.includes('location') && !pathname.includes('cart') && !pathname.includes('checkout') && (
+          <EntrarBanner onPress={() => setAuthSheetVisible(true)} tabBarHeight={tabBarHeight} />
+        )}
+        <AuthBottomSheet visible={authSheetVisible} onClose={() => setAuthSheetVisible(false)} />
+      </View>
+      {showSplash && (
         <AnimatedSplash onFinish={() => { splashAlreadyShown = true; setShowSplash(false); }} />
-      ) : (
-        <>
-          <AdminPushRegistration />
-          <View style={{ flex: 1 }}>
-            {!pathname.includes('cupons') && (
-              <Header
-                onHeightChange={setHeaderHeight}
-                onRegisterReset={(fn) => { resetHeaderRef.current = fn; }}
-              />
-            )}
-            <View style={{ flex: 1 }}>
-              <Stack
-                screenOptions={{
-                  headerShown: false,
-                  contentStyle: { backgroundColor: '#F8F9FA' },
-                  animation,
-                }}
-              />
-            </View>
-            {!pathname.includes('addresses') && !pathname.includes('auth') && !authSheetVisible && (
-              <CartBar tabBarHeight={tabBarHeight} isAuthVisible={authSheetVisible} />
-            )}
-            <BottomTabBar onHeightChange={setTabBarHeight} />
-            {!pathname.includes('welcome') && !pathname.includes('location') && !pathname.includes('cart') && !pathname.includes('checkout') && (
-              <EntrarBanner onPress={() => setAuthSheetVisible(true)} tabBarHeight={tabBarHeight} />
-            )}
-            <AuthBottomSheet visible={authSheetVisible} onClose={() => setAuthSheetVisible(false)} />
-          </View>
-        </>
       )}
       <ThemedAlertHost />
     </SafeAreaProvider>

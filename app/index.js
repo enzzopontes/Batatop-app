@@ -22,6 +22,7 @@ import { useState, useRef, useCallback, useEffect, memo } from 'react';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { safeGetNotificationPermissions } from '../utils/pushNotifications';
+import { signalAppReady } from '../utils/appReady';
 import { ALREADY_SEEN_WELCOME_KEY } from './welcome';
 import { ALREADY_SEEN_LOCATION_KEY } from './location';
 import * as Location from 'expo-location';
@@ -277,6 +278,18 @@ export default function Home() {
       setNeedsLocation(seenLocation !== 'true');
     })();
   }, []);
+
+  useEffect(() => {
+    if (needsWelcome === null) return;
+    if (needsWelcome) {
+      signalAppReady();
+      return;
+    }
+    if (needsLocation === null) return;
+    if (needsLocation || !loading) {
+      signalAppReady();
+    }
+  }, [needsWelcome, needsLocation, loading]);
 
   // Espaço reservado pro header no topo do conteúdo — agora é FIXO (sempre
   // igual à altura real do header), não anima mais nem encolhe/cresce. O
