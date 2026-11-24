@@ -16,7 +16,8 @@ const mapOrderData = (o) => {
       quantity: item.quantity,
       price: Number(item.product_price),
       adicionais: item.adicionais || [],
-      pastaType: item.pasta_type || null,
+      pastaType: item.pasta_type || undefined,
+      notes: item.notes || '',
     }));
   } else if (o.metadata?.items && o.metadata.items.length > 0) {
     // Fallback: metadata.items (pedidos antigos)
@@ -26,7 +27,8 @@ const mapOrderData = (o) => {
       quantity: item.quantity,
       price: Number(item.product_price || item.price),
       adicionais: item.adicionais || [],
-      pastaType: item.pastaType || null,
+      pastaType: item.pastaType || item.pasta_type || undefined,
+      notes: item.notes || '',
     }));
   }
 

@@ -276,6 +276,20 @@ function ActiveOrderCard({ order, onDetails }) {
             Saiu para entrega • Toque para ver no mapa
           </Text>
         </View>
+      ) : order.status === 'ready' ? (
+        <View style={[styles.statusBanner, { backgroundColor: '#DCFCE7' }]}>
+          <Ionicons name="checkmark-circle-outline" size={16} color="#15803D" />
+          <Text style={[styles.statusBannerText, { color: '#15803D' }]}>
+            Pedido pronto!
+          </Text>
+        </View>
+      ) : order.status === 'pending' || order.status === 'confirmed' ? (
+        <View style={[styles.statusBanner, { backgroundColor: '#FEF3C7' }]}>
+          <PulsingDot />
+          <Text style={[styles.statusBannerText, { color: '#B45309' }]}>
+            Pedido recebido • Aguardando preparo
+          </Text>
+        </View>
       ) : (
         <View style={[styles.statusBanner, { backgroundColor: '#FEF3C7' }]}>
           <PulsingDot />
@@ -296,6 +310,12 @@ function ActiveOrderCard({ order, onDetails }) {
               .map((a) => (typeof a === 'string' ? a : a?.name || a?.nome))
               .filter(Boolean)
               .join(', ');
+            const adicsTotal = (item.adicionais || []).reduce(
+              (s, a) => s + Number(a?.price || a?.preco || 0) * Number(a?.quantity || 1),
+              0
+            );
+            const itemLineTotal =
+              (Number(item.price || 0) + adicsTotal) * Number(item.quantity || 1);
 
             return (
               <View key={idx} style={styles.itemRowWrapper}>
@@ -307,7 +327,7 @@ function ActiveOrderCard({ order, onDetails }) {
                     {item.name}
                   </Text>
                   <Text style={styles.itemPrice}>
-                    R$ {(item.price * item.quantity).toFixed(2).replace('.', ',')}
+                    R$ {itemLineTotal.toFixed(2).replace('.', ',')}
                   </Text>
                 </View>
                 {adicText ? (
@@ -404,6 +424,12 @@ function CompletedOrderCard({
               .map((a) => (typeof a === 'string' ? a : a?.name || a?.nome))
               .filter(Boolean)
               .join(', ');
+            const adicsTotal = (item.adicionais || []).reduce(
+              (s, a) => s + Number(a?.price || a?.preco || 0) * Number(a?.quantity || 1),
+              0
+            );
+            const itemLineTotal =
+              (Number(item.price || 0) + adicsTotal) * Number(item.quantity || 1);
 
             return (
               <View key={idx} style={styles.itemRowWrapper}>
@@ -415,7 +441,7 @@ function CompletedOrderCard({
                     {item.name}
                   </Text>
                   <Text style={styles.itemPrice}>
-                    R$ {(item.price * item.quantity).toFixed(2).replace('.', ',')}
+                    R$ {itemLineTotal.toFixed(2).replace('.', ',')}
                   </Text>
                 </View>
                 {adicText ? (
@@ -731,7 +757,22 @@ export default function PedidosScreen() {
     if (order.items && order.items.length > 0) {
       order.items.forEach((item) => {
         const itemPrice = Number(item.price || item.unit_price || item.preco || 0);
-        const precoCentavos = Math.round(itemPrice * 100);
+        const mappedAdicionais = (item.adicionais || []).map((a) => {
+          const adicPrice = Number(a?.price || a?.preco || 0);
+          const adicQty = Math.max(1, Number(a?.quantity || a?.quantidade || 1) || 1);
+          return {
+            id: a?.id || a?.name || a?.nome,
+            name: typeof a === 'string' ? a : a?.name || a?.nome,
+            nome: typeof a === 'string' ? a : a?.name || a?.nome,
+            price: adicPrice,
+            preco: adicPrice,
+            quantity: adicQty,
+            quantidade: adicQty,
+          };
+        });
+        const adicsSum = mappedAdicionais.reduce((s, a) => s + a.price * a.quantity, 0);
+        const unitWithAddons = itemPrice + adicsSum;
+        const precoCentavos = Math.round(unitWithAddons * 100);
         const quantity = Number(item.quantity || 1) || 1;
 
         cartStore.addToCart({
@@ -739,20 +780,15 @@ export default function PedidosScreen() {
           name: item.name || item.product_name,
           nome: item.name || item.product_name,
           price: itemPrice,
-          preco: `R$ ${itemPrice.toFixed(2).replace('.', ',')}`,
+          preco: `R$ ${unitWithAddons.toFixed(2).replace('.', ',')}`,
           precoNum: precoCentavos,
           quantity,
           quantidade: quantity,
-          adicionais: (item.adicionais || []).map((a) => {
-            const adicPrice = Number(a?.price || a?.preco || 0);
-            return {
-              id: a?.id || a?.name || a?.nome,
-              name: typeof a === 'string' ? a : a?.name || a?.nome,
-              nome: typeof a === 'string' ? a : a?.name || a?.nome,
-              price: adicPrice,
-              preco: adicPrice,
-            };
-          }),
+          category: item.category || undefined,
+          categoria: item.category || undefined,
+          imagem: item.image || item.image_url || undefined,
+          pastaType: item.pastaType || undefined,
+          adicionais: mappedAdicionais,
           observacoes: item.notes || item.observacoes || '',
         });
       });

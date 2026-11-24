@@ -26,7 +26,8 @@ import { useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { supabase } from '../../supabaseConfig';
-import { ThemedAlertHost, showThemedAlert } from '../ThemedAlert';
+import { getEffectiveSession } from '../../utils/authSession';
+import { showThemedAlert } from '../ThemedAlert';
 import SwipeableBottomSheetModal from '../SwipeableBottomSheetModal';
 
 const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.batatatop.app';
@@ -109,14 +110,14 @@ export default function OrderFeedbackModal({
     setSubmitting(true);
 
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const currentUser = sessionData?.session?.user;
+      const session = await getEffectiveSession();
+      const currentUser = session?.user;
 
       const payload = {
         order_id: String(order.id),
-        user_id: currentUser?.id || order.user_id || null,
-        customer_name: order.customer_name || currentUser?.user_metadata?.full_name || 'Cliente',
-        customer_phone: order.customer_phone || currentUser?.phone || null,
+        user_id: currentUser?.id || order.userId || order.user_id || null,
+        customer_name: order.customerName || order.customer_name || currentUser?.user_metadata?.full_name || 'Cliente',
+        customer_phone: order.customerPhone || order.customer_phone || currentUser?.phone || null,
         rating,
         comment: comment.trim() || null,
         tags: selectedTags,
@@ -169,8 +170,6 @@ export default function OrderFeedbackModal({
       minBottomPadding={20}
       extraBottomPadding={12}
     >
-      <ThemedAlertHost />
-
       <Animated.View style={sheetAnimatedStyle}>
         {showPlayStoreStep ? (
           /* Tela 2: Agradecimento Especial + Funil Play Store */

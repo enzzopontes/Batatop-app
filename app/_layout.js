@@ -17,6 +17,7 @@ import { getPendingCartIntent, clearPendingCartIntent } from '../utils/pendingCa
 import { subscribeAuthSheetRequest } from '../utils/authSheetRequest';
 import { signalAppReady } from '../utils/appReady';
 import { configureNotificationAudio } from '../utils/notificationSound';
+import { evaluateStoreOpen } from '../utils/storeSchedule';
 import AdminPushRegistration from '../components/AdminPushRegistration';
 import EntrarBanner from '../components/EntrarBanner';
 import AuthBottomSheet from '../components/AuthBottomSheet';
@@ -336,6 +337,7 @@ function Header({ onHeightChange, onRegisterReset }) {
   const [authResolved, setAuthResolved]       = useState(false);
   const [timeGreeting]                        = useState(getGreeting());
   const [storeOpen, setStoreOpen]             = useState(true);
+  const storeStatusRef                        = useRef(null);
 
   // Nome só aparece se tiver usuário logado com full_name no metadata.
   const firstName = user ? getFirstName(user.user_metadata?.full_name) : null;
@@ -434,17 +436,26 @@ function Header({ onHeightChange, onRegisterReset }) {
 
   /* ---- Status da loja (aberto/fechado) — tabela store_settings ---- */
   useEffect(() => {
+    let active = true;
     let channel;
 
+    function applyStoreStatus(sv) {
+      if (!active || !sv) return;
+      storeStatusRef.current = sv;
+      setStoreOpen(evaluateStoreOpen(sv));
+    }
+
     async function fetchStoreStatus() {
-      const { data } = await supabase
-        .from('store_settings')
-        .select('setting_value')
-        .eq('setting_key', 'store_status')
-        .single();
-      if (data?.setting_value?.isOpen !== undefined) {
-        setStoreOpen(!!data.setting_value.isOpen);
-      }
+      try {
+        const { data } = await supabase
+          .from('store_settings')
+          .select('setting_value')
+          .eq('setting_key', 'store_status')
+          .maybeSingle();
+        if (data?.setting_value) {
+          applyStoreStatus(data.setting_value);
+        }
+      } catch {}
     }
 
     fetchStoreStatus();
@@ -455,14 +466,22 @@ function Header({ onHeightChange, onRegisterReset }) {
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'store_settings', filter: 'setting_key=eq.store_status' },
         (payload) => {
-          if (payload.new?.setting_value?.isOpen !== undefined) {
-            setStoreOpen(!!payload.new.setting_value.isOpen);
+          if (payload.new?.setting_value) {
+            applyStoreStatus(payload.new.setting_value);
           }
         }
       )
       .subscribe();
 
+    const timer = setInterval(() => {
+      if (storeStatusRef.current) {
+        setStoreOpen(evaluateStoreOpen(storeStatusRef.current));
+      }
+    }, 60_000);
+
     return () => {
+      active = false;
+      clearInterval(timer);
       if (channel) supabase.removeChannel(channel);
     };
   }, []);
@@ -873,10 +892,12 @@ export default function RootLayout() {
             }}
           />
         </View>
-        {!pathname.includes('addresses') && !pathname.includes('auth') && !authSheetVisible && (
+        {!pathname.includes('addresses') && !pathname.includes('auth') && !pathname.includes('excluir-conta') && !authSheetVisible && (
           <CartBar tabBarHeight={tabBarHeight} isAuthVisible={authSheetVisible} />
         )}
-        <BottomTabBar onHeightChange={setTabBarHeight} />
+        {!pathname.includes('excluir-conta') && (
+          <BottomTabBar onHeightChange={setTabBarHeight} />
+        )}
         {!pathname.includes('welcome') && !pathname.includes('location') && !pathname.includes('cart') && !pathname.includes('checkout') && (
           <EntrarBanner onPress={() => setAuthSheetVisible(true)} tabBarHeight={tabBarHeight} />
         )}

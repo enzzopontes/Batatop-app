@@ -6,7 +6,6 @@ import {
   Pressable,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
   Dimensions,
   TextInput,
   StatusBar,
@@ -33,6 +32,7 @@ import { useFooterInsets } from '../../hooks/useFooterInsets';
 import AddressVerificationModal from '../../components/AddressVerificationModal';
 import NoAddressModal from '../../components/NoAddressModal';
 import PrimaryButton from '../../components/PrimaryButton';
+import { showErrorAlert } from '../../components/ThemedAlert';
 
 const { width } = Dimensions.get('window');
 
@@ -41,6 +41,12 @@ const CATEGORY_FALLBACKS = {
   bebidas: 'https://images.unsplash.com/photo-1544145945-f904253d0c7b?w=800',
   macarrao: 'https://images.unsplash.com/photo-1551183053-bf91a1d81141?w=800',
 };
+
+const PASTA_OPTIONS = [
+  { id: 'penne', label: 'Penne', subtitle: 'Massa curta tubular' },
+  { id: 'parafuso', label: 'Parafuso', subtitle: 'Massa fusilli espiral' },
+  { id: 'espaguete', label: 'Espaguete', subtitle: 'Massa longa tradicional' },
+];
 
 function resolveImage(imageUrl, categoria) {
   const fallback = CATEGORY_FALLBACKS[categoria?.toLowerCase()] ||
@@ -85,11 +91,13 @@ function resolveEffectivePrice(rawProduct, storeStatus) {
 }
 
 export default function ProdutoDetail() {
-  const { id, editCartItemId, initialQty, initialObs, initialAdicionais } = useLocalSearchParams();
+  const { id, editCartItemId, initialQty, initialObs, initialAdicionais, initialPastaType } = useLocalSearchParams();
   const router = useRouter();
   const { add: addToCart, updateItem, setHideFloating } = useCart();
   const insets = useSafeAreaInsets();
   const { paddingBottom: footerPaddingBottom } = useFooterInsets({ extraPadding: 20 });
+
+  const resolvedInitialPasta = Array.isArray(initialPastaType) ? initialPastaType[0] : initialPastaType;
 
   const [produto, setProduto] = useState(null);
   const [adicionais, setAdicionais] = useState([]);
@@ -103,6 +111,7 @@ export default function ProdutoDetail() {
   // carrinho de fato quando a pessoa aperta "Adicionar" no rodapé.
   const [bebidasSelecionadas, setBebidasSelecionadas] = useState({});
   const [observacoes, setObservacoes] = useState(initialObs ? String(initialObs) : '');
+  const [pastaType, setPastaType] = useState(resolvedInitialPasta || 'penne');
 
   // Verificação de endereço (GPS vs endereço selecionado) — ver
   // hooks/useAddressVerification.js
@@ -129,6 +138,10 @@ export default function ProdutoDetail() {
       fetchBebidas();
     }
   }, [id]);
+
+  useEffect(() => {
+    setPastaType(resolvedInitialPasta || 'penne');
+  }, [id, resolvedInitialPasta]);
 
   useEffect(() => {
     if (initialAdicionais) {
@@ -183,7 +196,7 @@ export default function ProdutoDetail() {
       });
     } catch (err) {
       console.error('Erro ao buscar produto:', err);
-      Alert.alert('Erro', 'Não foi possível carregar o produto');
+      showErrorAlert('Não foi possível carregar o produto.');
     } finally {
       setLoading(false);
     }
@@ -373,6 +386,7 @@ export default function ProdutoDetail() {
   // Produto sendo visto já é uma bebida? Nesse caso não mostra a seção
   // (senão a Coca-Cola apareceria dentro da própria tela da Coca-Cola).
   const isBebida = produto?.categoria?.trim().toLowerCase().startsWith('bebida');
+  const isMacarrao = String(produto?.categoria || '').toLowerCase().includes('macarr');
 
   const calcularPrecoTotal = () => {
     if (!produto) return 0;
@@ -423,6 +437,7 @@ export default function ProdutoDetail() {
         quantidade,
         adicionais: adicionaisList,
         observacoes,
+        pastaType: isMacarrao ? pastaType : undefined,
       },
     ];
 
@@ -617,7 +632,7 @@ export default function ProdutoDetail() {
         {/* Imagem hero */}
         <View style={s.imageContainer}>
           <ExpoImage
-            source={resolveImage(produto.imagem, produto.categoria)}
+            source={resolveImage(useFallback ? null : produto.imagem, produto.categoria)}
             style={s.image}
             contentFit="cover"
             cachePolicy="memory-disk"
@@ -625,8 +640,13 @@ export default function ProdutoDetail() {
           />
 
           {/* Botao voltar */}
-          <TouchableOpacity style={s.closeBtn} onPress={() => router.back()} activeOpacity={0.8}>
-            <Ionicons name="chevron-back" size={24} color="#FFB800" />
+          <TouchableOpacity
+            style={[s.closeBtn, { top: Math.max(insets.top, 20) + 8 }]}
+            hitSlop={8}
+            onPress={() => router.back()}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
           </TouchableOpacity>
         </View>
 
@@ -642,63 +662,106 @@ export default function ProdutoDetail() {
           {/* Descricao */}
           <Text style={s.descricao}>{produto.descricao}</Text>
 
-          {/* Adicionais */}
-          <View style={s.sectionHeader}>
-            <Text style={s.sectionTitle}>Adicionais</Text>
-            <View style={s.opcionalBadge}>
-              <Text style={s.opcionalText}>OPCIONAL</Text>
-            </View>
-          </View>
-
-          {adicionais.length === 0 ? (
-            <Text style={s.semAdicionais}>Nenhum adicional disponível</Text>
-          ) : (
-            categoriasAdicionais.map(({ categoria, itens }) => (
-              <View key={categoria} style={s.categoriaGroup}>
-                <View style={s.categoriaHeaderBg}>
-                  <Text style={s.categoriaTitle}>{gerarFraseCategoria(categoria)}</Text>
-                  <Text style={s.categoriaSubtitle}>Escolha até 10 opções</Text>
+          {/* Tipo de massa (obrigatório para macarrão) */}
+          {isMacarrao && (
+            <>
+              <View style={s.sectionHeader}>
+                <Text style={s.sectionTitle}>Escolha o tipo de massa</Text>
+                <View style={s.obrigatorioBadge}>
+                  <Text style={s.obrigatorioText}>OBRIGATÓRIO</Text>
                 </View>
-                {itens.map((item, index) => {
-                  const qty = adicionaisSelecionados[item.id] || 0;
-                  const isLast = index === itens.length - 1;
+              </View>
+              <View style={[s.categoriaGroup, s.pastaGroup]}>
+                {PASTA_OPTIONS.map((option, index) => {
+                  const isSelected = pastaType === option.id;
+                  const isLast = index === PASTA_OPTIONS.length - 1;
                   return (
-                    <View
-                      key={item.id}
+                    <TouchableOpacity
+                      key={option.id}
                       style={[s.adicionalItem, !isLast && s.adicionalItemDivider]}
+                      onPress={() => {
+                        Haptics.selectionAsync();
+                        setPastaType(option.id);
+                      }}
+                      activeOpacity={0.7}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: isSelected }}
                     >
                       <View style={s.adicionalInfo}>
-                        <Text style={s.adicionalNome}>{item.name}</Text>
-                        <Text style={s.adicionalPreco}>
-                          + R$ {(Number.isFinite(Number(item.price)) ? Number(item.price) : 0).toFixed(2).replace('.', ',')}
-                        </Text>
+                        <Text style={[s.adicionalNome, s.pastaNome]}>{option.label}</Text>
+                        <Text style={s.pastaSubtitle}>{option.subtitle}</Text>
                       </View>
-                      <View style={[s.adicionalQtyContainer, qty > 0 && s.adicionalQtyContainerAtivo]}>
-                        {qty > 0 && (
-                          <TouchableOpacity
-                            style={s.qtyAdicionalBtn}
-                            onPress={() => decrementAdicional(item.id)}
-                            activeOpacity={0.8}
-                          >
-                            <Ionicons name="remove" size={16} color="#333" />
-                          </TouchableOpacity>
-                        )}
-                        {qty > 0 && (
-                          <Text style={s.qtyAdicionalText}>{qty}</Text>
-                        )}
-                        <TouchableOpacity
-                          style={s.addBtn}
-                          onPress={() => incrementAdicional(item.id)}
-                          activeOpacity={0.8}
-                        >
-                          <Ionicons name="add" size={20} color="#FFB800" />
-                        </TouchableOpacity>
+                      <View style={[s.radioOuter, isSelected && s.radioOuterSelected]}>
+                        {isSelected && <View style={s.radioInner} />}
                       </View>
-                    </View>
+                    </TouchableOpacity>
                   );
                 })}
               </View>
-            ))
+            </>
+          )}
+
+          {/* Adicionais */}
+          {!isBebida && (
+            <>
+              <View style={s.sectionHeader}>
+                <Text style={s.sectionTitle}>Adicionais</Text>
+                <View style={s.opcionalBadge}>
+                  <Text style={s.opcionalText}>OPCIONAL</Text>
+                </View>
+              </View>
+
+              {adicionais.length === 0 ? (
+                <Text style={s.semAdicionais}>Nenhum adicional disponível</Text>
+              ) : (
+                categoriasAdicionais.map(({ categoria, itens }) => (
+                  <View key={categoria} style={s.categoriaGroup}>
+                    <View style={s.categoriaHeaderBg}>
+                      <Text style={s.categoriaTitle}>{gerarFraseCategoria(categoria)}</Text>
+                      <Text style={s.categoriaSubtitle}>Escolha até 10 opções</Text>
+                    </View>
+                    {itens.map((item, index) => {
+                      const qty = adicionaisSelecionados[item.id] || 0;
+                      const isLast = index === itens.length - 1;
+                      return (
+                        <View
+                          key={item.id}
+                          style={[s.adicionalItem, !isLast && s.adicionalItemDivider]}
+                        >
+                          <View style={s.adicionalInfo}>
+                            <Text style={s.adicionalNome}>{item.name}</Text>
+                            <Text style={s.adicionalPreco}>
+                              + R$ {(Number.isFinite(Number(item.price)) ? Number(item.price) : 0).toFixed(2).replace('.', ',')}
+                            </Text>
+                          </View>
+                          <View style={[s.adicionalQtyContainer, qty > 0 && s.adicionalQtyContainerAtivo]}>
+                            {qty > 0 && (
+                              <TouchableOpacity
+                                style={s.qtyAdicionalBtn}
+                                onPress={() => decrementAdicional(item.id)}
+                                activeOpacity={0.8}
+                              >
+                                <Ionicons name="remove" size={16} color="#333" />
+                              </TouchableOpacity>
+                            )}
+                            {qty > 0 && (
+                              <Text style={s.qtyAdicionalText}>{qty}</Text>
+                            )}
+                            <TouchableOpacity
+                              style={s.addBtn}
+                              onPress={() => incrementAdicional(item.id)}
+                              activeOpacity={0.8}
+                            >
+                              <Ionicons name="add" size={20} color="#FFB800" />
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                ))
+              )}
+            </>
           )}
 
           {/* Bebidas — mesma vitrine visual das categorias de adicionais,
@@ -879,7 +942,32 @@ const s = StyleSheet.create({
   sectionTitle: { fontSize: 17, fontWeight: '700', color: COLORS.text },
   opcionalBadge: { backgroundColor: '#f0f0f0', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
   opcionalText: { fontSize: 10, color: COLORS.textMuted, fontWeight: '700', letterSpacing: 0.5 },
+  obrigatorioBadge: { backgroundColor: '#FFF7ED', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
+  obrigatorioText: { fontSize: 10, color: '#C1440E', fontWeight: '700', letterSpacing: 0.5 },
   semAdicionais: { color: COLORS.textMuted, fontSize: 14, marginBottom: 16 },
+
+  // Tipo de massa (macarrão)
+  pastaGroup: { marginBottom: 20 },
+  pastaNome: { fontWeight: '700', color: '#1F1B16' },
+  pastaSubtitle: { fontSize: 12, color: '#8C827A', marginTop: 2 },
+  radioOuter: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: '#D5CFC7',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  radioOuterSelected: {
+    borderColor: '#FFB800',
+  },
+  radioInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#FFB800',
+  },
 
   // Categorias de adicionais
   categoriaGroup: { marginBottom: 4 },

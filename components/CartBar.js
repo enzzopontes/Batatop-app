@@ -1,7 +1,9 @@
 import { View, Text, StyleSheet, Pressable, Animated, Image } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { useCart } from '../utils/cartStore';
+import { supabase } from '../supabaseConfig';
+import { DELIVERY_FEE } from '../constants/store';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS } from '../constants/theme';
 import RipplePressable from './cart/RipplePressable';
 
@@ -24,6 +26,60 @@ export default function CartBar({ tabBarHeight, isAuthVisible = false }) {
 
   const translateY = useRef(new Animated.Value(120)).current;
   const wasVisible = useRef(false);
+  const [isDeliveryFeeEnabled, setIsDeliveryFeeEnabled] = useState(false);
+  const [deliveryFee, setDeliveryFee] = useState(0);
+
+  useEffect(() => {
+    let mounted = true;
+    let channel;
+
+    const applySettingValue = (val) => {
+      if (!mounted || !val) return;
+      if (val.isDeliveryFeeEnabled === true) {
+        setIsDeliveryFeeEnabled(true);
+        setDeliveryFee(Number(val.deliveryFee ?? DELIVERY_FEE) || 0);
+      } else {
+        setIsDeliveryFeeEnabled(false);
+        setDeliveryFee(0);
+      }
+    };
+
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('store_settings')
+          .select('setting_value')
+          .eq('setting_key', 'store_status')
+          .maybeSingle();
+        applySettingValue(data?.setting_value);
+      } catch {}
+    })();
+
+    try {
+      channel = supabase
+        .channel('store_settings_cart_bar_delivery_fee')
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'store_settings',
+            filter: 'setting_key=eq.store_status',
+          },
+          (payload) => {
+            applySettingValue(payload.new?.setting_value);
+          }
+        )
+        .subscribe();
+    } catch {}
+
+    return () => {
+      mounted = false;
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
+  }, []);
 
   const isCartPage = pathname.includes('cart');
   const isWelcomePage = pathname.includes('welcome');
@@ -32,11 +88,10 @@ export default function CartBar({ tabBarHeight, isAuthVisible = false }) {
   const isCuponsPage = pathname.includes('/cupons');
   const isPaymentsPage = pathname.includes('payments');
   const isAddressesPage = pathname.includes('addresses');
+  const isExcluirContaPage = pathname.includes('excluir-conta');
   const isAuthPage = isAuthVisible || pathname.includes('auth') || pathname.includes('login') || pathname.includes('codigo') || pathname.includes('register');
 
-  if (isAddressesPage || isAuthPage) return null;
-
-  const shouldShow = totalItems > 0 && !isCartPage && !isWelcomePage && !isLocationPage && !isAdminPage && !isCuponsPage && !isPaymentsPage && !isAuthPage && !hideFloating;
+  const shouldShow = totalItems > 0 && !isCartPage && !isWelcomePage && !isLocationPage && !isAdminPage && !isCuponsPage && !isPaymentsPage && !isAddressesPage && !isExcluirContaPage && !isAuthPage && !hideFloating;
 
   useEffect(() => {
     if (shouldShow && !wasVisible.current) {
@@ -57,6 +112,10 @@ export default function CartBar({ tabBarHeight, isAuthVisible = false }) {
     }
   }, [shouldShow]);
 
+  if (isAddressesPage || isAuthPage) return null;
+
+  const isFreeDelivery = !isDeliveryFeeEnabled || deliveryFee <= 0;
+
   const opacity = translateY.interpolate({
     inputRange: [0, 80],
     outputRange: [1, 0],
@@ -73,7 +132,15 @@ export default function CartBar({ tabBarHeight, isAuthVisible = false }) {
           <Image source={LOGO} style={s.logo} resizeMode="contain" />
           <View style={s.leftText}>
             <Text style={s.totalLabel}>
-              Total com <Text style={s.totalLabelBold}>entrega grátis</Text>
+              {isFreeDelivery ? (
+                <>
+                  Total com <Text style={s.totalLabelBold}>entrega grátis</Text>
+                </>
+              ) : (
+                <>
+                  Total <Text style={s.totalLabelBold}>+ entrega</Text>
+                </>
+              )}
             </Text>
             <Text style={s.priceRow}>
               <Text style={s.priceValue}>R$ {subtotal.toFixed(2).replace('.', ',')}</Text>

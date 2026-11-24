@@ -805,6 +805,7 @@ export default function DetalhesPedido() {
   const [confirmingDelivered, setConfirmingDelivered] = useState(false);
   const confirmingDeliveryRef = useRef(false);
   const [feedbackModalVisible, setFeedbackModalVisible] = useState(false);
+  const [alreadyEvaluated, setAlreadyEvaluated] = useState(false);
   const pixFadeAnim = useRef(new Animated.Value(1)).current;
   const [showConfetti, setShowConfetti] = useState(false);
   const [showSuccessBanner, setShowSuccessBanner] = useState(false);
@@ -1351,6 +1352,32 @@ export default function DetalhesPedido() {
     return () => clearInterval(fallbackTimer);
   }, [pedido?.id, pedido?.status]);
 
+  // Verifica se o pedido entregue já possui avaliação em feedbacks
+  useEffect(() => {
+    if (!pedido?.id || pedido?.status !== 'delivered') {
+      setAlreadyEvaluated(false);
+      return;
+    }
+
+    let isMounted = true;
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('feedbacks')
+          .select('id')
+          .eq('order_id', String(pedido.id))
+          .limit(1);
+        if (isMounted) {
+          setAlreadyEvaluated(Array.isArray(data) && data.length > 0);
+        }
+      } catch {}
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [pedido?.id, pedido?.status]);
+
   const handleCancelOrder = () => {
     if (!pedido) return;
     setShowCancelModal(true);
@@ -1374,11 +1401,7 @@ export default function DetalhesPedido() {
       }
 
       await carregarPedido({ silent: true });
-
-      const msg = encodeURIComponent(
-        `Olá, gostaria de cancelar meu pedido #${numLocal}.\n\n*Detalhes do Pedido:*\nCliente: ${pedido.customerName}\nTotal: R$ ${pedido.total.toFixed(2).replace('.', ',')}`
-      );
-      Linking.openURL(`https://wa.me/5514997361015?text=${msg}`);
+      showThemedAlert('Pedido cancelado', 'Seu pedido foi cancelado com sucesso.');
     } catch (err) {
       const msg = CANCEL_ERROR_MESSAGES[err?.message] || err?.message || 'Não foi possível cancelar o pedido. Entre em contato pelo WhatsApp.';
       showThemedAlert('Erro', msg);
@@ -1471,10 +1494,13 @@ export default function DetalhesPedido() {
   const timerBarColor = isUrgentTimer ? '#E3A008' : '#FFB800';
   const timerTrackBg = isUrgentTimer ? '#FEF3C7' : '#FEF3C7';
 
-  const itemsSubtotal = (pedido.items || []).reduce(
-    (sum, i) => sum + Number(i.price || 0) * (Number(i.quantity || 1) || 1),
-    0
-  );
+  const itemsSubtotal = (pedido.items || []).reduce((sum, i) => {
+    const adicsTotal = (i.adicionais || []).reduce(
+      (acc, a) => acc + Number(a?.price || a?.preco || 0) * Number(a?.quantity || 1),
+      0
+    );
+    return sum + (Number(i.price || 0) + adicsTotal) * (Number(i.quantity || 1) || 1);
+  }, 0);
   const deliveryFee = pedido.deliveryType === 'retirada' ? 0 : Number(pedido.metadata?.delivery_fee || 0);
   const discountVal = Number(pedido.discountAmount || pedido.discount || 0);
 
@@ -1780,6 +1806,12 @@ export default function DetalhesPedido() {
               const adicList = (item.adicionais || [])
                 .map((a) => (typeof a === 'string' ? a : a?.name || a?.nome))
                 .filter(Boolean);
+              const adicsTotal = (item.adicionais || []).reduce(
+                (acc, a) => acc + Number(a?.price || a?.preco || 0) * Number(a?.quantity || 1),
+                0
+              );
+              const itemLineTotal =
+                (Number(item.price || 0) + adicsTotal) * Number(item.quantity || 1);
 
               return (
                 <View key={idx}>
@@ -1800,7 +1832,7 @@ export default function DetalhesPedido() {
                       ) : null}
                     </View>
                     <Text style={s.itemPrice}>
-                      R$ {(item.price * item.quantity).toFixed(2).replace('.', ',')}
+                      R$ {itemLineTotal.toFixed(2).replace('.', ',')}
                     </Text>
                   </View>
                   {idx < pedido.items.length - 1 && <View style={s.itemDivider} />}
@@ -1903,16 +1935,22 @@ export default function DetalhesPedido() {
         {/* Rodapé Estilo iFood Duplo com Botão Cancelar */}
         <View style={s.footerContainer}>
           {/* Botão de Avaliação quando Entregue no Rodapé */}
-          {pedido.status === 'delivered' && (
-            <Pressable
-              style={s.footerFeedbackBtn}
-              onPress={() => setFeedbackModalVisible(true)}
-            >
-              <Ionicons name="star" size={19} color="#FFB800" />
-              <Text style={s.footerFeedbackBtnText}>Avaliar este pedido</Text>
-              <Ionicons name="chevron-forward" size={17} color="#B45309" />
-            </Pressable>
-          )}
+          {pedido.status === 'delivered' &&
+            (alreadyEvaluated ? (
+              <View style={s.footerEvaluatedBadge}>
+                <Ionicons name="checkmark-circle" size={18} color="#16A34A" />
+                <Text style={s.footerEvaluatedBadgeText}>Pedido avaliado</Text>
+              </View>
+            ) : (
+              <Pressable
+                style={s.footerFeedbackBtn}
+                onPress={() => setFeedbackModalVisible(true)}
+              >
+                <Ionicons name="star" size={19} color="#FFB800" />
+                <Text style={s.footerFeedbackBtnText}>Avaliar este pedido</Text>
+                <Ionicons name="chevron-forward" size={17} color="#B45309" />
+              </Pressable>
+            ))}
 
           <View style={s.footerDoubleRow}>
             <Pressable
@@ -2017,7 +2055,7 @@ export default function DetalhesPedido() {
         initialRating={5}
         onClose={() => setFeedbackModalVisible(false)}
         onSubmitted={() => {
-          showThemedAlert('Avaliação enviada', 'Muito obrigado pela sua avaliação!');
+          setAlreadyEvaluated(true);
         }}
       />
 
@@ -3037,6 +3075,22 @@ const s = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
     color: '#92400E',
+  },
+  footerEvaluatedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#DCFCE7',
+  },
+  footerEvaluatedBadgeText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#16A34A',
   },
   mapPreviewCard: {
     height: 140,

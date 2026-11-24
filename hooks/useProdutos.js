@@ -266,6 +266,7 @@ export const useBuscarProdutos = (termo) => {
         supabase
           .from('products')
           .select('*')
+          .eq('available', true)
           .or(`name.ilike.%${cleanTermo}%,description.ilike.%${cleanTermo}%`)
           .order('created_at', { ascending: false }),
         fetchActivePromoConfig(),

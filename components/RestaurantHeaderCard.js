@@ -20,6 +20,7 @@ import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../constants/theme
 import { supabase } from '../supabaseConfig';
 import { getEffectiveSession, subscribeAuthUiChange } from '../utils/authSession';
 import { cartStore } from '../utils/cartStore';
+import { evaluateStoreOpen, computeWaitTime } from '../utils/storeSchedule';
 import { showSuccessAlert, showErrorAlert } from './ThemedAlert';
 
 export const LOYALTY_TARGET_ORDERS = 10;
@@ -52,9 +53,13 @@ function createInitialLoyaltyState() {
 }
 
 class LoyaltyManager {
-  async getLocalState() {
+  getStorageKey(userId = null) {
+    return userId ? `${STORAGE_KEY}_${userId}` : `${STORAGE_KEY}_guest`;
+  }
+
+  async getLocalState(userId = null) {
     try {
-      const stored = await AsyncStorage.getItem(STORAGE_KEY);
+      const stored = await AsyncStorage.getItem(this.getStorageKey(userId));
       if (stored) {
         const parsed = JSON.parse(stored);
         const count = Math.min(
@@ -78,91 +83,207 @@ class LoyaltyManager {
     }
 
     const initial = createInitialLoyaltyState();
-    await this.saveLocalState(initial);
+    await this.saveLocalState(initial, userId);
     return initial;
   }
 
-  async saveLocalState(state) {
+  async saveLocalState(state, userId = null) {
     try {
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      await AsyncStorage.setItem(this.getStorageKey(userId), JSON.stringify(state));
       notifyLoyaltyListeners(state);
     } catch (e) {
       console.warn('Erro ao salvar fidelidade no AsyncStorage:', e);
     }
   }
 
-  async getLoyaltyState(_userId = null) {
-    return this.getLocalState();
+  async getLoyaltyState(userId = null) {
+    let effectiveUserId = userId;
+    if (!effectiveUserId) {
+      try {
+        const session = await getEffectiveSession();
+        effectiveUserId = session?.user?.id || null;
+      } catch {
+        effectiveUserId = null;
+      }
+    }
+
+    if (!effectiveUserId) {
+      return createInitialLoyaltyState();
+    }
+
+    try {
+      const { data: rpcRaw, error: rpcError } = await supabase.rpc('get_loyalty_status');
+      const rpcData = Array.isArray(rpcRaw) ? rpcRaw[0] : rpcRaw;
+
+      if (!rpcError && rpcData && typeof rpcData === 'object') {
+        const target = Math.max(
+          1,
+          Number(rpcData.target_orders) || LOYALTY_TARGET_ORDERS
+        );
+        const count = Math.min(
+          target,
+          Math.max(0, Number(rpcData.orders_count) || 0)
+        );
+        const remaining =
+          rpcData.remaining_orders !== undefined && rpcData.remaining_orders !== null
+            ? Math.max(0, Number(rpcData.remaining_orders) || 0)
+            : Math.max(0, target - count);
+        const hasReward =
+          typeof rpcData.has_reward_available === 'boolean'
+            ? rpcData.has_reward_available
+            : count >= target;
+        const claimedCount = Math.max(
+          0,
+          Number(rpcData.rewards_claimed_count) || 0
+        );
+        const activeCode =
+          typeof rpcData.active_reward_code === 'string' &&
+          rpcData.active_reward_code.trim()
+            ? rpcData.active_reward_code.trim()
+            : null;
+        const history = Array.isArray(rpcData.history)
+          ? rpcData.history.map((item) => ({
+              id: String(item?.id ?? ''),
+              code: String(item?.code ?? item?.coupon_code ?? ''),
+              claimed: Boolean(item?.claimed),
+              claimedAt: item?.claimedAt ?? item?.claimed_at ?? undefined,
+              createdAt: String(item?.createdAt ?? item?.created_at ?? ''),
+            }))
+          : [];
+
+        const serverState = {
+          ordersCount: count,
+          targetOrders: target,
+          remainingOrders: remaining,
+          hasRewardAvailable: hasReward,
+          rewardsClaimedCount: claimedCount,
+          activeRewardCode: activeCode,
+          history,
+        };
+        await this.saveLocalState(serverState, effectiveUserId);
+        return serverState;
+      }
+    } catch {
+      // Fallback para leitura direta em profiles caso a RPC ainda não esteja disponível
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('loyalty_orders_count, loyalty_rewards_claimed')
+        .eq('id', effectiveUserId)
+        .maybeSingle();
+
+      if (!error && data) {
+        const count = Math.min(
+          LOYALTY_TARGET_ORDERS,
+          Math.max(0, Number(data.loyalty_orders_count) || 0)
+        );
+        const serverState = {
+          ordersCount: count,
+          targetOrders: LOYALTY_TARGET_ORDERS,
+          remainingOrders: Math.max(0, LOYALTY_TARGET_ORDERS - count),
+          hasRewardAvailable: count >= LOYALTY_TARGET_ORDERS,
+          rewardsClaimedCount: Math.max(
+            0,
+            Number(data.loyalty_rewards_claimed) || 0
+          ),
+          activeRewardCode: null,
+          history: [],
+        };
+        await this.saveLocalState(serverState, effectiveUserId);
+        return serverState;
+      }
+    } catch {
+      // Fallback local apenas se leitura do servidor falhar
+    }
+
+    return this.getLocalState(effectiveUserId);
   }
 
-  async incrementFromOrder({ orderId, orderCreatedAt, orderStatus }) {
-    const createdAtMs = new Date(orderCreatedAt).getTime();
-    const cutoffMs = new Date(LOYALTY_CUTOFF_DATE).getTime();
-    if (createdAtMs < cutoffMs) {
-      return this.getLocalState();
-    }
-
-    const normalizedStatus = String(orderStatus || '').toLowerCase();
-    const isCompleted = ['delivered', 'concluido', 'concluído'].includes(
-      normalizedStatus
-    );
-    if (!isCompleted) {
-      return this.getLocalState();
-    }
-
-    const current = await this.getLocalState();
-    const alreadyCountedKey = `counted_order_${orderId}`;
-    try {
-      const already = await AsyncStorage.getItem(alreadyCountedKey);
-      if (already) return current;
-    } catch {}
-
-    const nextCount = Math.min(LOYALTY_TARGET_ORDERS, current.ordersCount + 1);
-    const hasReward = nextCount >= LOYALTY_TARGET_ORDERS;
-    const generatedCode = hasReward
-      ? `BATATA-TOP-${Math.random().toString(36).substring(2, 8).toUpperCase()}`
-      : null;
-
-    const updated = {
-      ...current,
-      ordersCount: nextCount,
-      remainingOrders: Math.max(0, LOYALTY_TARGET_ORDERS - nextCount),
-      hasRewardAvailable: hasReward,
-      activeRewardCode: generatedCode || current.activeRewardCode,
-    };
-
-    try {
-      await AsyncStorage.setItem(alreadyCountedKey, '1');
-    } catch {}
-
-    await this.saveLocalState(updated);
-    return updated;
+  async incrementFromOrder({ userId = null } = {}) {
+    // O incremento acontece server-side via trigger trg_orders_loyalty_on_delivered
+    return this.getLoyaltyState(userId);
   }
 
   async redeemReward(userId = null) {
-    const current = await this.getLocalState();
-    const couponCode = current.activeRewardCode || 'BATATA-GRATIS-10';
+    let effectiveUserId = userId;
+    if (!effectiveUserId) {
+      try {
+        const session = await getEffectiveSession();
+        effectiveUserId = session?.user?.id || null;
+      } catch {
+        effectiveUserId = null;
+      }
+    }
+
+    if (!effectiveUserId) {
+      throw new Error('Faça login para resgatar sua batata grátis.');
+    }
+
+    const { data, error } = await supabase.rpc('redeem_loyalty_reward');
+
+    if (error) {
+      const rawMessage = `${error.message || ''} ${error.details || ''}`.toLowerCase();
+      if (rawMessage.includes('loyalty_not_enough_orders')) {
+        throw new Error('Você ainda não completou 10 pedidos para resgatar.');
+      }
+      if (rawMessage.includes('unauthorized') || error.code === '42501') {
+        throw new Error('Faça login para resgatar sua batata grátis.');
+      }
+      if (rawMessage.includes('profile_not_found')) {
+        throw new Error('Perfil de fidelidade não encontrado. Faça login novamente.');
+      }
+      throw new Error(
+        error.message || 'Não foi possível resgatar sua batata grátis. Tente novamente.'
+      );
+    }
+
+    const rpcData = Array.isArray(data) ? data[0] : data;
+    const couponCode =
+      typeof rpcData?.coupon_code === 'string' ? rpcData.coupon_code.trim() : '';
+
+    if (!couponCode) {
+      throw new Error('Não foi possível gerar o cupom de fidelidade. Tente novamente.');
+    }
+
+    let prevHistory = [];
+    let prevClaimed = 0;
+    try {
+      const prev = await this.getLocalState(effectiveUserId);
+      prevHistory = Array.isArray(prev?.history) ? prev.history : [];
+      prevClaimed = Number(prev?.rewardsClaimedCount) || 0;
+    } catch {}
+
+    const claimedCount =
+      rpcData?.rewards_claimed_count !== undefined &&
+      rpcData?.rewards_claimed_count !== null
+        ? Math.max(0, Number(rpcData.rewards_claimed_count) || 0)
+        : prevClaimed + 1;
+    const nowIso = new Date().toISOString();
 
     const newState = {
       ordersCount: 0,
       targetOrders: LOYALTY_TARGET_ORDERS,
       remainingOrders: LOYALTY_TARGET_ORDERS,
       hasRewardAvailable: false,
-      rewardsClaimedCount: current.rewardsClaimedCount + 1,
-      activeRewardCode: null,
-      history: [
-        {
-          id: Math.random().toString(36).substring(2, 9),
-          code: couponCode,
-          claimed: true,
-          claimedAt: new Date().toISOString(),
-          createdAt: new Date().toISOString(),
-        },
-        ...current.history,
-      ],
+      rewardsClaimedCount: claimedCount,
+      activeRewardCode: couponCode,
+      history: prevHistory.some((item) => item.code === couponCode)
+        ? prevHistory
+        : [
+            {
+              id: `reward-${Date.now()}`,
+              code: couponCode,
+              claimed: true,
+              claimedAt: nowIso,
+              createdAt: nowIso,
+            },
+            ...prevHistory,
+          ],
     };
 
-    await this.saveLocalState(newState);
+    await this.saveLocalState(newState, effectiveUserId);
     return { couponCode, newState };
   }
 
@@ -202,8 +323,7 @@ export function useLoyalty() {
         const s = await loyaltyManager.getLoyaltyState(uid);
         if (mounted) setState(s);
       } catch {
-        const s = await loyaltyManager.getLocalState();
-        if (mounted) setState(s);
+        if (mounted) setState(createInitialLoyaltyState());
       }
     }
 
@@ -246,10 +366,15 @@ export function useLoyalty() {
         description: '100% de desconto na sua batata pelo Programa de Fidelidade!',
         descricao: '100% de desconto na sua batata pelo Programa de Fidelidade!',
         discount: 100,
+        discountValue: 100,
         discount_value: 100,
         type: 'percentage',
+        discountType: 'percentage',
         discount_type: 'percentage',
+        restrictedCategories: ['batata', 'batatas'],
+        restricted_categories: ['batata', 'batatas'],
         minOrderValue: 0,
+        min_order_value: 0,
         badgeLabel: '100% OFF',
       });
 
@@ -331,6 +456,7 @@ export default function RestaurantHeaderCard({
   const [reviewsList, setReviewsList] = useState([]);
   const [isLoadingReviews, setIsLoadingReviews] = useState(false);
 
+  const storeStatusRef = useRef(null);
   const progressAnim = useRef(new Animated.Value(0)).current;
   const progressPercent = Math.min(
     100,
@@ -361,6 +487,22 @@ export default function RestaurantHeaderCard({
     let channel;
     let mounted = true;
 
+    function applyStoreStatus(sv) {
+      if (!mounted || !sv) return;
+      storeStatusRef.current = sv;
+      if (propIsOpen === undefined) {
+        setStoreOpen(evaluateStoreOpen(sv));
+      }
+      if (sv.isDeliveryFeeEnabled !== undefined) {
+        setIsDeliveryFeeEnabled(!!sv.isDeliveryFeeEnabled);
+      }
+      if (sv.deliveryFee !== undefined) {
+        setDeliveryFee(Number(sv.deliveryFee) || 0);
+      }
+      const computedWait = computeWaitTime(sv);
+      setWaitTime({ min: computedWait.min, max: computedWait.max });
+    }
+
     async function fetchStoreSettings() {
       try {
         const { data } = await supabase
@@ -372,22 +514,7 @@ export default function RestaurantHeaderCard({
 
         data.forEach((row) => {
           if (row.setting_key === 'store_status' && row.setting_value) {
-            const sv = row.setting_value;
-            if (sv.isOpen !== undefined && propIsOpen === undefined) {
-              setStoreOpen(!!sv.isOpen);
-            }
-            if (sv.isDeliveryFeeEnabled !== undefined) {
-              setIsDeliveryFeeEnabled(!!sv.isDeliveryFeeEnabled);
-            }
-            if (sv.deliveryFee !== undefined) {
-              setDeliveryFee(Number(sv.deliveryFee) || 0);
-            }
-            if (sv.waitTimeMin || sv.waitTimeMax) {
-              setWaitTime({
-                min: Number(sv.waitTimeMin) || waitTimeMin,
-                max: Number(sv.waitTimeMax) || waitTimeMax,
-              });
-            }
+            applyStoreStatus(row.setting_value);
           }
           if (row.setting_key === 'delivery_settings' && row.setting_value) {
             if (row.setting_value.isDeliveryFeeEnabled !== undefined) {
@@ -416,30 +543,25 @@ export default function RestaurantHeaderCard({
           },
           (payload) => {
             if (mounted && payload.new?.setting_value) {
-              const sv = payload.new.setting_value;
-              if (propIsOpen === undefined && sv.isOpen !== undefined) {
-                setStoreOpen(!!sv.isOpen);
-              }
-              if (sv.isDeliveryFeeEnabled !== undefined) {
-                setIsDeliveryFeeEnabled(!!sv.isDeliveryFeeEnabled);
-              }
-              if (sv.deliveryFee !== undefined) {
-                setDeliveryFee(Number(sv.deliveryFee) || 0);
-              }
-              if (sv.waitTimeMin || sv.waitTimeMax) {
-                setWaitTime({
-                  min: Number(sv.waitTimeMin) || waitTimeMin,
-                  max: Number(sv.waitTimeMax) || waitTimeMax,
-                });
-              }
+              applyStoreStatus(payload.new.setting_value);
             }
           }
         )
         .subscribe();
     } catch {}
 
+    const timer = setInterval(() => {
+      if (!mounted || !storeStatusRef.current) return;
+      if (propIsOpen === undefined) {
+        setStoreOpen(evaluateStoreOpen(storeStatusRef.current));
+      }
+      const computedWait = computeWaitTime(storeStatusRef.current);
+      setWaitTime({ min: computedWait.min, max: computedWait.max });
+    }, 60_000);
+
     return () => {
       mounted = false;
+      clearInterval(timer);
       if (channel) {
         supabase.removeChannel(channel);
       }
@@ -452,7 +574,43 @@ export default function RestaurantHeaderCard({
     let fetchedReviewsCount = 0;
     let fetchedReviews = [];
 
-    // 1. Total real de pedidos feitos no restaurante
+    // 0. Tenta endpoint público consolidado (evita bloqueio de RLS em orders para visitantes/clientes)
+    const rawBase = (process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatop.vercel.app').trim().replace(/\/+$/, '');
+    const safeBase = /^https:\/\//i.test(rawBase) ? rawBase : 'https://batatatop.vercel.app';
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      try {
+        const res = await fetch(`${safeBase}/api/feedbacks/public`, { signal: controller.signal });
+        if (res.ok) {
+          const json = await res.json();
+          if (json && typeof json === 'object') {
+            if (typeof json.totalOrders === 'number') {
+              fetchedOrders = Math.max(totalOrders, json.totalOrders);
+            }
+            if (typeof json.averageRating === 'number' && json.averageRating > 0) {
+              fetchedRating = json.averageRating;
+            }
+            if (typeof json.totalReviews === 'number') {
+              fetchedReviewsCount = json.totalReviews;
+            }
+            if (Array.isArray(json.reviews)) {
+              fetchedReviews = json.reviews;
+            }
+            return {
+              totalOrders: fetchedOrders,
+              averageRating: fetchedRating,
+              totalReviews: fetchedReviewsCount,
+              reviews: fetchedReviews,
+            };
+          }
+        }
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch {}
+
+    // 1. Fallback direto no Supabase caso API pública não responda
     try {
       const { count, error: countErr } = await supabase
         .from('orders')

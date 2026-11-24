@@ -40,6 +40,7 @@ function formatRelativeTime(isoDate) {
 const PROVIDER_LABELS = {
   email: 'E-mail',
   phone: 'Telefone',
+  google: 'Google',
 };
 
 export default function DispositivosConectados() {

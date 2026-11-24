@@ -118,6 +118,7 @@ export default function StepItens({
         {items.map((item) => {
           const itemId = item.cartItemId || item.id;
           const linePrice = item.precoNum ? (item.precoNum / 100) * item.quantity : 0;
+          const pastaLabel = String(item.pastaType || item.pasta_type || '').trim();
           const extras: string[] = (item.adicionais || [])
             .map((a: { name?: string; nome?: string; quantity?: number }) => {
               const label = a.name || a.nome || '';
@@ -151,6 +152,13 @@ export default function StepItens({
                 <Text style={styles.itemName} numberOfLines={2}>
                   {item.nome}
                 </Text>
+                {!!pastaLabel && (
+                  <View style={styles.pastaBadge}>
+                    <Text style={styles.pastaBadgeText} numberOfLines={1}>
+                      MASSA: {pastaLabel.toUpperCase()}
+                    </Text>
+                  </View>
+                )}
                 {extras.length > 0 && (
                   <Text style={styles.itemExtras} numberOfLines={2}>
                     + {extras.join(', ')}
@@ -437,6 +445,23 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.text,
     lineHeight: 18,
+  },
+  pastaBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    marginTop: 4,
+    marginBottom: 2,
+  },
+  pastaBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#C1440E',
+    letterSpacing: 0.4,
   },
   itemExtras: {
     fontSize: 12,

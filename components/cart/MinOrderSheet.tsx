@@ -10,15 +10,25 @@ import RipplePressable from './RipplePressable';
 interface MinOrderSheetProps {
   visible: boolean;
   onClose: () => void;
+  onChoosePickup?: () => void;
 }
 
-export default function MinOrderSheet({ visible, onClose }: MinOrderSheetProps) {
+export default function MinOrderSheet({
+  visible,
+  onClose,
+  onChoosePickup,
+}: MinOrderSheetProps) {
   const router = useRouter();
   const minFormatted = `R$ ${MIN_ORDER_VALUE.toFixed(2).replace('.', ',')}`;
 
   const handleAddMore = () => {
     onClose();
     router.push('/cardapio');
+  };
+
+  const handleChoosePickup = () => {
+    onClose();
+    onChoosePickup?.();
   };
 
   return (
@@ -32,7 +42,7 @@ export default function MinOrderSheet({ visible, onClose }: MinOrderSheetProps) 
     >
       <Text style={styles.title}>Valor mínimo do pedido</Text>
       <Text style={styles.description}>
-        O pedido mínimo é {minFormatted} sem contar com a taxa de entrega
+        O pedido mínimo para entrega é de {minFormatted} (sem incluir a taxa de entrega).
       </Text>
 
       <PrimaryButton
@@ -42,6 +52,18 @@ export default function MinOrderSheet({ visible, onClose }: MinOrderSheetProps) 
         accessibilityLabel="Adicionar mais itens"
         style={{ marginBottom: 12 }}
       />
+
+      {onChoosePickup && (
+        <RipplePressable
+          style={styles.pickupBtn}
+          onPress={handleChoosePickup}
+          hitSlop={8}
+          rippleColor="rgba(227, 160, 8, 0.18)"
+          accessibilityLabel="Retirar na loja (sem valor mínimo)"
+        >
+          <Text style={styles.pickupBtnText}>Retirar na loja (sem valor mínimo)</Text>
+        </RipplePressable>
+      )}
 
       <RipplePressable
         style={styles.cancelBtn}
@@ -102,6 +124,22 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: 24,
     paddingHorizontal: 8,
+  },
+  pickupBtn: {
+    width: '100%',
+    height: 48,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.warningBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  pickupBtnText: {
+    color: COLORS.secondary,
+    fontWeight: '700',
+    fontSize: 15,
   },
   cancelBtn: {
     width: '100%',

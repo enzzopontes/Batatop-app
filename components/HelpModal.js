@@ -77,7 +77,7 @@ const FAQ_ITEMS = [
     id: 'pedido-errado',
     question: 'O que fazer se meu pedido vier errado ou incompleto?',
     answer:
-      'Entre em contato conosco em até 30 minutos após receber o pedido, informando o número do pedido e o que aconteceu. Vamos analisar e, se for o caso, refazer o item ou aplicar o reembolso/crédito.',
+      'Entre em contato conosco em até 2 horas após receber o pedido, informando o número do pedido e o que aconteceu. Vamos analisar e, se for o caso, refazer o item ou aplicar o reembolso/crédito.',
   },
   {
     id: 'cupom-desconto',

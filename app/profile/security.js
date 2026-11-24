@@ -30,6 +30,12 @@ export default function ProfileSecurity() {
           <Ionicons name="chevron-forward" size={18} color={COLORS.textMuted} />
         </Pressable>
         <View style={s.divider} />
+
+        <Pressable style={s.row} onPress={() => router.push('/profile/excluir-conta')}>
+          <Text style={[s.rowTitle, s.rowTitleDanger]}>Excluir minha conta</Text>
+          <Ionicons name="chevron-forward" size={18} color={COLORS.textMuted} />
+        </Pressable>
+        <View style={s.divider} />
       </View>
     </SafeAreaView>
   );
@@ -75,6 +81,9 @@ const s = StyleSheet.create({
   rowTitle: {
     fontSize: TYPOGRAPHY.sizes.base,
     color: COLORS.text,
+  },
+  rowTitleDanger: {
+    color: COLORS.error || '#DC2626',
   },
   divider: {
     height: 1,

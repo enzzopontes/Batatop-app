@@ -223,6 +223,7 @@ export default function CartScreen() {
       <MinOrderSheet
         visible={flow.minOrderSheetVisible}
         onClose={() => flow.setMinOrderSheetVisible(false)}
+        onChoosePickup={flow.handleChoosePickupFromMinOrder}
       />
     </View>
   );

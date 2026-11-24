@@ -8,8 +8,8 @@
  * (flag do site: taxa ativa ou frete gratis).
  */
 
-// Pedido minimo da sacola. 0 = desativado (aviso e sheet nao aparecem).
-export const MIN_ORDER_VALUE = 0;
+// Pedido mínimo para delivery (R$ 20,00). Aplica-se apenas a delivery; retirada não possui pedido mínimo.
+export const MIN_ORDER_VALUE = 20.0;
 
 // Taxa de entrega padrao (R$ 3,00, alinhado com site e banco). Cobrada so
 // quando `isDeliveryFeeEnabled` esta ativo em store_settings.store_status

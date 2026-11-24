@@ -2,7 +2,21 @@ import { supabase } from '../supabaseConfig';
 import { getEffectiveSession } from './authSession';
 import { buildNewOrderPushContent } from './orderNotificationContent';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
+const RAW_API_BASE_URL = (process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatop.vercel.app').trim().replace(/\/+$/, '');
+const API_BASE_URL =
+  /^https:\/\//i.test(RAW_API_BASE_URL) || (__DEV__ && /^http:\/\/localhost(:\d+)?$/i.test(RAW_API_BASE_URL))
+    ? RAW_API_BASE_URL
+    : 'https://batatatop.vercel.app';
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 12000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /**
  * Dispara push notification para todos os admins registrados.
@@ -73,7 +87,7 @@ export async function notifyAdminNewOrder(orderId) {
         const session = await getEffectiveSession();
         const token = session?.access_token;
         if (token) {
-          const res = await fetch(`${API_BASE_URL}/api/notify-new-order`, {
+          const res = await fetchWithTimeout(`${API_BASE_URL}/api/notify-new-order`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -129,7 +143,7 @@ export async function notifyAdminNewOrder(orderId) {
       }));
 
       try {
-        const expoRes = await fetch('https://exp.host/--/api/v2/push/send', {
+        const expoRes = await fetchWithTimeout('https://exp.host/--/api/v2/push/send', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -169,45 +183,6 @@ export async function notifyAdminNewOrder(orderId) {
       }
     } catch (edgeEx) {
       console.warn('[notify] Falha de rede ao invocar Edge Function:', edgeEx?.message || edgeEx);
-    }
-
-    // 7. Fallback redundante: Rota API Next.js /api/notify-new-order
-    if (API_BASE_URL) {
-      try {
-        const session = await getEffectiveSession();
-        const token = session?.access_token;
-        if (!token) {
-          console.warn('[notify] Sem access_token para chamar API Vercel /api/notify-new-order');
-          return;
-        }
-
-        const res = await fetch(`${API_BASE_URL}/api/notify-new-order`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ orderId }),
-        });
-
-        const resJson = await res.json().catch(() => null);
-        if (!res.ok) {
-          // HTTP 409: pedido não precisa de push manual (ex: pagamento online gerenciado via webhook)
-          if (res.status === 409) {
-            if (__DEV__) {
-              console.log('[notify] Pedido não requer notificação manual (notificado via webhook/outro fluxo):', resJson?.error);
-            }
-          } else if (__DEV__) {
-            console.error(`[notify] API /api/notify-new-order falhou [HTTP ${res.status}]:`, resJson);
-          } else {
-            console.error(`[notify] API /api/notify-new-order falhou [HTTP ${res.status}]`);
-          }
-        } else if (__DEV__) {
-          console.log('[notify] API /api/notify-new-order sucesso:', resJson);
-        }
-      } catch (apiEx) {
-        console.error('[notify] Falha de conexão com API Next.js /api/notify-new-order:', apiEx?.message || apiEx);
-      }
     }
   } catch (globalErr) {
     console.error('[notify] Erro crítico ao notificar admin:', globalErr?.message || globalErr);

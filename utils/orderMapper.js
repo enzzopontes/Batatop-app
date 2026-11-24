@@ -25,7 +25,8 @@ export function mapCartItemsToOrderItems(items) {
     const quantity = Math.max(1, Math.min(99, Math.floor(isNaN(rawQty) ? 1 : rawQty)));
 
     const notes = (item.notes || item.observacoes || '').trim() || null;
-    const pastaType = item.pasta_type || item.pastaType || null;
+    const pastaType =
+      String(item.pastaType || item.pasta_type || '').trim().slice(0, 50).trim() || null;
 
     const adicionaisMap = new Map();
     if (Array.isArray(item.adicionais)) {

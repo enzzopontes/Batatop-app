@@ -26,6 +26,7 @@ import { InstallmentOption } from './InstallmentsModal';
 import { notifyAdminNewOrder } from '../../utils/notifyNewOrder';
 import { MIN_ORDER_VALUE, DELIVERY_FEE, STORE_ADDRESS } from '../../constants/store';
 import { showThemedAlert, showErrorAlert } from '../ThemedAlert';
+import { evaluateStoreOpen } from '../../utils/storeSchedule';
 
 export type CheckoutStep = 'itens' | 'entrega' | 'pagamento';
 
@@ -59,7 +60,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   coupon_min_order_value_not_met: 'O valor mínimo do pedido para este cupom não foi atingido.',
   coupon_user_limit_reached: 'Você já atingiu o limite de usos para este cupom.',
   coupon_not_applicable: 'Este cupom não é aplicável a este pedido.',
-  min_order_value_not_met: 'O pedido mínimo é de R$ 20,00 (sem considerar taxa de entrega).',
+  min_order_value_not_met: 'O pedido mínimo para entrega é de R$ 20,00 (sem considerar taxa de entrega).',
   coupon_blocked_by_active_promo: 'Cupons não podem ser combinados com promoções ativas no momento.',
   coupon_first_order_only: 'Este cupom é válido apenas para o seu primeiro pedido.',
   address_too_long: 'Endereço muito longo.',
@@ -177,6 +178,8 @@ export function useCheckoutFlow() {
   const [dynamicDeliveryFee, setDynamicDeliveryFee] = useState<number>(DELIVERY_FEE);
   const [isDeliveryFeeEnabled, setIsDeliveryFeeEnabled] = useState<boolean>(false);
   const [isPromoActive, setIsPromoActive] = useState(false);
+  const [isStoreOpen, setIsStoreOpen] = useState<boolean>(true);
+  const storeStatusRef = useRef<any>(null);
 
   // Payment
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix');
@@ -245,10 +248,30 @@ export function useCheckoutFlow() {
       discount = 0;
     } else {
       let eligibleSubtotal = subtotal;
+      const isLoyaltyCoupon = /^FIDELIDADE-/i.test(String(coupon.code || '').trim());
       const hasCategoryRestrictions =
         Array.isArray(coupon.restricted_categories) && coupon.restricted_categories.length > 0;
 
-      if (hasCategoryRestrictions) {
+      if (isLoyaltyCoupon) {
+        const batataBasePrices = items
+          .filter((item: { category?: string; categoria?: string }) => {
+            const cat = String(item.category || item.categoria || '').trim().toLowerCase();
+            return cat === 'batata' || cat === 'batatas';
+          })
+          .map((item: { price?: number; preco?: number; precoNum?: number }) => {
+            const p = Number(item.price || item.preco || 0);
+            if (!isNaN(p) && p > 0) return p;
+            return typeof item.precoNum === 'number' && !isNaN(item.precoNum) ? item.precoNum / 100 : 0;
+          })
+          .filter((p: number) => p > 0);
+
+        if (batataBasePrices.length === 0) {
+          couponInvalidReason = 'Adicione uma batata para usar sua recompensa de fidelidade.';
+          discount = 0;
+        } else {
+          discount = Math.min(subtotal, Math.round(Math.min(...batataBasePrices) * 100) / 100);
+        }
+      } else if (hasCategoryRestrictions) {
         const allowedCategories = new Set(
           coupon.restricted_categories.map((c: string) => String(c).toLowerCase())
         );
@@ -328,6 +351,8 @@ export function useCheckoutFlow() {
       }
       const promoOn = Boolean(val.itemPromo?.isActive || val.superPromo?.isActive || val.isPromoActive);
       setIsPromoActive(promoOn);
+      storeStatusRef.current = val;
+      setIsStoreOpen(evaluateStoreOpen(val));
     };
 
     (async () => {
@@ -343,6 +368,12 @@ export function useCheckoutFlow() {
       }
     })();
 
+    const scheduleInterval = setInterval(() => {
+      if (storeStatusRef.current) {
+        setIsStoreOpen(evaluateStoreOpen(storeStatusRef.current));
+      }
+    }, 30000);
+
     const channel = supabase
       .channel('store_settings_checkout_delivery_fee')
       .on(
@@ -355,6 +386,7 @@ export function useCheckoutFlow() {
       .subscribe();
 
     return () => {
+      clearInterval(scheduleInterval);
       supabase.removeChannel(channel);
     };
   }, []);
@@ -618,8 +650,16 @@ export function useCheckoutFlow() {
     setDeliveryType((prev) => (prev === 'delivery' ? 'retirada' : 'delivery'));
   }, []);
 
+  const handleChoosePickupFromMinOrder = useCallback(() => {
+    setMinOrderSheetVisible(false);
+    setDeliveryType('retirada');
+    setStep('entrega');
+  }, []);
+
   // Validation
   const validateOrder = (): string | null => {
+    const storeOpenNow = storeStatusRef.current ? evaluateStoreOpen(storeStatusRef.current) : isStoreOpen;
+    if (!storeOpenNow) return ERROR_MESSAGES.store_is_closed;
     if (!name.trim()) return 'Informe seu nome para o pedido';
     if (!phone.trim()) return 'Informe seu número de WhatsApp para contato';
     if (!isValidPhone(phone)) return 'Informe um número de WhatsApp válido com DDD (ex: 14 99999-9999)';
@@ -686,6 +726,13 @@ export function useCheckoutFlow() {
       return;
     }
 
+    if (deliveryType === 'delivery' && MIN_ORDER_VALUE > 0 && subtotal < MIN_ORDER_VALUE) {
+      submittingRef.current = false;
+      setShowReviseModal(false);
+      setMinOrderSheetVisible(true);
+      return;
+    }
+
     const validationError = validateOrder();
     if (validationError) {
       submittingRef.current = false;
@@ -720,11 +767,14 @@ export function useCheckoutFlow() {
         }
       }
 
+      const isZeroTotalOrder = baseTotal <= 0 && subtotal > 0 && discount >= subtotal + deliveryFee;
+
       // Verificado em components/cart/StepPagamento.tsx:113-116
       const isOnline =
-        paymentMethod === 'pix' ||
-        paymentMethod === 'cartão de crédito' ||
-        paymentMethod === 'cartão de débito';
+        !isZeroTotalOrder &&
+        (paymentMethod === 'pix' ||
+          paymentMethod === 'cartão de crédito' ||
+          paymentMethod === 'cartão de débito');
 
       const customerAddress =
         deliveryType === 'delivery' && selectedAddress
@@ -736,12 +786,13 @@ export function useCheckoutFlow() {
           ? selectedAddress.neighborhood
           : STORE_ADDRESS.neighborhood;
 
-      const mappedPaymentMethod =
-        paymentMethod === 'pix'
-          ? 'pix'
-          : paymentMethod === 'dinheiro'
-          ? 'dinheiro'
-          : 'cartao';
+      const mappedPaymentMethod = isZeroTotalOrder
+        ? 'dinheiro'
+        : paymentMethod === 'pix'
+        ? 'pix'
+        : paymentMethod === 'dinheiro'
+        ? 'dinheiro'
+        : 'cartao';
 
       const isCredit =
         paymentMethod === 'cartão de crédito' ||
@@ -834,7 +885,7 @@ export function useCheckoutFlow() {
       // 2. Processa pagamento nas rotas do servidor se for online
       let cardResult: any = null;
 
-      if (paymentMethod === 'pix') {
+      if (isOnline && paymentMethod === 'pix') {
         const pixResult: any = await createPixPayment(currentOrderId);
         if (!pixResult.success) {
           setSubmitting(false);
@@ -1062,7 +1113,7 @@ export function useCheckoutFlow() {
     if (items.length === 0) return;
 
     if (step === 'itens') {
-      if (MIN_ORDER_VALUE > 0 && subtotal < MIN_ORDER_VALUE) {
+      if (deliveryType === 'delivery' && MIN_ORDER_VALUE > 0 && subtotal < MIN_ORDER_VALUE) {
         setMinOrderSheetVisible(true);
         return;
       }
@@ -1071,6 +1122,10 @@ export function useCheckoutFlow() {
     }
 
     if (step === 'entrega') {
+      if (deliveryType === 'delivery' && MIN_ORDER_VALUE > 0 && subtotal < MIN_ORDER_VALUE) {
+        setMinOrderSheetVisible(true);
+        return;
+      }
       if (deliveryType === 'delivery' && !selectedAddress) {
         showThemedAlert(
           'Endereço necessário',
@@ -1087,6 +1142,10 @@ export function useCheckoutFlow() {
     }
 
     // step === 'pagamento' -> Botão "Revisar pedido" abre o ReviseOrderModal
+    if (deliveryType === 'delivery' && MIN_ORDER_VALUE > 0 && subtotal < MIN_ORDER_VALUE) {
+      setMinOrderSheetVisible(true);
+      return;
+    }
     if (wantsCutlery === null) {
       showErrorAlert('Por favor, informe se precisa de talheres.', 'Atenção');
       return;
@@ -1198,6 +1257,7 @@ export function useCheckoutFlow() {
         initialQty: String(item.quantity || 1),
         initialObs: item.observacoes || '',
         initialAdicionais: JSON.stringify(item.adicionais || []),
+        initialPastaType: item.pastaType || '',
       },
     });
   };
@@ -1214,6 +1274,7 @@ export function useCheckoutFlow() {
     coupon,
     couponInvalidReason,
     isPromoActive,
+    isStoreOpen,
     deliveryType,
     setDeliveryType,
     toggleDeliveryType,
@@ -1262,6 +1323,7 @@ export function useCheckoutFlow() {
     openCardWizardFromRevise,
     minOrderSheetVisible,
     setMinOrderSheetVisible,
+    handleChoosePickupFromMinOrder,
     baseTotal,
     showInstallmentsModal,
     setShowInstallmentsModal,
