@@ -33,7 +33,7 @@ const DAYS_OF_WEEK = [
   { key: 6, id: 'sab', label: 'Sábado', short: 'Sáb' },
 ];
 
-function checkShouldBeOpen(openTime = '10:00', closeTime = '22:00', weeklySchedule = null) {
+function checkShouldBeOpen(openTime = '10:00', closeTime = '22:30', weeklySchedule = null) {
   const now = new Date();
   const spTimeStr = now.toLocaleTimeString('pt-BR', {
     timeZone: 'America/Sao_Paulo',
@@ -46,7 +46,7 @@ function checkShouldBeOpen(openTime = '10:00', closeTime = '22:00', weeklySchedu
 
   const dayOfWeek = now.getDay();
   let dayOpen = openTime || '10:00';
-  let dayClose = closeTime || '22:00';
+  let dayClose = closeTime || '22:30';
 
   if (Array.isArray(weeklySchedule) && weeklySchedule.length > 0) {
     const dayConfig = weeklySchedule.find(d => d.key === dayOfWeek || d.id === DAYS_OF_WEEK[dayOfWeek]?.id);
@@ -91,10 +91,10 @@ export default function AdminDashboard() {
 
   // Estados dos inputs de horário
   const [openTimeInput, setOpenTimeInput] = useState('10:00');
-  const [closeTimeInput, setCloseTimeInput] = useState('22:00');
+  const [closeTimeInput, setCloseTimeInput] = useState('22:30');
   const [autoScheduleInput, setAutoScheduleInput] = useState(true);
   const [weeklyScheduleInput, setWeeklyScheduleInput] = useState(
-    DAYS_OF_WEEK.map(d => ({ ...d, open: '10:00', close: '22:00', closed: false }))
+    DAYS_OF_WEEK.map(d => ({ ...d, open: '10:00', close: '22:30', closed: false }))
   );
 
   // Estado do input de taxa
@@ -192,7 +192,7 @@ export default function AdminDashboard() {
             DAYS_OF_WEEK.map(d => ({
               ...d,
               open: val.openTime || '10:00',
-              close: val.closeTime || '22:00',
+              close: val.closeTime || '22:30',
               closed: false,
             }))
           );
@@ -255,7 +255,7 @@ export default function AdminDashboard() {
     if (!storeStatus) return;
     const currentVal = storeStatus.setting_value || {};
     const openTime = currentVal.openTime || '10:00';
-    const closeTime = currentVal.closeTime || '22:00';
+    const closeTime = currentVal.closeTime || '22:30';
     const weekly = currentVal.weeklySchedule;
 
     const scheduledOpen = checkShouldBeOpen(openTime, closeTime, weekly);
@@ -421,7 +421,7 @@ export default function AdminDashboard() {
   const isDeliveryFeeEnabled = Boolean(val.isDeliveryFeeEnabled ?? true);
   const isManualOverride = Boolean(val.manualOverride);
   const openTime = val.openTime || '10:00';
-  const closeTime = val.closeTime || '22:00';
+  const closeTime = val.closeTime || '22:30';
   const feeAmount = Number(val.deliveryFee ?? 3).toFixed(2).replace('.', ',');
 
   return (
@@ -835,7 +835,7 @@ export default function AdminDashboard() {
                         <Text style={s.timeSeparator}>até</Text>
                         <TextInput
                           style={s.miniTimeInput}
-                          value={day.close || '22:00'}
+                          value={day.close || '22:30'}
                           onChangeText={(v) => handleUpdateDayTime(idx, 'close', v)}
                           placeholder="22:00"
                           maxLength={5}

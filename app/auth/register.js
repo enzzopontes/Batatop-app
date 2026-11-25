@@ -7,11 +7,11 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
   ScrollView,
   Image,
 } from 'react-native';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
+import { useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../supabaseConfig';
 import { Ionicons } from '@expo/vector-icons';
@@ -28,6 +28,10 @@ export default function RegisterScreen() {
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const { height: keyboardHeight } = useReanimatedKeyboardAnimation();
+  const keyboardPaddingStyle = useAnimatedStyle(() => ({
+    paddingBottom: Math.abs(keyboardHeight.value),
+  }));
 
   const handleRegister = async () => {
     if (!name || !email || !password || !confirmPassword) {
@@ -84,11 +88,8 @@ export default function RegisterScreen() {
 
   return (
     <View style={styles.container}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={{ flex: 1 }}
-      >
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <Animated.View style={[{ flex: 1 }, keyboardPaddingStyle]}>
+        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
             <Ionicons name="arrow-back" size={24} color="#333" />
           </TouchableOpacity>
@@ -228,7 +229,7 @@ export default function RegisterScreen() {
             </TouchableOpacity>
           </View>
         </ScrollView>
-      </KeyboardAvoidingView>
+      </Animated.View>
       <ThemedAlertHost />
     </View>
   );

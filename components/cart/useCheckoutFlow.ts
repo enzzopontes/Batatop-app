@@ -901,7 +901,7 @@ export function useCheckoutFlow() {
           showThemedAlert(isConfigErr ? 'Serviço indisponível' : 'Erro no PIX', err);
           return;
         }
-      } else if (paymentMethod === 'cartão de crédito' || paymentMethod === 'cartão de débito') {
+      } else if (isOnline && (paymentMethod === 'cartão de crédito' || paymentMethod === 'cartão de débito')) {
         const authoritativeTotal = pendingOrderTotalRef.current ?? baseTotal;
         const chosenInstallments = paymentMethod === 'cartão de crédito' ? (selectedInstallment?.installments || 1) : 1;
 
