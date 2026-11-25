@@ -206,10 +206,13 @@ export default function LiveDeliveryMap({
 
     lastRouteFetchedDriverPosRef.current = { latitude: startLat, longitude: startLng };
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
     try {
       setLoadingRoute(true);
       const url = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${destLng},${destLat}?overview=full&geometries=geojson`;
-      const res = await fetch(url);
+      const res = await fetch(url, { signal: controller.signal });
       if (!res.ok) throw new Error('OSRM routing request failed');
       const data = await res.json();
 
@@ -243,6 +246,7 @@ export default function LiveDeliveryMap({
         { latitude: destLat, longitude: destLng },
       ]);
     } finally {
+      clearTimeout(timeoutId);
       setLoadingRoute(false);
     }
   }, []);

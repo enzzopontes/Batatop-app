@@ -223,7 +223,7 @@ function ActiveOrderCard({ order, onDetails }) {
   const awaitingPix = isOrderAwaitingPix(order);
 
   const formattedEta = useMemo(() => {
-    if (!etaMinutes) return '30-45 min';
+    if (!etaMinutes) return '30 - 45 min';
     const baseTime = order.createdAt ? new Date(order.createdAt).getTime() : Date.now();
     const etaDate = new Date(baseTime + etaMinutes * 60 * 1000);
     return etaDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });

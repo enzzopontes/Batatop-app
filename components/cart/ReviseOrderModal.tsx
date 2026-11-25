@@ -163,7 +163,7 @@ export default function ReviseOrderModal({
                   {isDelivery ? 'Entrega hoje' : 'Retirada no local'}
                 </Text>
                 <Text style={styles.rowSub}>
-                  {isDelivery ? 'Hoje, 40 - 55 min' : 'Hoje, 15 - 25 min'}
+                  {isDelivery ? 'Hoje, 30 - 45 min' : 'Hoje, 15 - 25 min'}
                 </Text>
               </View>
             </RipplePressable>

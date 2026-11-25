@@ -36,9 +36,16 @@ async function fetchReverseGeocode(lat, lng) {
   // garantia, já que User-Agent customizado às vezes não sobrevive em
   // todo ambiente/proxy do dispositivo.
   const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1&email=${encodeURIComponent(NOMINATIM_CONTACT)}`;
-  const res = await fetch(url, { headers: NOMINATIM_HEADERS });
-  if (!res.ok) throw new Error(`Falha no reverse geocoding (HTTP ${res.status})`);
-  const data = await res.json();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  let data;
+  try {
+    const res = await fetch(url, { headers: NOMINATIM_HEADERS, signal: controller.signal });
+    if (!res.ok) throw new Error(`Falha no reverse geocoding (HTTP ${res.status})`);
+    data = await res.json();
+  } finally {
+    clearTimeout(timeoutId);
+  }
   const addr = data.address || {};
 
   const street = addr.road || addr.pedestrian || addr.residential || '';

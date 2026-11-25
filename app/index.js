@@ -10,7 +10,6 @@ import {
   FlatList,
   ToastAndroid,
   Platform,
-  Alert,
   Dimensions,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';

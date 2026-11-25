@@ -6,9 +6,9 @@
  */
 
 export const DEFAULT_OPEN_TIME = '10:00';
-export const DEFAULT_CLOSE_TIME = '22:00';
-export const DEFAULT_WAIT_MIN = 15;
-export const DEFAULT_WAIT_MAX = 22;
+export const DEFAULT_CLOSE_TIME = '22:30';
+export const DEFAULT_WAIT_MIN = 30;
+export const DEFAULT_WAIT_MAX = 45;
 
 const TEN_MINUTES_MS = 10 * 60 * 1000;
 
@@ -81,7 +81,7 @@ export function evaluateStoreOpen(status, date = new Date()) {
 
 /**
  * Calcula o tempo estimado de preparo considerando pedidos ativos nos últimos 10 minutos
- * (+5 min por pedido ativo sobre a base de 15–22 min).
+ * (+5 min por pedido ativo sobre a base de 30–45 min).
  */
 export function computeWaitTime(status, now = Date.now()) {
   const orders = Array.isArray(status?.activeOrders) ? status.activeOrders : [];

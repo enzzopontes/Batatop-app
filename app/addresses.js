@@ -66,6 +66,16 @@ const PIN_YELLOW = '#FFC107';
 const CIDADE_PERMITIDA = 'Iacanga';
 const UF_PERMITIDA     = 'SP';
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 // MapBackdrop — ilustração decorativa atrás do pino central (Estado A).
 // Imagem estática em assets/macdrop.png.
 function MapBackdrop() {
@@ -89,7 +99,7 @@ function BuscaLogradouroModal({ visible, onClose, onSelect }) {
     setLoading(true); setError(''); setResults([]);
     try {
       const url = `https://viacep.com.br/ws/${UF_PERMITIDA}/${encodeURIComponent(CIDADE_PERMITIDA)}/${encodeURIComponent(ruaClean)}/json/`;
-      const res  = await fetch(url);
+      const res  = await fetchWithTimeout(url);
       const data = await res.json();
       if (!Array.isArray(data) || data.length === 0) {
         setError(`Nenhuma rua encontrada em ${CIDADE_PERMITIDA}/${UF_PERMITIDA}.`); return;
@@ -367,7 +377,7 @@ function AddressForm({ onSave, onCancel, saving, initialValues }) {
     if (cep.length !== 8) return;
     setCepLoading(true); setCepError(''); setCityError('');
     try {
-      const res  = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+      const res  = await fetchWithTimeout(`https://viacep.com.br/ws/${cep}/json/`);
       const data = await res.json();
       if (data.erro) { setCepError('CEP não encontrado.'); return; }
       if (!validarCidade(data.localidade, data.uf)) return;
@@ -393,7 +403,7 @@ function AddressForm({ onSave, onCancel, saving, initialValues }) {
       if (semCep) {
         // Sem CEP: confirma que a rua digitada existe em Iacanga/SP via ViaCEP
         const url = `https://viacep.com.br/ws/${UF_PERMITIDA}/${encodeURIComponent(CIDADE_PERMITIDA)}/${encodeURIComponent(form.street.trim())}/json/`;
-        const res  = await fetch(url);
+        const res  = await fetchWithTimeout(url);
         const data = await res.json();
         if (!Array.isArray(data) || data.length === 0) {
           setCityError(`Não encontramos essa rua em ${CIDADE_PERMITIDA}/${UF_PERMITIDA}. Verifique o nome digitado. 🚫`);
@@ -402,7 +412,7 @@ function AddressForm({ onSave, onCancel, saving, initialValues }) {
       } else {
         // Com CEP: revalida o CEP final pra garantir que ainda corresponde a Iacanga/SP
         const cepDigits = form.cep.replace(/\D/g, '');
-        const res  = await fetch(`https://viacep.com.br/ws/${cepDigits}/json/`);
+        const res  = await fetchWithTimeout(`https://viacep.com.br/ws/${cepDigits}/json/`);
         const data = await res.json();
         if (data.erro) { setCepError('CEP não encontrado.'); return; }
         if (!validarCidade(data.localidade, data.uf)) return;

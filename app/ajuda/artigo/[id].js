@@ -6,7 +6,6 @@ import {
   ScrollView,
   Pressable,
   Linking,
-  Alert,
   Animated,
   LayoutAnimation,
   Platform,
@@ -18,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS } from '../../../constants/theme';
 import { getArticleById } from '../../../data/helpData';
+import { showThemedAlert } from '../../../components/ThemedAlert';
 
 if (Platform.OS === 'android' && !global?.nativeFabricUIManager && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -123,7 +123,7 @@ export default function HelpArticleScreen() {
     }
 
     if (article.id === 'perdi-meu-celular-ou-computador') {
-      Alert.alert(
+      showThemedAlert(
         'Bloquear Conta Temporariamente',
         'Tem certeza que deseja bloquear e desconectar sua conta de todos os dispositivos por segurança?',
         [
@@ -136,14 +136,14 @@ export default function HelpArticleScreen() {
                 const { performLogout } = require('../../../utils/authSession');
                 await performLogout(false);
 
-                Alert.alert(
+                showThemedAlert(
                   'Conta Bloqueada',
                   'Sua conta foi desconectada de todos os dispositivos por segurança.',
                   [{ text: 'OK', onPress: () => router.replace('/') }]
                 );
               } catch (e) {
                 console.error('Erro ao bloquear conta:', e);
-                Alert.alert('Erro', 'Não foi possível completar o bloqueio.');
+                showThemedAlert('Erro', 'Não foi possível completar o bloqueio.');
               }
             },
           },
@@ -153,7 +153,7 @@ export default function HelpArticleScreen() {
     }
 
     if (article.id === 'desbloqueio-de-conta') {
-      Alert.alert(
+      showThemedAlert(
         'Desbloqueio de Conta',
         'Para sua segurança, o desbloqueio pode ser feito falando direto com nosso suporte.',
         [
@@ -170,7 +170,7 @@ export default function HelpArticleScreen() {
       return;
     }
 
-    Alert.alert(
+    showThemedAlert(
       article.actionButton.text,
       'Solicitação registrada com sucesso!',
       [{ text: 'OK' }]

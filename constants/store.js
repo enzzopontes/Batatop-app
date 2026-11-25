@@ -17,7 +17,7 @@ export const MIN_ORDER_VALUE = 20.0;
 export const DELIVERY_FEE = 3.0;
 
 // Texto de prazo estimado exibido na etapa de entrega.
-export const DELIVERY_ETA_TEXT = '15 a 22 min';
+export const DELIVERY_ETA_TEXT = '30 a 45 min';
 
 // Endereco da loja (retirada).
 export const STORE_ADDRESS = {

@@ -21,8 +21,8 @@ import { cartStore } from '../../utils/cartStore';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS } from '../../constants/theme';
 import { showErrorAlert, showSuccessAlert } from '../../components/ThemedAlert';
 
-const RAW_API_BASE_URL = (process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatop.vercel.app').trim().replace(/\/+$/, '');
-const API_BASE_URL = /^https:\/\//i.test(RAW_API_BASE_URL) ? RAW_API_BASE_URL : 'https://batatatop.vercel.app';
+const RAW_API_BASE_URL = (process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatopiacanga.com.br').trim().replace(/\/+$/, '');
+const API_BASE_URL = /^https:\/\//i.test(RAW_API_BASE_URL) ? RAW_API_BASE_URL : 'https://batatatopiacanga.com.br';
 const REQUEST_TIMEOUT_MS = 15000;
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {

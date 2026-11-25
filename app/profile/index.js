@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, StyleSheet, Pressable, Image, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Pressable, Image, ActivityIndicator } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -9,6 +9,7 @@ import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../../constants/th
 import { useScrollHandler } from '../_layout';
 import { getEffectiveSession, performLogout } from '../../utils/authSession';
 import LogoutRememberModal from '../../components/LogoutRememberModal';
+import { showThemedAlert } from '../../components/ThemedAlert';
 import { requestAuthSheet } from '../../utils/authSheetRequest';
 import ProfileAccordionItem from '../../components/ProfileAccordionItem';
 import { isAdminUser, checkIsAdmin } from '../../utils/isAdmin';
@@ -90,7 +91,7 @@ export default function Profile() {
     setLogoutModalVisible(false);
     const res = await performLogout(true);
     if (!res?.success && !res?.offline) {
-      Alert.alert('Erro', res?.error || 'Não foi possível desconectar a sessão com segurança.');
+      showThemedAlert('Erro', res?.error || 'Não foi possível desconectar a sessão com segurança.');
       return;
     }
     router.replace('/');
@@ -100,7 +101,7 @@ export default function Profile() {
     setLogoutModalVisible(false);
     const res = await performLogout(false);
     if (res?.offline) {
-      Alert.alert(
+      showThemedAlert(
         'Aviso',
         'Sua sessão foi encerrada neste aparelho. Como não havia conexão com a internet, os acessos em outros aparelhos não puderam ser revogados agora.'
       );

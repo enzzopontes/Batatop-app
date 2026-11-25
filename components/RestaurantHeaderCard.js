@@ -422,8 +422,8 @@ export function useLoyalty() {
 
 export default function RestaurantHeaderCard({
   isOpen: propIsOpen,
-  waitTimeMin = 15,
-  waitTimeMax = 22,
+  waitTimeMin = 30,
+  waitTimeMax = 45,
   isDeliveryFeeEnabled: propIsDeliveryFeeEnabled = false,
   deliveryFee: propDeliveryFee = 0,
   totalOrders = 0,
@@ -575,8 +575,8 @@ export default function RestaurantHeaderCard({
     let fetchedReviews = [];
 
     // 0. Tenta endpoint público consolidado (evita bloqueio de RLS em orders para visitantes/clientes)
-    const rawBase = (process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatop.vercel.app').trim().replace(/\/+$/, '');
-    const safeBase = /^https:\/\//i.test(rawBase) ? rawBase : 'https://batatatop.vercel.app';
+    const rawBase = (process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatopiacanga.com.br').trim().replace(/\/+$/, '');
+    const safeBase = /^https:\/\//i.test(rawBase) ? rawBase : 'https://batatatopiacanga.com.br';
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 8000);

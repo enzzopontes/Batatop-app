@@ -2,11 +2,11 @@ import { supabase } from '../supabaseConfig';
 import { getEffectiveSession } from './authSession';
 import { buildNewOrderPushContent } from './orderNotificationContent';
 
-const RAW_API_BASE_URL = (process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatop.vercel.app').trim().replace(/\/+$/, '');
+const RAW_API_BASE_URL = (process.env.EXPO_PUBLIC_API_BASE_URL || 'https://batatatopiacanga.com.br').trim().replace(/\/+$/, '');
 const API_BASE_URL =
   /^https:\/\//i.test(RAW_API_BASE_URL) || (__DEV__ && /^http:\/\/localhost(:\d+)?$/i.test(RAW_API_BASE_URL))
     ? RAW_API_BASE_URL
-    : 'https://batatatop.vercel.app';
+    : 'https://batatatopiacanga.com.br';
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = 12000) {
   const controller = new AbortController();
