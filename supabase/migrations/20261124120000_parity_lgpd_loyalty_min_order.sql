@@ -170,7 +170,7 @@ BEGIN
   -- Bloqueia chamada direta por cliente; permite execução via trigger (pg_trigger_depth() > 0), admin ou service_role
   IF pg_trigger_depth() = 0
      AND COALESCE(current_setting('request.jwt.claim.role', true), '') <> 'service_role'
-     AND CURRENT_USER NOT IN ('postgres', 'supabase_admin')
+     AND SESSION_USER NOT IN ('postgres', 'supabase_admin')
      AND NOT public.is_admin() THEN
     RAISE EXCEPTION 'forbidden' USING ERRCODE = '42501';
   END IF;
@@ -470,7 +470,7 @@ BEGIN
   END IF;
 
   IF v_override THEN
-    IF p_store ? 'lastCycleState' THEN
+    IF jsonb_typeof(p_store->'lastCycleState') = 'boolean' THEN
       v_last_cycle := (p_store->>'lastCycleState')::boolean;
       IF v_scheduled_open IS DISTINCT FROM v_last_cycle THEN
         RETURN v_scheduled_open;
@@ -556,6 +556,19 @@ DECLARE
   v_del_lng double precision;
 BEGIN
   IF v_uid IS NULL THEN RAISE EXCEPTION 'unauthorized'; END IF;
+
+  -- Auto-heal defensivo: garante linha em public.profiles antes de inserir em public.orders (evita FK 23503)
+  IF NOT EXISTS (SELECT 1 FROM public.profiles WHERE id = v_uid) THEN
+    INSERT INTO public.profiles (id, email, full_name, role)
+    SELECT
+      u.id,
+      COALESCE(NULLIF(btrim(u.email), ''), u.id::text || '@user.batatatop.local'),
+      COALESCE(NULLIF(btrim(u.raw_user_meta_data->>'full_name'), ''), NULLIF(btrim(p_customer_name), ''), u.email),
+      'user'
+    FROM auth.users u
+    WHERE u.id = v_uid
+    ON CONFLICT DO NOTHING;
+  END IF;
 
   IF p_customer_name IS NULL OR length(btrim(p_customer_name)) = 0 OR length(p_customer_name) > 120 THEN RAISE EXCEPTION 'invalid_customer_name'; END IF;
   IF p_customer_phone IS NULL OR length(btrim(p_customer_phone)) = 0 OR length(p_customer_phone) > 30 THEN RAISE EXCEPTION 'invalid_customer_phone'; END IF;
@@ -820,3 +833,90 @@ $function$;
 
 REVOKE EXECUTE ON FUNCTION public.create_order(text, text, text, text, text, text, text, boolean, text, text, boolean, jsonb, jsonb) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.create_order(text, text, text, text, text, text, text, boolean, text, text, boolean, jsonb, jsonb) TO authenticated, service_role;
+
+-- ============================================================
+-- 4. BACKFILL DE PROFILES ÓRFÃOS + CRON DE EXPIRAÇÃO PIX/ONLINE
+-- ============================================================
+INSERT INTO public.profiles (id, email, full_name, role)
+SELECT
+  u.id,
+  COALESCE(NULLIF(btrim(u.email), ''), u.id::text || '@user.batatatop.local'),
+  COALESCE(NULLIF(btrim(u.raw_user_meta_data->>'full_name'), ''), u.email),
+  'user'
+FROM auth.users u
+LEFT JOIN public.profiles p ON p.id = u.id
+WHERE p.id IS NULL
+ON CONFLICT DO NOTHING;
+
+CREATE OR REPLACE FUNCTION public.expire_pending_pix_orders()
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'pg_catalog', 'public'
+AS $function$
+DECLARE
+  v_count integer := 0;
+BEGIN
+  WITH expired AS (
+    UPDATE public.orders
+       SET status = 'cancelled',
+           updated_at = now(),
+           metadata = COALESCE(metadata, '{}'::jsonb)
+             || jsonb_build_object(
+                  'cancel_reason', 'pix_expirado_30min',
+                  'cancelled_at', now(),
+                  'cancelled_by', 'system_expiry'
+                )
+     WHERE status = 'awaiting_payment'
+       AND (
+         payment_method = 'pix'
+         OR (metadata->>'payment_method') = 'pix'
+         OR metadata ? 'pix'
+       )
+       AND created_at < (now() - interval '30 minutes')
+       AND NOT (COALESCE(metadata, '{}'::jsonb) ? 'paid_at')
+       AND COALESCE(metadata->>'payment_status', '') NOT IN ('approved', 'accredited', 'processed', 'in_process', 'authorized')
+       AND COALESCE(metadata->>'mp_payment_status', '') NOT IN ('approved', 'accredited', 'processed', 'in_process', 'authorized')
+       AND COALESCE(metadata->'pix'->>'status', '') NOT IN ('approved', 'accredited', 'processed', 'in_process', 'authorized')
+       AND COALESCE((metadata->>'needs_review')::boolean, false) IS NOT TRUE
+     RETURNING id
+  )
+  SELECT count(*) INTO v_count FROM expired;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'expired_count', v_count
+  );
+END;
+$function$;
+
+REVOKE EXECUTE ON FUNCTION public.expire_pending_pix_orders() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.expire_pending_pix_orders() TO service_role;
+
+REVOKE EXECUTE ON FUNCTION public.cleanup_abandoned_awaiting_orders() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.cleanup_abandoned_awaiting_orders() TO service_role;
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'cron') THEN
+    IF NOT EXISTS (
+      SELECT 1
+        FROM cron.job
+       WHERE active IS TRUE
+         AND (
+           jobname = 'expire-awaiting-payment-orders'
+           OR command ILIKE '%expire_pending_pix_orders%'
+           OR command ILIKE '%cleanup_abandoned_awaiting_orders%'
+         )
+    ) THEN
+      PERFORM cron.schedule(
+        'expire-awaiting-payment-orders',
+        '*/5 * * * *',
+        'SELECT public.expire_pending_pix_orders(); SELECT public.cleanup_abandoned_awaiting_orders();'
+      );
+    END IF;
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'pg_cron schedule skipped: %', SQLERRM;
+END;
+$$;
