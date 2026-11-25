@@ -1,6 +1,7 @@
 -- 029_rls_coupons_and_loyalty_polp.sql
 -- 1. Neutraliza policy legada permissiva que anulava filtro anti-enumeracao de FIDELIDADE-% em public.coupons
--- 2. Reafirma definicao SECURITY DEFINER de trg_fn_orders_loyalty_on_delivered e aplica PoLP (REVOKE de authenticated)
+-- 2. Remove is_admin() da policy publica de coupons para evitar permission denied para anon (admins cobertos por coupons_admin_all)
+-- 3. Reafirma definicao SECURITY DEFINER de trg_fn_orders_loyalty_on_delivered e aplica PoLP (REVOKE de authenticated)
 
 DO $$
 BEGIN
@@ -12,6 +13,28 @@ BEGIN
       AND policyname = 'coupons_anyone_select_active'
   ) THEN
     ALTER POLICY coupons_anyone_select_active ON public.coupons USING (false);
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'coupons'
+      AND policyname = 'Anyone can view active coupons'
+  ) THEN
+    ALTER POLICY "Anyone can view active coupons" ON public.coupons
+    USING (
+      active = true
+      AND (
+        upper(code) NOT LIKE 'FIDELIDADE-%'
+        OR EXISTS (
+          SELECT 1
+          FROM public.loyalty_rewards lr
+          WHERE upper(lr.coupon_code) = upper(coupons.code)
+            AND lr.user_id = auth.uid()
+        )
+      )
+    );
   END IF;
 END
 $$;
