@@ -6,7 +6,6 @@ import {
   StyleSheet,
   Pressable,
   ActivityIndicator,
-  Alert,
   TextInput,
   Switch,
   Image,
@@ -16,7 +15,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
 import { supabase } from '../../supabaseConfig';
 import SwipeableBottomSheetModal from '../SwipeableBottomSheetModal';
-import { showSuccessAlert } from '../ThemedAlert';
+import { showSuccessAlert, showThemedAlert } from '../ThemedAlert';
 
 const ALLOWED_IMAGE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const MAX_IMAGE_BYTES = 2_750_000;
@@ -125,7 +124,7 @@ export default function AdminHomeBannersSection({ promoImages = [] }) {
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert('Permissão necessária', 'Permita acesso à galeria para escolher o banner.');
+        showThemedAlert('Permissão necessária', 'Permita acesso à galeria para escolher o banner.');
         return;
       }
 
@@ -141,7 +140,7 @@ export default function AdminHomeBannersSection({ promoImages = [] }) {
 
       const mimeType = (asset.mimeType || 'image/jpeg').toLowerCase();
       if (!ALLOWED_IMAGE_MIMES.has(mimeType)) {
-        Alert.alert('Formato não suportado', 'Formato não suportado. Use JPG, PNG ou WebP.');
+        showThemedAlert('Formato não suportado', 'Formato não suportado. Use JPG, PNG ou WebP.');
         return;
       }
 
@@ -149,7 +148,7 @@ export default function AdminHomeBannersSection({ promoImages = [] }) {
         (asset.fileSize && asset.fileSize > MAX_IMAGE_BYTES) ||
         (asset.base64 && asset.base64.length > MAX_IMAGE_BYTES)
       ) {
-        Alert.alert('Imagem muito grande', 'Imagem muito grande. Escolha uma imagem menor (máx. 2,5 MB).');
+        showThemedAlert('Imagem muito grande', 'Imagem muito grande. Escolha uma imagem menor (máx. 2,5 MB).');
         return;
       }
 
@@ -166,7 +165,7 @@ export default function AdminHomeBannersSection({ promoImages = [] }) {
       }
 
       if (blob?.size && blob.size > MAX_IMAGE_BYTES) {
-        Alert.alert('Imagem muito grande', 'Imagem muito grande. Escolha uma imagem menor (máx. 2,5 MB).');
+        showThemedAlert('Imagem muito grande', 'Imagem muito grande. Escolha uma imagem menor (máx. 2,5 MB).');
         return;
       }
 
@@ -214,10 +213,10 @@ export default function AdminHomeBannersSection({ promoImages = [] }) {
         }
       }
 
-      Alert.alert('Erro no upload', 'Não foi possível enviar a imagem. Tente novamente.');
+      showThemedAlert('Erro no upload', 'Não foi possível enviar a imagem. Tente novamente.');
       return;
     } catch (err) {
-      Alert.alert('Erro', 'Não foi possível selecionar a imagem.');
+      showThemedAlert('Erro', 'Não foi possível selecionar a imagem.');
     } finally {
       setUploadingImage(false);
     }
@@ -226,7 +225,7 @@ export default function AdminHomeBannersSection({ promoImages = [] }) {
   const handleSave = async () => {
     const cleanUrl = imageUrl.trim();
     if (!cleanUrl) {
-      Alert.alert('Atenção', 'Selecione ou informe a imagem do banner.');
+      showThemedAlert('Atenção', 'Selecione ou informe a imagem do banner.');
       return;
     }
 
@@ -255,7 +254,7 @@ export default function AdminHomeBannersSection({ promoImages = [] }) {
       setModalVisible(false);
       await loadBannersAndCoupons();
     } catch (err) {
-      Alert.alert('Erro', err.message || 'Não foi possível salvar o banner.');
+      showThemedAlert('Erro', err.message || 'Não foi possível salvar o banner.');
     } finally {
       setSaving(false);
     }
@@ -273,12 +272,12 @@ export default function AdminHomeBannersSection({ promoImages = [] }) {
       );
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch {
-      Alert.alert('Erro', 'Não foi possível alterar o status do banner.');
+      showThemedAlert('Erro', 'Não foi possível alterar o status do banner.');
     }
   };
 
   const handleDelete = (banner) => {
-    Alert.alert('Excluir Banner', 'Deseja remover este banner do carrossel da Home?', [
+    showThemedAlert('Excluir Banner', 'Deseja remover este banner do carrossel da Home?', [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Excluir',
@@ -288,7 +287,7 @@ export default function AdminHomeBannersSection({ promoImages = [] }) {
             await supabase.from('home_banners').delete().eq('id', banner.id);
             await loadBannersAndCoupons();
           } catch {
-            Alert.alert('Erro', 'Não foi possível excluir o banner.');
+            showThemedAlert('Erro', 'Não foi possível excluir o banner.');
           }
         },
       },

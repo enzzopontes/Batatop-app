@@ -1,7 +1,7 @@
 import ThreeDotsLoader from '../../components/ThreeDotsLoader';
 import {
   View, Text, ScrollView, StyleSheet, Pressable,
-  ActivityIndicator, Alert, TextInput, RefreshControl,
+  ActivityIndicator, TextInput, RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../supabaseConfig';
 import { isAdminUser, checkIsAdmin } from '../../utils/isAdmin';
 import { AdminListSkeleton } from '../../components/Skeleton';
+import { showThemedAlert } from '../../components/ThemedAlert';
 
 const OWNER_EMAILS = ['enzzobaraldo2008@gmail.com', 'maraysis9010@gmail.com'];
 
@@ -72,7 +73,7 @@ export default function AdminAdministradores() {
 
       if (!isInstant && !isDb) {
         if (mounted) {
-          Alert.alert('Acesso Negado', 'Você não tem permissão para acessar esta área.');
+          showThemedAlert('Acesso Negado', 'Você não tem permissão para acessar esta área.');
           router.replace('/');
         }
         return;
@@ -121,7 +122,7 @@ export default function AdminAdministradores() {
     const emailTrimmed = newEmail.trim().toLowerCase();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(emailTrimmed)) {
-      Alert.alert('Atenção', 'Digite um e-mail válido.');
+      showThemedAlert('Atenção', 'Digite um e-mail válido.');
       return;
     }
 
@@ -133,19 +134,19 @@ export default function AdminAdministradores() {
 
       if (error) {
         const msg = ERROR_MESSAGES_ADD[error.message] || error.message || 'Erro ao adicionar administrador.';
-        Alert.alert('Erro', msg);
+        showThemedAlert('Erro', msg);
       } else if (data && !data.ok) {
         const code = data.error || 'unknown';
         const msg = ERROR_MESSAGES_ADD[code] || 'Não foi possível adicionar o administrador.';
-        Alert.alert('Atenção', msg);
+        showThemedAlert('Atenção', msg);
       } else {
-        Alert.alert('Sucesso', `Administrador ${emailTrimmed} adicionado com sucesso!`);
+        showThemedAlert('Sucesso', `Administrador ${emailTrimmed} adicionado com sucesso!`);
         setNewEmail('');
         await loadAdmins();
       }
     } catch (err) {
       console.error('Erro ao adicionar admin:', err);
-      Alert.alert('Erro', 'Não foi possível completar a operação. Tente novamente mais tarde.');
+      showThemedAlert('Erro', 'Não foi possível completar a operação. Tente novamente mais tarde.');
     } finally {
       setSubmitting(false);
     }
@@ -153,7 +154,7 @@ export default function AdminAdministradores() {
 
   const handleConfirmRemove = (adm) => {
     const targetEmail = adm.email;
-    Alert.alert(
+    showThemedAlert(
       'Revogar Acesso',
       `Tem certeza que deseja remover o acesso administrativo de ${targetEmail}?`,
       [
@@ -176,18 +177,18 @@ export default function AdminAdministradores() {
 
       if (error) {
         const msg = ERROR_MESSAGES_REMOVE[error.message] || error.message || 'Erro ao remover administrador.';
-        Alert.alert('Erro', msg);
+        showThemedAlert('Erro', msg);
       } else if (data && !data.ok) {
         const code = data.error || 'unknown';
         const msg = ERROR_MESSAGES_REMOVE[code] || 'Não foi possível remover o administrador.';
-        Alert.alert('Atenção', msg);
+        showThemedAlert('Atenção', msg);
       } else {
-        Alert.alert('Sucesso', `Administrador ${targetEmail} removido.`);
+        showThemedAlert('Sucesso', `Administrador ${targetEmail} removido.`);
         await loadAdmins();
       }
     } catch (err) {
       console.error('Erro ao remover admin:', err);
-      Alert.alert('Erro', 'Não foi possível completar a remoção.');
+      showThemedAlert('Erro', 'Não foi possível completar a remoção.');
     } finally {
       setRemovingEmail(null);
     }

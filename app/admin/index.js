@@ -6,7 +6,6 @@ import {
   StyleSheet,
   Pressable,
   ActivityIndicator,
-  Alert,
   Modal,
   TextInput,
   Switch,
@@ -21,7 +20,7 @@ import { isAdminUser, checkIsAdmin } from '../../utils/isAdmin';
 import { syncAdminPushRegistration } from '../../utils/pushNotifications';
 import { COLORS, TYPOGRAPHY, RADIUS, SHADOWS } from '../../constants/theme';
 import { AdminDashboardSkeleton } from '../../components/Skeleton';
-import { ThemedAlertHost } from '../../components/ThemedAlert';
+import { ThemedAlertHost, showThemedAlert } from '../../components/ThemedAlert';
 import SwipeableBottomSheetModal from '../../components/SwipeableBottomSheetModal';
 
 const DAYS_OF_WEEK = [
@@ -134,7 +133,7 @@ export default function AdminDashboard() {
 
       if (!isInstant && !isDb) {
         if (mounted) {
-          Alert.alert('Acesso Negado', 'Você não tem permissão para acessar esta área.');
+          showThemedAlert('Acesso Negado', 'Você não tem permissão para acessar esta área.');
           router.replace('/');
         }
         return;
@@ -245,7 +244,7 @@ export default function AdminDashboard() {
       .eq('id', storeStatus.id);
 
     if (error) {
-      Alert.alert('Erro', 'Não foi possível alterar o status da loja.');
+      showThemedAlert('Erro', 'Não foi possível alterar o status da loja.');
     } else {
       setStoreStatus({ ...storeStatus, setting_value: newVal });
     }
@@ -275,10 +274,10 @@ export default function AdminDashboard() {
       .eq('id', storeStatus.id);
 
     if (error) {
-      Alert.alert('Erro', 'Não foi possível restaurar o modo automático.');
+      showThemedAlert('Erro', 'Não foi possível restaurar o modo automático.');
     } else {
       setStoreStatus({ ...storeStatus, setting_value: newVal });
-      Alert.alert('Modo Automático Restaurado', 'A loja voltou a seguir o horário programado.');
+      showThemedAlert('Modo Automático Restaurado', 'A loja voltou a seguir o horário programado.');
     }
     setLoading(false);
   };
@@ -309,9 +308,9 @@ export default function AdminDashboard() {
 
       setStoreStatus({ ...storeStatus, setting_value: newVal });
       setScheduleModalOpen(false);
-      Alert.alert('Sucesso', 'Horários de funcionamento atualizados com sucesso!');
+      showThemedAlert('Sucesso', 'Horários de funcionamento atualizados com sucesso!');
     } catch (err) {
-      Alert.alert('Erro', 'Não foi possível salvar os horários.');
+      showThemedAlert('Erro', 'Não foi possível salvar os horários.');
     } finally {
       setIsSavingSchedule(false);
     }
@@ -350,7 +349,7 @@ export default function AdminDashboard() {
       .eq('id', storeStatus.id);
 
     if (error) {
-      Alert.alert('Erro', 'Não foi possível alterar as entregas.');
+      showThemedAlert('Erro', 'Não foi possível alterar as entregas.');
     } else {
       setStoreStatus({ ...storeStatus, setting_value: newVal });
     }
@@ -372,7 +371,7 @@ export default function AdminDashboard() {
       .eq('id', storeStatus.id);
 
     if (error) {
-      Alert.alert('Erro', 'Não foi possível alterar o status da taxa de entrega.');
+      showThemedAlert('Erro', 'Não foi possível alterar o status da taxa de entrega.');
     } else {
       setStoreStatus({ ...storeStatus, setting_value: newVal });
     }
@@ -383,7 +382,7 @@ export default function AdminDashboard() {
     if (!storeStatus) return;
     const parsedFee = parseFloat(deliveryFeeInput.replace(',', '.'));
     if (isNaN(parsedFee) || parsedFee < 0) {
-      Alert.alert('Valor Inválido', 'Digite uma taxa válida (ex: 3.50).');
+      showThemedAlert('Valor Inválido', 'Digite uma taxa válida (ex: 3.50).');
       return;
     }
 
@@ -404,9 +403,9 @@ export default function AdminDashboard() {
 
       setStoreStatus({ ...storeStatus, setting_value: newVal });
       setFeeModalOpen(false);
-      Alert.alert('Sucesso', `Taxa de entrega alterada para R$ ${parsedFee.toFixed(2).replace('.', ',')}`);
+      showThemedAlert('Sucesso', `Taxa de entrega alterada para R$ ${parsedFee.toFixed(2).replace('.', ',')}`);
     } catch (err) {
-      Alert.alert('Erro', 'Não foi possível salvar a taxa de entrega.');
+      showThemedAlert('Erro', 'Não foi possível salvar a taxa de entrega.');
     } finally {
       setIsSavingFee(false);
     }

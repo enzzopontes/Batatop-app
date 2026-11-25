@@ -9,7 +9,6 @@ import {
   TextInput,
   Switch,
   ActivityIndicator,
-  Alert,
   Platform,
   StatusBar,
 } from 'react-native';
@@ -19,7 +18,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Haptics from 'expo-haptics';
 import NotificationDeviceMockup from './NotificationDeviceMockup';
 import SwipeableBottomSheetModal from '../SwipeableBottomSheetModal';
-import { ThemedAlertHost } from '../ThemedAlert';
+import { ThemedAlertHost, showThemedAlert } from '../ThemedAlert';
 import { CAMPAIGN_TEMPLATES } from '../../constants/campaignTemplates';
 import { supabase } from '../../supabaseConfig';
 
@@ -98,11 +97,11 @@ export default function CampaignModal({
 
   const handleSave = async () => {
     if (!title.trim()) {
-      Alert.alert('Atenção', 'Informe o título da notificação.');
+      showThemedAlert('Atenção', 'Informe o título da notificação.');
       return;
     }
     if (!body.trim()) {
-      Alert.alert('Atenção', 'Informe o texto/corpo da notificação.');
+      showThemedAlert('Atenção', 'Informe o texto/corpo da notificação.');
       return;
     }
 
@@ -180,7 +179,7 @@ export default function CampaignModal({
       }
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert(
+      showThemedAlert(
         'Sucesso!',
         sendImmediately
           ? 'Campanha enviada para a fila de disparo em massa!'
@@ -192,7 +191,7 @@ export default function CampaignModal({
       onClose();
     } catch (err) {
       console.error('Erro ao salvar campanha:', err);
-      Alert.alert('Erro', err.message || 'Falha ao salvar campanha.');
+      showThemedAlert('Erro', err.message || 'Falha ao salvar campanha.');
     } finally {
       setSubmitting(false);
     }

@@ -1,7 +1,7 @@
 import ThreeDotsLoader from '../../components/ThreeDotsLoader';
 import {
   View, Text, ScrollView, StyleSheet, Pressable,
-  ActivityIndicator, Alert, Modal, TextInput,
+  ActivityIndicator, Modal, TextInput,
   Image, Switch,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -11,7 +11,7 @@ import { useSafeAreaInsets, SafeAreaProvider } from 'react-native-safe-area-cont
 import { supabase } from '../../supabaseConfig';
 import * as Haptics from 'expo-haptics';
 import { AdminListSkeleton } from '../../components/Skeleton';
-import { ThemedAlertHost } from '../../components/ThemedAlert';
+import { ThemedAlertHost, showThemedAlert } from '../../components/ThemedAlert';
 import SwipeableBottomSheetModal from '../../components/SwipeableBottomSheetModal';
 import ProductImagePicker from '../../components/admin/ProductImagePicker';
 import { resolveProductImage } from '../../utils/resolveProductImage';
@@ -114,7 +114,7 @@ export default function AdminProdutos() {
       setProducts(prods || []);
       setAdicionais(adics || []);
     } catch (e) {
-      Alert.alert('Erro', 'Não foi possível carregar os produtos.');
+      showThemedAlert('Erro', 'Não foi possível carregar os produtos.');
       console.error(e);
     } finally {
       setLoading(false);
@@ -151,12 +151,12 @@ export default function AdminProdutos() {
   const handleSaveProduct = async () => {
     const { name, description, price, image_url, category, available } = prodForm;
     if (!name.trim()) {
-      Alert.alert('Atenção', 'Informe o nome do produto.');
+      showThemedAlert('Atenção', 'Informe o nome do produto.');
       return;
     }
     const priceNum = parseFloat(price.replace(',', '.'));
     if (isNaN(priceNum) || priceNum <= 0) {
-      Alert.alert('Atenção', 'Preço inválido.');
+      showThemedAlert('Atenção', 'Preço inválido.');
       return;
     }
     const trimmedImageUrl = image_url.trim();
@@ -172,7 +172,7 @@ export default function AdminProdutos() {
             !/[\r\n\t]/.test(trimmedImageUrl)));
 
       if (!isAllowedImageUrl) {
-        Alert.alert(
+        showThemedAlert(
           'URL de imagem inválida',
           'Informe uma URL https://, um caminho /products/ ou /api/images/, ou um nome de arquivo válido.'
         );
@@ -239,7 +239,7 @@ export default function AdminProdutos() {
       setProdModalVisible(false);
       await loadProducts();
     } catch (e) {
-      Alert.alert('Erro', e?.message || 'Não foi possível salvar o produto.');
+      showThemedAlert('Erro', e?.message || 'Não foi possível salvar o produto.');
       console.error(e);
     } finally {
       setSaving(false);
@@ -248,7 +248,7 @@ export default function AdminProdutos() {
 
   // ─── Produto: Deletar ───────────────────────────────────────────
   const handleDeleteProduct = (product) => {
-    Alert.alert('Deletar Produto', `Excluir "${product.name}" do cardápio?`, [
+    showThemedAlert('Deletar Produto', `Excluir "${product.name}" do cardápio?`, [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Deletar',
@@ -265,7 +265,7 @@ export default function AdminProdutos() {
             if (error) throw error;
             await loadProducts();
           } catch (e) {
-            Alert.alert('Erro', e?.message || 'Não foi possível deletar.');
+            showThemedAlert('Erro', e?.message || 'Não foi possível deletar.');
             console.error(e);
           }
         },
@@ -287,7 +287,7 @@ export default function AdminProdutos() {
         .eq('id', product.id);
       if (error) throw error;
     } catch (e) {
-      Alert.alert('Erro', e?.message || 'Não foi possível alterar a disponibilidade.');
+      showThemedAlert('Erro', e?.message || 'Não foi possível alterar a disponibilidade.');
       console.error(e);
       await loadProducts();
     }
@@ -312,12 +312,12 @@ export default function AdminProdutos() {
   // ─── Adicional: Salvar ───────────────────────────────────────────
   const handleSaveAdic = async () => {
     if (!adicForm.name.trim()) {
-      Alert.alert('Atenção', 'Informe o nome do adicional.');
+      showThemedAlert('Atenção', 'Informe o nome do adicional.');
       return;
     }
     const priceNum = parseFloat(adicForm.price.replace(',', '.'));
     if (isNaN(priceNum) || priceNum < 0) {
-      Alert.alert('Atenção', 'Preço inválido.');
+      showThemedAlert('Atenção', 'Preço inválido.');
       return;
     }
     setSaving(true);
@@ -344,7 +344,7 @@ export default function AdminProdutos() {
       setAdicModalVisible(false);
       await loadProducts();
     } catch (e) {
-      Alert.alert('Erro', e?.message || 'Não foi possível salvar.');
+      showThemedAlert('Erro', e?.message || 'Não foi possível salvar.');
       console.error(e);
     } finally {
       setSaving(false);
@@ -353,7 +353,7 @@ export default function AdminProdutos() {
 
   // ─── Adicional: Deletar ──────────────────────────────────────────
   const handleDeleteAdic = (a) => {
-    Alert.alert('Deletar Adicional', `Excluir "${a.name}"?`, [
+    showThemedAlert('Deletar Adicional', `Excluir "${a.name}"?`, [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Deletar',
@@ -374,7 +374,7 @@ export default function AdminProdutos() {
 
             await loadProducts();
           } catch (e) {
-            Alert.alert('Erro', e?.message || 'Não foi possível deletar.');
+            showThemedAlert('Erro', e?.message || 'Não foi possível deletar.');
             console.error(e);
           }
         },

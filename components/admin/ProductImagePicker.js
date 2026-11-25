@@ -6,7 +6,6 @@ import {
   StyleSheet,
   Pressable,
   ActivityIndicator,
-  Alert,
   Linking,
 } from 'react-native';
 import { Image } from 'expo-image';
@@ -16,6 +15,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as Haptics from 'expo-haptics';
 import { supabase } from '../../supabaseConfig';
 import { resolveProductImage, API_BASE_URL } from '../../utils/resolveProductImage';
+import { showThemedAlert } from '../ThemedAlert';
 
 const STORAGE_BUCKET = 'Products';
 const STORAGE_FOLDERS = [
@@ -368,7 +368,7 @@ export default function ProductImagePicker({
 
       if (!permissionResult.granted) {
         if (permissionResult.canAskAgain === false) {
-          Alert.alert(
+          showThemedAlert(
             'Permissão necessária',
             'O acesso à galeria foi bloqueado. Abra as configurações para permitir o acesso.',
             [
@@ -377,7 +377,7 @@ export default function ProductImagePicker({
             ]
           );
         } else {
-          Alert.alert('Permissão necessária', 'Precisamos de permissão para acessar sua galeria.');
+          showThemedAlert('Permissão necessária', 'Precisamos de permissão para acessar sua galeria.');
         }
         return;
       }
@@ -394,13 +394,13 @@ export default function ProductImagePicker({
 
       const asset = pickerResult.assets[0];
       if (!asset.uri && !asset.base64) {
-        Alert.alert('Erro', 'Não foi possível ler os dados da imagem.');
+        showThemedAlert('Erro', 'Não foi possível ler os dados da imagem.');
         return;
       }
 
       let mimeType = normalizeMimeType(asset.mimeType);
       if (mimeType === 'image/svg+xml' || (mimeType && !mimeType.startsWith('image/'))) {
-        Alert.alert('Formato não suportado', 'Use uma imagem válida (JPG, PNG, WebP ou HEIC).');
+        showThemedAlert('Formato não suportado', 'Use uma imagem válida (JPG, PNG, WebP ou HEIC).');
         return;
       }
 
@@ -408,7 +408,7 @@ export default function ProductImagePicker({
         typeof asset.fileSize === 'number' &&
         (asset.fileSize <= 0 || asset.fileSize > MAX_FILE_SIZE_BYTES)
       ) {
-        Alert.alert('Imagem muito grande', 'Escolha uma imagem válida com até 5MB.');
+        showThemedAlert('Imagem muito grande', 'Escolha uma imagem válida com até 5MB.');
         return;
       }
 
@@ -476,17 +476,17 @@ export default function ProductImagePicker({
         mimeType = mimeFromExtension(asset.fileName || uploadUri);
       }
       if (!ALLOWED_MIME_TYPES.includes(mimeType)) {
-        Alert.alert('Formato não suportado', 'Use imagens nos formatos JPG, PNG ou WebP.');
+        showThemedAlert('Formato não suportado', 'Use imagens nos formatos JPG, PNG ou WebP.');
         return;
       }
 
       if (blob && (typeof blob.size !== 'number' || blob.size <= 0 || blob.size > MAX_FILE_SIZE_BYTES)) {
-        Alert.alert('Imagem muito grande', 'Escolha uma imagem válida com até 5MB.');
+        showThemedAlert('Imagem muito grande', 'Escolha uma imagem válida com até 5MB.');
         return;
       }
 
       if (uploadBase64 && !hasValidImageMagicBytes(uploadBase64, mimeType)) {
-        Alert.alert('Imagem inválida', 'O conteúdo do arquivo não corresponde a uma imagem válida (JPG, PNG ou WebP).');
+        showThemedAlert('Imagem inválida', 'O conteúdo do arquivo não corresponde a uma imagem válida (JPG, PNG ou WebP).');
         return;
       }
 
@@ -526,7 +526,7 @@ export default function ProductImagePicker({
         }
 
         if (uploadBase64.length > MAX_BASE64_LENGTH) {
-          Alert.alert('Imagem muito grande', 'Escolha uma imagem menor que 2MB.');
+          showThemedAlert('Imagem muito grande', 'Escolha uma imagem menor que 2MB.');
           return;
         }
 
@@ -553,7 +553,7 @@ export default function ProductImagePicker({
     } catch (e) {
       console.error('Erro ao enviar imagem:', e);
       if (isActive()) {
-        Alert.alert('Erro', 'Não foi possível enviar a imagem.');
+        showThemedAlert('Erro', 'Não foi possível enviar a imagem.');
       }
     } finally {
       busyRef.current = false;

@@ -1,7 +1,7 @@
 import ThreeDotsLoader from '../../components/ThreeDotsLoader';
 import {
   View, Text, ScrollView, StyleSheet, Pressable,
-  ActivityIndicator, Alert, Modal, Share,
+  ActivityIndicator, Modal, Share,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets, SafeAreaProvider } from 'react-native-safe-area-context';
 import { supabase } from '../../supabaseConfig';
 import { AdminDashboardSkeleton } from '../../components/Skeleton';
-import { ThemedAlertHost } from '../../components/ThemedAlert';
+import { ThemedAlertHost, showThemedAlert } from '../../components/ThemedAlert';
 import SwipeableBottomSheetModal from '../../components/SwipeableBottomSheetModal';
 
 // Mapeia os dados do Supabase pro app (idêntico ao pedidos.js)
@@ -126,7 +126,7 @@ export default function AdminCaixa() {
       const historyArray = Object.values(grouped).sort((a, b) => b.date.localeCompare(a.date));
       setSalesHistory(historyArray);
     } catch (e) {
-      Alert.alert('Erro', 'Não foi possível carregar os dados financeiros.');
+      showThemedAlert('Erro', 'Não foi possível carregar os dados financeiros.');
       console.error(e);
     } finally {
       setLoading(false);
@@ -179,7 +179,7 @@ export default function AdminCaixa() {
         setDateOrders(prev => ({ ...prev, [date]: mapped }));
       } catch (err) {
         console.error(err);
-        Alert.alert('Erro', 'Não foi possível carregar os pedidos.');
+        showThemedAlert('Erro', 'Não foi possível carregar os pedidos.');
       } finally {
         setLoadingDate(null);
       }
@@ -188,7 +188,7 @@ export default function AdminCaixa() {
 
   // ─── Deletar pedido ──────────────────────────────────────────────
   const handleDelete = (order) => {
-    Alert.alert('Deletar Pedido', `Excluir o pedido #${order.orderNumber}? Esta ação remove dos registros financeiros.`, [
+    showThemedAlert('Deletar Pedido', `Excluir o pedido #${order.orderNumber}? Esta ação remove dos registros financeiros.`, [
       { text: 'Cancelar', style: 'cancel' },
       { text: 'Deletar', style: 'destructive', onPress: async () => {
         try {
@@ -200,7 +200,7 @@ export default function AdminCaixa() {
             return { ...prev, [date]: (prev[date] || []).filter(o => o.id !== order.id) };
           });
           await loadData();
-        } catch { Alert.alert('Erro', 'Não foi possível deletar o pedido.'); }
+        } catch { showThemedAlert('Erro', 'Não foi possível deletar o pedido.'); }
       }},
     ]);
   };
@@ -263,7 +263,7 @@ export default function AdminCaixa() {
   // Exportar / Compartilhar resumo
   const handleExportSummary = async () => {
     if (filteredSalesHistory.length === 0) {
-      Alert.alert('Aviso', 'Nenhum dado para exportar.');
+      showThemedAlert('Aviso', 'Nenhum dado para exportar.');
       return;
     }
     let text = `*BATATA TOP - FECHAMENTO DE CAIXA*\n`;

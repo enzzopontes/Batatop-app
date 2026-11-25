@@ -1,7 +1,7 @@
 import ThreeDotsLoader from '../../components/ThreeDotsLoader';
 import {
   View, Text, ScrollView, StyleSheet, Pressable,
-  ActivityIndicator, Alert, RefreshControl, Linking,
+  ActivityIndicator, RefreshControl, Linking,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -11,6 +11,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { supabase } from '../../supabaseConfig';
 import { AdminListSkeleton } from '../../components/Skeleton';
+import { showThemedAlert } from '../../components/ThemedAlert';
 
 export default function AdminFeedbacks() {
   const router = useRouter();
@@ -42,7 +43,7 @@ export default function AdminFeedbacks() {
       calculateStats(fbs);
     } catch (e) {
       console.error('Erro ao carregar feedbacks:', e);
-      Alert.alert('Erro', 'Não foi possível carregar os feedbacks.');
+      showThemedAlert('Erro', 'Não foi possível carregar os feedbacks.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -106,7 +107,7 @@ export default function AdminFeedbacks() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const cleanPhone = (fb.customer_phone || '').replace(/\D/g, '');
     if (!cleanPhone) {
-      Alert.alert('Sem telefone', 'Este cliente não cadastrou telefone de contato.');
+      showThemedAlert('Sem telefone', 'Este cliente não cadastrou telefone de contato.');
       return;
     }
     const fullPhone = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;

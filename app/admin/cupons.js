@@ -1,7 +1,7 @@
 import ThreeDotsLoader from '../../components/ThreeDotsLoader';
 import {
   View, Text, ScrollView, StyleSheet, Pressable,
-  ActivityIndicator, Alert, Modal, TextInput, Switch, Platform, Image,
+  ActivityIndicator, Modal, TextInput, Switch, Platform, Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -15,7 +15,7 @@ import * as Clipboard from 'expo-clipboard';
 import CouponTemplateSelectorModal from '../../components/admin/CouponTemplateSelectorModal';
 import SwipeableBottomSheetModal from '../../components/SwipeableBottomSheetModal';
 import { AdminListSkeleton } from '../../components/Skeleton';
-import { ThemedAlertHost, showSuccessAlert, showErrorAlert } from '../../components/ThemedAlert';
+import { ThemedAlertHost, showSuccessAlert, showErrorAlert, showThemedAlert } from '../../components/ThemedAlert';
 import HomeCouponCard from '../../components/HomeCouponCard';
 import ProductImagePicker from '../../components/admin/ProductImagePicker';
 import { resolveProductImage } from '../../utils/resolveProductImage';
@@ -254,7 +254,7 @@ export default function AdminCupons() {
       if (error) throw error;
       setCoupons(data || []);
     } catch {
-      Alert.alert('Erro', 'Não foi possível carregar os cupons.');
+      showThemedAlert('Erro', 'Não foi possível carregar os cupons.');
     } finally {
       setLoading(false);
     }
@@ -432,23 +432,23 @@ export default function AdminCupons() {
   const handleSave = async () => {
     const cleanBannerUrl = form.bannerImageUrl?.trim() || '';
     if (form.isBannerHighlight && !cleanBannerUrl) {
-      Alert.alert('Atenção', 'Informe a URL da imagem ou escolha da galeria para destacar como banner.');
+      showThemedAlert('Atenção', 'Informe a URL da imagem ou escolha da galeria para destacar como banner.');
       return;
     }
 
     if (form.isBannerHighlight && cleanBannerUrl && !isSafeBannerUrl(cleanBannerUrl)) {
-      Alert.alert('Atenção', 'URL da imagem do banner inválida. Use uma URL http(s) ou caminho interno válido.');
+      showThemedAlert('Atenção', 'URL da imagem do banner inválida. Use uma URL http(s) ou caminho interno válido.');
       return;
     }
 
     const valueNum = parseFloat(String(form.value).replace(',', '.'));
     if (isNaN(valueNum) || valueNum <= 0) {
-      Alert.alert('Atenção', 'Informe um valor de desconto válido.');
+      showThemedAlert('Atenção', 'Informe um valor de desconto válido.');
       return;
     }
 
     if (form.type === 'percentage' && (valueNum <= 0 || valueNum > 100)) {
-      Alert.alert('Atenção', 'O desconto percentual deve estar entre 1% e 100%.');
+      showThemedAlert('Atenção', 'O desconto percentual deve estar entre 1% e 100%.');
       return;
     }
 
@@ -456,13 +456,13 @@ export default function AdminCupons() {
     if (String(form.minOrderValue).trim() !== '') {
       minOrderValue = parseFloat(String(form.minOrderValue).replace(',', '.'));
       if (isNaN(minOrderValue) || minOrderValue <= 0) {
-        Alert.alert('Atenção', 'Valor mínimo do pedido deve ser maior que zero.');
+        showThemedAlert('Atenção', 'Valor mínimo do pedido deve ser maior que zero.');
         return;
       }
     }
 
     if (!form.isPermanent && form.expiresAt < new Date()) {
-      Alert.alert('Atenção', 'A data de expiração não pode estar no passado.');
+      showThemedAlert('Atenção', 'A data de expiração não pode estar no passado.');
       return;
     }
 
@@ -470,7 +470,7 @@ export default function AdminCupons() {
     if (String(form.quantityAvailable).trim() !== '') {
       quantityAvailable = parseInt(form.quantityAvailable, 10);
       if (isNaN(quantityAvailable) || quantityAvailable <= 0) {
-        Alert.alert('Atenção', 'Quantidade disponível deve ser maior que zero.');
+        showThemedAlert('Atenção', 'Quantidade disponível deve ser maior que zero.');
         return;
       }
     }
@@ -479,7 +479,7 @@ export default function AdminCupons() {
     if (String(form.maxUsesPerUser).trim() !== '') {
       maxUsesPerUser = parseInt(form.maxUsesPerUser, 10);
       if (isNaN(maxUsesPerUser) || maxUsesPerUser <= 0) {
-        Alert.alert('Atenção', 'Limite por pessoa deve ser maior que zero.');
+        showThemedAlert('Atenção', 'Limite por pessoa deve ser maior que zero.');
         return;
       }
     }
@@ -489,7 +489,7 @@ export default function AdminCupons() {
       c => c.code?.toUpperCase() === code.toUpperCase() && c.id !== editingCoupon?.id
     );
     if (duplicate) {
-      Alert.alert('Atenção', 'Já existe um cupom com esse código.');
+      showThemedAlert('Atenção', 'Já existe um cupom com esse código.');
       return;
     }
 
@@ -534,7 +534,7 @@ export default function AdminCupons() {
       setModalVisible(false);
       await loadCoupons();
     } catch (e) {
-      Alert.alert('Erro', e.message || 'Não foi possível salvar o cupom.');
+      showThemedAlert('Erro', e.message || 'Não foi possível salvar o cupom.');
     } finally {
       setSaving(false);
     }
@@ -547,13 +547,13 @@ export default function AdminCupons() {
       setCoupons(prev => prev.map(c => c.id === coupon.id ? { ...c, show_on_home: nextVal } : c));
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch {
-      Alert.alert('Erro', 'Não foi possível atualizar o cupom.');
+      showThemedAlert('Erro', 'Não foi possível atualizar o cupom.');
     }
   };
 
   const handleToggleBannerHighlight = async (coupon) => {
     if (!coupon.banner_image_url) {
-      Alert.alert(
+      showThemedAlert(
         'Sem imagem de banner',
         'Este cupom não possui imagem vinculada. Clique em "Editar" para adicionar a imagem do banner primeiro.'
       );
@@ -566,7 +566,7 @@ export default function AdminCupons() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       showSuccessAlert(nextVal ? 'Banner ativado no carrossel da Home!' : 'Banner removido do carrossel da Home.', 'Pronto');
     } catch {
-      Alert.alert('Erro', 'Não foi possível atualizar o status do banner.');
+      showThemedAlert('Erro', 'Não foi possível atualizar o status do banner.');
     }
   };
 
@@ -577,12 +577,12 @@ export default function AdminCupons() {
       setCoupons(prev => prev.map(c => c.id === coupon.id ? { ...c, active: nextVal } : c));
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch {
-      Alert.alert('Erro', 'Não foi possível alterar o status do cupom.');
+      showThemedAlert('Erro', 'Não foi possível alterar o status do cupom.');
     }
   };
 
   const handleDelete = (coupon) => {
-    Alert.alert('Deletar Cupom', `Excluir o cupom "${coupon.code}"?`, [
+    showThemedAlert('Deletar Cupom', `Excluir o cupom "${coupon.code}"?`, [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Deletar', style: 'destructive', onPress: async () => {
@@ -590,7 +590,7 @@ export default function AdminCupons() {
             await supabase.from('coupons').delete().eq('id', coupon.id);
             await loadCoupons();
           } catch {
-            Alert.alert('Erro', 'Não foi possível deletar.');
+            showThemedAlert('Erro', 'Não foi possível deletar.');
           }
         }
       },

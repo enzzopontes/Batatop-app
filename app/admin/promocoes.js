@@ -2,7 +2,7 @@ import ThreeDotsLoader from '../../components/ThreeDotsLoader';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, Pressable,
-  ActivityIndicator, Alert, TextInput, Switch,
+  ActivityIndicator, TextInput, Switch,
   Image, Modal, Dimensions, Platform
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -12,7 +12,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../../supabaseConfig';
 import * as Haptics from 'expo-haptics';
 import { AdminListSkeleton } from '../../components/Skeleton';
-import { ThemedAlertHost } from '../../components/ThemedAlert';
+import { ThemedAlertHost, showThemedAlert } from '../../components/ThemedAlert';
 import SwipeableBottomSheetModal from '../../components/SwipeableBottomSheetModal';
 import AdminHomeBannersSection from '../../components/admin/AdminHomeBannersSection';
 
@@ -115,7 +115,7 @@ export default function AdminPromocoes() {
       }
     } catch (e) {
       console.error(e);
-      Alert.alert('Erro', 'Não foi possível carregar as configurações de promoções.');
+      showThemedAlert('Erro', 'Não foi possível carregar as configurações de promoções.');
     } finally {
       setLoading(false);
     }
@@ -128,7 +128,7 @@ export default function AdminPromocoes() {
   // ─── Salvar configurações de promoção ────────────────────────────
   const savePromoSettings = async (updatedSuperPromo, updatedItemPromo, updatedPromoProducts, showFeedback = true) => {
     if (!storeSettingsId) {
-      Alert.alert('Erro', 'Configuração da loja não encontrada.');
+      showThemedAlert('Erro', 'Configuração da loja não encontrada.');
       return;
     }
 
@@ -153,11 +153,11 @@ export default function AdminPromocoes() {
       setSettingsValue(newValue);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       if (showFeedback) {
-        Alert.alert('Sucesso', 'Configurações de promoção sincronizadas com sucesso!');
+        showThemedAlert('Sucesso', 'Configurações de promoção sincronizadas com sucesso!');
       }
     } catch (e) {
       console.error(e);
-      Alert.alert('Erro', 'Erro ao salvar as configurações.');
+      showThemedAlert('Erro', 'Erro ao salvar as configurações.');
     } finally {
       setSaving(false);
     }

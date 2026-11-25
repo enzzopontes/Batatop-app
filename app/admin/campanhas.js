@@ -6,7 +6,6 @@ import {
   StyleSheet,
   Pressable,
   ActivityIndicator,
-  Alert,
   RefreshControl,
   Platform,
 } from 'react-native';
@@ -17,6 +16,7 @@ import * as Haptics from 'expo-haptics';
 import { supabase } from '../../supabaseConfig';
 import { checkIsAdmin } from '../../utils/isAdmin';
 import CampaignModal from '../../components/admin/CampaignModal';
+import { showThemedAlert } from '../../components/ThemedAlert';
 
 const THEME = {
   primary: '#E3A008',
@@ -108,7 +108,7 @@ export default function AdminCampanhas() {
   };
 
   const handleTriggerNow = (campaignId) => {
-    Alert.alert(
+    showThemedAlert(
       'Disparar Notificações',
       `Deseja enviar esta notificação agora para todos os ${tokenCount} clientes com token ativo?`,
       [
@@ -137,11 +137,11 @@ export default function AdminCampanhas() {
               }
 
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              Alert.alert('Sucesso', 'Disparo de notificações iniciado em background!');
+              showThemedAlert('Sucesso', 'Disparo de notificações iniciado em background!');
               loadData();
             } catch (err) {
               console.error('Erro ao disparar campanha:', err);
-              Alert.alert('Erro', err.message || 'Falha ao acionar disparo.');
+              showThemedAlert('Erro', err.message || 'Falha ao acionar disparo.');
             } finally {
               setActionLoadingId(null);
             }
@@ -152,7 +152,7 @@ export default function AdminCampanhas() {
   };
 
   const handleCancelCampaign = async (campaignId) => {
-    Alert.alert(
+    showThemedAlert(
       'Cancelar Campanha',
       'Tem certeza que deseja cancelar o agendamento desta campanha?',
       [
@@ -171,7 +171,7 @@ export default function AdminCampanhas() {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               loadData();
             } catch (err) {
-              Alert.alert('Erro', 'Não foi possível cancelar.');
+              showThemedAlert('Erro', 'Não foi possível cancelar.');
             } finally {
               setActionLoadingId(null);
             }
@@ -182,7 +182,7 @@ export default function AdminCampanhas() {
   };
 
   const handleDeleteCampaign = async (campaignId) => {
-    Alert.alert(
+    showThemedAlert(
       'Excluir Registro',
       'Deseja excluir definitivamente o registro desta campanha?',
       [
@@ -201,7 +201,7 @@ export default function AdminCampanhas() {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               loadData();
             } catch (err) {
-              Alert.alert('Erro', 'Não foi possível excluir.');
+              showThemedAlert('Erro', 'Não foi possível excluir.');
             } finally {
               setActionLoadingId(null);
             }
