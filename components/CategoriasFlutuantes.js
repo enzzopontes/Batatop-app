@@ -1,8 +1,10 @@
 import { useRef, useEffect } from 'react';
-import { Animated, ScrollView, Pressable, View, Image, Text, StyleSheet } from 'react-native';
+import { Animated, ScrollView, Pressable, View, Text, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS, SPACING, RADIUS } from '../constants/theme';
-import { CATEGORIAS, handleCategoriaPress } from '../constants/categorias';
+import { handleCategoriaPress } from '../constants/categorias';
+import CategoryIcon from './CategoryIcon';
+import { DEFAULT_CATEGORIES } from '../hooks/useCategories';
 import {
   HEADER_HYSTERESIS,
   HEADER_ANIM_DURATION,
@@ -32,7 +34,13 @@ const ICON_OVERFLOW = Math.max(0, (ICON_SIZE - PILL_HEIGHT) / 2);
 
 const BAR_SLIDE_DISTANCE = 70; // ~altura da própria barra — sobe/desce igual o header
 
-export default function CategoriasFlutuantes({ scrollY, categoriasBottomY, headerHidden, router }) {
+export default function CategoriasFlutuantes({
+  scrollY,
+  categoriasBottomY,
+  headerHidden,
+  router,
+  categories,
+}) {
   // hiddenAnim segue a MESMA convenção do headerAnim lá no _layout.js:
   // 0 = visível, 1 = escondida.
   const hiddenAnim = useRef(new Animated.Value(1)).current;
@@ -102,6 +110,14 @@ export default function CategoriasFlutuantes({ scrollY, categoriasBottomY, heade
     outputRange: [1, 0],
   });
 
+  const items = categories && categories.length > 0 ? categories : DEFAULT_CATEGORIES;
+  const isCircleItem = (cat) => cat?.slug === 'todos' || Boolean(cat?.iconOnly);
+  const sortedItems = [...items].sort(
+    (a, b) => (isCircleItem(b) ? 1 : 0) - (isCircleItem(a) ? 1 : 0)
+  );
+  const circleIconSize = Math.round(ICON_SIZE * 0.68);
+  const badgeIconSize = Math.round(ICON_SIZE * 0.82);
+
   return (
     <Animated.View pointerEvents="box-none" style={[styles.wrap, { opacity, transform: [{ translateY }] }]}>
       <SafeAreaView edges={['top']} style={{ backgroundColor: 'transparent' }}>
@@ -110,32 +126,49 @@ export default function CategoriasFlutuantes({ scrollY, categoriasBottomY, heade
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.row}
         >
-          {[...CATEGORIAS].sort((a, b) => (b.iconOnly ? 1 : 0) - (a.iconOnly ? 1 : 0)).map((cat) =>
-            cat.iconOnly ? (
+          {sortedItems.map((cat) => {
+            const itemKey = cat.id || cat.slug || cat.name || cat.label;
+            const itemLabel = cat.name || cat.label;
+            const badgeText =
+              typeof cat.badge_text === 'string' && cat.badge_text.trim().length > 0
+                ? cat.badge_text.trim()
+                : null;
+
+            return isCircleItem(cat) ? (
               <Pressable
-                key={cat.label}
+                key={itemKey}
                 style={[styles.circle, cat.disabled && styles.disabled]}
                 disabled={cat.disabled}
                 onPress={() => handleCategoriaPress(router, cat)}
               >
-                <Image source={cat.icon} style={styles.circleImg} resizeMode="contain" />
+                <CategoryIcon category={cat} size={circleIconSize} />
               </Pressable>
             ) : (
-              <View key={cat.label} style={styles.pillSlot}>
+              <View key={itemKey} style={styles.pillSlot}>
                 <Pressable
                   style={[styles.pill, cat.disabled && styles.disabled]}
                   disabled={cat.disabled}
                   onPress={() => handleCategoriaPress(router, cat)}
                 >
-                  <Text style={styles.label} numberOfLines={1}>{cat.label}</Text>
+                  <Text style={styles.label} numberOfLines={1}>{itemLabel}</Text>
+                  {badgeText ? (
+                    <View
+                      style={[
+                        styles.badge,
+                        { backgroundColor: cat.badge_color || COLORS.secondary },
+                      ]}
+                    >
+                      <Text style={styles.badgeText} numberOfLines={1}>{badgeText}</Text>
+                    </View>
+                  ) : null}
                 </Pressable>
                 {/* ícone "flutuando" por cima da pill — tamanho 100% independente */}
                 <View style={styles.iconBadge} pointerEvents="none">
-                  <Image source={cat.icon} style={styles.iconBadgeImg} resizeMode="contain" />
+                  <CategoryIcon category={cat} size={badgeIconSize} />
                 </View>
               </View>
-            )
-          )}
+            );
+          })}
         </ScrollView>
       </SafeAreaView>
     </Animated.View>
@@ -171,6 +204,7 @@ const styles = StyleSheet.create({
     height: PILL_HEIGHT,
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
     backgroundColor: COLORS.backgroundElevated,
     borderRadius: RADIUS.full ?? 999,
     paddingLeft: ICON_SIZE, // espaço reservado = tamanho INTEIRO do ícone + respiro, senão sobra por cima do texto
@@ -180,6 +214,18 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontWeight: '600',
     fontSize: 13,
+  },
+  badge: {
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    borderRadius: RADIUS.full ?? 999,
+  },
+  badgeText: {
+    color: COLORS.white,
+    fontSize: 9,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
   },
   iconBadge: {
     position: 'absolute',

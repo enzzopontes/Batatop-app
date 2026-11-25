@@ -20,7 +20,37 @@ export const CATEGORIAS = [
 
 // ─── Navegação de uma categoria (compartilhada entre grid e barra flutuante) ──
 export function handleCategoriaPress(router, cat) {
-  if (cat.disabled) return;
+  if (!cat || cat.disabled) return;
+
+  if (cat.kind === 'home_shortcut') {
+    const rawTarget = cat.custom_href || '/cardapio';
+    const target =
+      typeof rawTarget === 'string' &&
+      rawTarget.startsWith('/') &&
+      !rawTarget.startsWith('//') &&
+      !rawTarget.startsWith('/\\')
+        ? rawTarget
+        : '/cardapio';
+    if (target.startsWith('/cardapio?category=')) {
+      const rawCategory = target.slice('/cardapio?category='.length).split('&')[0];
+      let decodedCategory = rawCategory;
+      try {
+        decodedCategory = decodeURIComponent(rawCategory);
+      } catch {
+        decodedCategory = rawCategory;
+      }
+      return router.push({
+        pathname: '/cardapio',
+        params: { categoria: decodedCategory },
+      });
+    }
+    return router.push(target);
+  }
+
+  if (cat.kind === 'product_category' || cat.slug) {
+    return router.push({ pathname: '/cardapio', params: { categoria: cat.slug } });
+  }
+
   if (cat.route) return router.push(cat.route);
   if (cat.cat) return router.push({ pathname: '/cardapio', params: { categoria: cat.cat } });
 }

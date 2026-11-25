@@ -11,13 +11,14 @@ import {
   ToastAndroid,
   Platform,
   Dimensions,
+  RefreshControl,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useRouter, useFocusEffect, Redirect } from 'expo-router';
 import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useState, useRef, useCallback, useEffect, memo } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { safeGetNotificationPermissions } from '../utils/pushNotifications';
@@ -27,11 +28,14 @@ import { ALREADY_SEEN_LOCATION_KEY } from './location';
 import * as Location from 'expo-location';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../constants/theme';
 import { useProductRanking } from '../hooks/useProductRanking';
+import { useCategories, matchProductToCategory } from '../hooks/useCategories';
+import { normalizeCategorySlug, mapFallbackIconToMci } from '../utils/resolveCategoryIcon';
 import BannerCarousel from '../components/BannerCarousel';
 import { ScrollReveal, useRevealScope } from '../components/ui/ScrollReveal';
 import CategoriasFlutuantes from '../components/CategoriasFlutuantes';
+import CategoryIcon from '../components/CategoryIcon';
 import RestaurantHeaderCard from '../components/RestaurantHeaderCard';
-import { CATEGORIAS, handleCategoriaPress } from '../constants/categorias';
+import { handleCategoriaPress } from '../constants/categorias';
 import { fetchHomeCoupons } from '../utils/homeCoupons';
 import HomeCouponCard, { HOME_COUPON_CARD_WIDTH, HOME_COUPON_GAP } from '../components/HomeCouponCard';
 import { HomeDestaquesSkeleton, HomeGridSkeleton } from '../components/Skeleton';
@@ -70,12 +74,16 @@ function PressableScale({ children, onPress, style }) {
 
 // ─── Fallbacks de imagem por categoria (fixos — não recriar a cada render) ────
 const PROD_IMG_FALLBACKS = {
+  batata: 'https://images.unsplash.com/photo-1518013391915-e40643a1bce1?w=600',
   batatas: 'https://images.unsplash.com/photo-1518013391915-e40643a1bce1?w=600',
+  bebida: 'https://images.unsplash.com/photo-1544145945-f904253d0c7b?w=600',
   bebidas: 'https://images.unsplash.com/photo-1544145945-f904253d0c7b?w=600',
   macarrao: 'https://images.unsplash.com/photo-1551183053-bf91a1d81141?w=600',
 };
 const MINI_IMG_FALLBACKS = {
+  batata: 'https://images.unsplash.com/photo-1518013391915-e40643a1bce1?w=400',
   batatas: 'https://images.unsplash.com/photo-1518013391915-e40643a1bce1?w=400',
+  bebida: 'https://images.unsplash.com/photo-1544145945-f904253d0c7b?w=400',
   bebidas: 'https://images.unsplash.com/photo-1544145945-f904253d0c7b?w=400',
   macarrao: 'https://images.unsplash.com/photo-1551183053-bf91a1d81141?w=400',
 };
@@ -85,9 +93,15 @@ const ProdutoCard = memo(function ProdutoCard({ produto }) {
   const router = useRouter();
   const [useFallback, setUseFallback] = useState(false);
 
-  const imageSource = useFallback
-    ? { uri: PROD_IMG_FALLBACKS[produto.categoria?.toLowerCase()] || PROD_IMG_FALLBACKS.batatas }
-    : { uri: produto.imagem };
+  useEffect(() => {
+    setUseFallback(false);
+  }, [produto?.imagem]);
+
+  const fallbackKey = normalizeCategorySlug(produto.categoria);
+  const imageSource =
+    useFallback || !produto.imagem
+      ? { uri: PROD_IMG_FALLBACKS[fallbackKey] || PROD_IMG_FALLBACKS.batatas }
+      : { uri: produto.imagem };
 
   return (
     <PressableScale onPress={() => router.push(`/produto/${produto.id}`)}>
@@ -136,9 +150,15 @@ const DestaqueMiniCard = memo(function DestaqueMiniCard({ produto }) {
   const router = useRouter();
   const [useFallback, setUseFallback] = useState(false);
 
-  const imageSource = useFallback
-    ? { uri: MINI_IMG_FALLBACKS[produto.categoria?.toLowerCase()] || MINI_IMG_FALLBACKS.batatas }
-    : { uri: produto.imagem };
+  useEffect(() => {
+    setUseFallback(false);
+  }, [produto?.imagem]);
+
+  const fallbackKey = normalizeCategorySlug(produto.categoria);
+  const imageSource =
+    useFallback || !produto.imagem
+      ? { uri: MINI_IMG_FALLBACKS[fallbackKey] || MINI_IMG_FALLBACKS.batatas }
+      : { uri: produto.imagem };
 
   return (
     <PressableScale onPress={() => router.push(`/produto/${produto.id}`)}>
@@ -182,7 +202,15 @@ const DestaqueMiniCard = memo(function DestaqueMiniCard({ produto }) {
 // ─── Tela Principal ────────────────────────────────────────────────────────────
 export default function Home() {
   const router = useRouter();
-  const { produtos, loading } = useProductRanking();
+  const { produtos, loading, error: productsError, refetch: refetchRanking } = useProductRanking();
+  const {
+    categories,
+    getHomeBarItems,
+    getHomeFeaturedCategories,
+    refresh: refreshCategories,
+    loading: categoriesLoading,
+    error: categoriesError,
+  } = useCategories();
   const { onScroll, resetHeader, scrollY } = useScrollHandler();
   const headerHeight = useHeaderHeight();
   const headerHidden = useHeaderHidden();
@@ -194,6 +222,24 @@ export default function Home() {
   const [activeCouponIndex, setActiveCouponIndex] = useState(0);
   const [categoriasBottomY, setCategoriasBottomY] = useState(null);
   const [homeCoupons, setHomeCoupons] = useState([]);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.allSettled([
+        refreshCategories(),
+        refetchRanking(),
+        fetchHomeCoupons().then((list) => {
+          if (Array.isArray(list) && list.length > 0) {
+            setHomeCoupons(list);
+          }
+        }),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshCategories, refetchRanking]);
 
   useEffect(() => {
     let active = true;
@@ -312,41 +358,61 @@ export default function Home() {
     }, [resetHeader])
   );
 
-  const disponiveis = produtos.filter(p => p.disponivel);
+  const disponiveis = useMemo(
+    () => produtos.filter((p) => p.disponivel !== false),
+    [produtos]
+  );
 
-  // "Batatas mais pedidas" é só batata — antes pegava os 6 primeiros do
-  // ranking geral (`disponiveis.slice(0, 6)`), o que deixava entrar Macarrão
-  // no meio porque o ranking é por vendas totais, sem separar categoria.
-  const normalizarCategoria = (str) =>
-    (str || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const homeBarItems = useMemo(
+    () => getHomeBarItems(produtos),
+    [getHomeBarItems, produtos]
+  );
 
-  const maisPedidos = disponiveis
-    .filter((p) => normalizarCategoria(p.categoria).includes('batata'))
-    .slice(0, 6);
+  const homeFeaturedCategories = useMemo(
+    () => getHomeFeaturedCategories(produtos),
+    [getHomeFeaturedCategories, produtos]
+  );
 
-  const maisPedidosMacarrao = disponiveis
-    .filter((p) => normalizarCategoria(p.categoria).includes('macarrao'))
-    .slice(0, 6);
+  const featuredSections = useMemo(
+    () =>
+      homeFeaturedCategories
+        .map((cat) => {
+          const limit = cat.home_featured_limit || 6;
+          const items = disponiveis
+            .filter((p) => matchProductToCategory(p, cat))
+            .slice(0, limit);
+          return { category: cat, items };
+        })
+        .filter((sec) => sec.items.length > 0),
+    [homeFeaturedCategories, disponiveis]
+  );
 
   // Destaques: antes pegava só os 6 primeiros de `disponiveis` (ordenado por
   // ranking), o que na prática dava só batata porque elas dominam o topo do
   // ranking geral. Agora intercala por categoria (1 de cada categoria por vez,
   // respeitando o ranking dentro de cada uma) até fechar 6 itens, garantindo
   // que categorias como Macarrão também apareçam nos destaques.
-  const destaques = (() => {
+  const destaques = useMemo(() => {
+    const sidebarSlugs = new Set(
+      (categories || [])
+        .filter((c) => c.menu_layout_zone === 'sidebar_right')
+        .map((c) => normalizeCategorySlug(c.slug))
+    );
+
     const porCategoria = {};
     disponiveis.forEach((p) => {
-      const cat = p.categoria || 'Outros';
-      if (normalizarCategoria(cat).includes('bebida')) return; // exclui bebidas dos destaques
-      if (!porCategoria[cat]) porCategoria[cat] = [];
-      porCategoria[cat].push(p);
+      const catLabel = p.categoria || p.category || 'Outros';
+      const slug = normalizeCategorySlug(catLabel);
+      if (slug.includes('bebida') || sidebarSlugs.has(slug)) return; // exclui bebidas/sidebar dos destaques
+      if (!porCategoria[catLabel]) porCategoria[catLabel] = [];
+      porCategoria[catLabel].push(p);
     });
 
-    const categorias = Object.keys(porCategoria);
+    const catKeys = Object.keys(porCategoria);
     const resultado = [];
     let i = 0;
-    while (resultado.length < 6 && categorias.some((cat) => porCategoria[cat][i])) {
-      categorias.forEach((cat) => {
+    while (resultado.length < 6 && catKeys.some((cat) => porCategoria[cat][i])) {
+      catKeys.forEach((cat) => {
         if (porCategoria[cat][i] && resultado.length < 6) {
           resultado.push(porCategoria[cat][i]);
         }
@@ -354,7 +420,7 @@ export default function Home() {
       i++;
     }
     return resultado;
-  })();
+  }, [disponiveis, categories]);
 
   const displayCoupons = homeCoupons;
 
@@ -383,6 +449,14 @@ export default function Home() {
         contentContainerStyle={{ paddingBottom: SPACING[10] }}
         onScroll={(e) => { onScroll(e); reveal.onScroll(); }}
         scrollEventThrottle={16}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={COLORS.primary}
+            colors={[COLORS.primary, COLORS.secondary]}
+          />
+        }
       >
         {/* Espaço reservado pro header — fixo, não empurra mais nada */}
         <View style={{ height: headerSpacerHeight }} />
@@ -414,20 +488,42 @@ export default function Home() {
           onLayout={(e) => setCategoriasBottomY(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}
         >
           <View style={s.catGrid}>
-            {CATEGORIAS.map((cat) => (
-              <ScrollReveal key={cat.label} scope={reveal} revealKey={`home_cat_${cat.label}`} style={s.catGridSlot}>
-              <Pressable
-                style={[s.catGridPress, cat.disabled && s.catGridItemDisabled]}
-                disabled={cat.disabled}
-                onPress={() => handleCategoriaPress(router, cat)}
-              >
-                <View style={s.catGridBox}>
-                  <Image source={cat.icon} style={s.catGridIcon} resizeMode="contain" />
-                </View>
-                <Text style={s.catGridLabel} numberOfLines={1}>{cat.label}</Text>
-              </Pressable>
-              </ScrollReveal>
-            ))}
+            {homeBarItems.map((cat) => {
+              const itemKey = cat.id || cat.slug || cat.name;
+              const badgeText =
+                typeof cat.badge_text === 'string' && cat.badge_text.trim().length > 0
+                  ? cat.badge_text.trim()
+                  : null;
+              return (
+                <ScrollReveal
+                  key={itemKey}
+                  scope={reveal}
+                  revealKey={`home_cat_${cat.slug || itemKey}`}
+                  style={s.catGridSlot}
+                >
+                  <Pressable
+                    style={[s.catGridPress, cat.disabled && s.catGridItemDisabled]}
+                    disabled={cat.disabled}
+                    onPress={() => handleCategoriaPress(router, cat)}
+                  >
+                    <View style={s.catGridBox}>
+                      <CategoryIcon category={cat} size={null} style={s.catGridIcon} />
+                      {badgeText ? (
+                        <View
+                          style={[
+                            s.catGridBadge,
+                            { backgroundColor: cat.badge_color || COLORS.secondary },
+                          ]}
+                        >
+                          <Text style={s.catGridBadgeText} numberOfLines={1}>{badgeText}</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                    <Text style={s.catGridLabel} numberOfLines={1}>{cat.name}</Text>
+                  </Pressable>
+                </ScrollReveal>
+              );
+            })}
           </View>
         </View>
 
@@ -435,6 +531,18 @@ export default function Home() {
         <ScrollReveal scope={reveal} revealKey="home_banners" style={s.section}>
           <BannerCarousel />
         </ScrollReveal>
+
+        {categoriesError || (productsError && produtos.length > 0) ? (
+          <View style={s.degradedBanner}>
+            <Ionicons name="cloud-offline-outline" size={16} color={COLORS.secondary} />
+            <Text style={s.degradedBannerText} numberOfLines={2}>
+              Sem conexão estável. Exibindo dados salvos.
+            </Text>
+            <Pressable style={s.degradedRetryBtn} onPress={handleRefresh} hitSlop={6}>
+              <Text style={s.degradedRetryText}>Atualizar</Text>
+            </Pressable>
+          </View>
+        ) : null}
 
         {/* ══════════════════ DESTAQUES (scroll horizontal) ══════════════════ */}
         <ScrollReveal scope={reveal} revealKey="home_destaques" style={s.section}>
@@ -448,6 +556,26 @@ export default function Home() {
 
           {loading ? (
             <HomeDestaquesSkeleton />
+          ) : productsError && destaques.length === 0 ? (
+            <View style={s.errorCard}>
+              <Ionicons name="cloud-offline-outline" size={28} color={COLORS.secondary} />
+              <Text style={s.errorTitle}>Não foi possível carregar o cardápio</Text>
+              <Text style={s.errorText}>Verifique sua conexão e tente novamente.</Text>
+              <Pressable style={s.retryBtn} onPress={handleRefresh}>
+                <Ionicons name="refresh" size={14} color={COLORS.white} />
+                <Text style={s.retryBtnText}>Tentar novamente</Text>
+              </Pressable>
+            </View>
+          ) : !loading && !productsError && disponiveis.length === 0 ? (
+            <View style={s.errorCard}>
+              <Ionicons name="fast-food-outline" size={28} color={COLORS.primary} />
+              <Text style={s.errorTitle}>Nenhum item disponível no momento</Text>
+              <Text style={s.errorText}>Nosso cardápio está sendo atualizado. Tente novamente em instantes.</Text>
+              <Pressable style={s.retryBtn} onPress={handleRefresh}>
+                <Ionicons name="refresh" size={14} color={COLORS.white} />
+                <Text style={s.retryBtnText}>Tentar novamente</Text>
+              </Pressable>
+            </View>
           ) : (
             <ScrollView
               horizontal
@@ -555,61 +683,94 @@ export default function Home() {
           </ScrollReveal>
         ) : null}
 
-        <View style={s.section}>
-          <ScrollReveal scope={reveal} revealKey="home_batatas_header" style={s.cardapioHeaderWrap}>
-            <View style={s.cardapioHeaderRow}>
-              <View style={s.cardapioHeaderLeft}>
-                <MaterialCommunityIcons name="carrot" size={30} color={COLORS.primary} />
-                <Text style={s.cardapioTitle} numberOfLines={1}>Batatas mais pedidas</Text>
-              </View>
-              <Pressable onPress={() => router.push('/cardapio')} style={s.verTodos}>
-                <Text style={s.verTodosText}>Ver todos</Text>
-                <Ionicons name="chevron-forward" size={13} color={COLORS.primary} />
-              </Pressable>
-            </View>
-            <Text style={s.cardapioDesc}>Crocantes por fora, recheadas por dentro e feitas na hora</Text>
-          </ScrollReveal>
-
-          {loading ? (
+        {loading && produtos.length === 0 ? (
+          <View style={s.section}>
             <HomeGridSkeleton count={4} />
-          ) : (
-            <View style={s.prodGrid}>
-              {maisPedidos.map((p, i) => (
-                <ScrollReveal key={p.id} scope={reveal} revealKey={`home_batata_${p.id}`}>
-                  <ProdutoCard produto={p} index={i} />
-                </ScrollReveal>
-              ))}
-            </View>
-          )}
-        </View>
+          </View>
+        ) : (
+          featuredSections.map(({ category: cat, items }) => {
+            const slugNorm = normalizeCategorySlug(cat.slug);
+            const sectionTitle =
+              slugNorm === 'batata'
+                ? 'Batatas mais pedidas'
+                : slugNorm === 'macarrao'
+                ? 'Macarrão mais pedidos'
+                : cat.show_ranking
+                ? `${cat.name} mais pedidos`
+                : cat.name;
+            const sectionDesc =
+              slugNorm === 'batata'
+                ? 'Crocantes por fora, recheadas por dentro e feitas na hora'
+                : slugNorm === 'macarrao'
+                ? 'Massas artesanais com molhos irresistíveis'
+                : cat.description;
+            const sectionMciIcon =
+              slugNorm === 'batata'
+                ? 'carrot'
+                : slugNorm === 'macarrao'
+                ? 'pasta'
+                : mapFallbackIconToMci(cat.fallback_icon);
+            const badgeText =
+              typeof cat.badge_text === 'string' && cat.badge_text.trim().length > 0
+                ? cat.badge_text.trim()
+                : null;
 
-        <View style={s.section}>
-          <ScrollReveal scope={reveal} revealKey="home_macarrao_header" style={s.cardapioHeaderWrap}>
-            <View style={s.cardapioHeaderRow}>
-              <View style={s.cardapioHeaderLeft}>
-                <MaterialCommunityIcons name="pasta" size={30} color={COLORS.primary} />
-                <Text style={s.cardapioTitle} numberOfLines={1}>Macarrão mais pedidos</Text>
+            return (
+              <View key={cat.id || cat.slug} style={s.section}>
+                <ScrollReveal
+                  scope={reveal}
+                  revealKey={`home_sec_${cat.slug}_header`}
+                  style={s.cardapioHeaderWrap}
+                >
+                  <View style={s.cardapioHeaderRow}>
+                    <View style={s.cardapioHeaderLeft}>
+                      <MaterialCommunityIcons
+                        name={sectionMciIcon}
+                        size={30}
+                        color={COLORS.primary}
+                      />
+                      <Text style={s.cardapioTitle} numberOfLines={1}>{sectionTitle}</Text>
+                      {badgeText ? (
+                        <View
+                          style={[
+                            s.sectionBadge,
+                            { backgroundColor: cat.badge_color || COLORS.secondary },
+                          ]}
+                        >
+                          <Text style={s.sectionBadgeText} numberOfLines={1}>{badgeText}</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                    <Pressable
+                      onPress={() =>
+                        router.push({ pathname: '/cardapio', params: { categoria: cat.slug } })
+                      }
+                      style={s.verTodos}
+                    >
+                      <Text style={s.verTodosText}>Ver todos</Text>
+                      <Ionicons name="chevron-forward" size={13} color={COLORS.primary} />
+                    </Pressable>
+                  </View>
+                  {sectionDesc ? (
+                    <Text style={s.cardapioDesc}>{sectionDesc}</Text>
+                  ) : null}
+                </ScrollReveal>
+
+                <View style={s.prodGrid}>
+                  {items.map((p, i) => (
+                    <ScrollReveal
+                      key={p.id}
+                      scope={reveal}
+                      revealKey={`home_${cat.slug}_${p.id}`}
+                    >
+                      <ProdutoCard produto={p} index={i} />
+                    </ScrollReveal>
+                  ))}
+                </View>
               </View>
-              <Pressable onPress={() => router.push('/cardapio')} style={s.verTodos}>
-                <Text style={s.verTodosText}>Ver todos</Text>
-                <Ionicons name="chevron-forward" size={13} color={COLORS.primary} />
-              </Pressable>
-            </View>
-            <Text style={s.cardapioDesc}>Massas artesanais com molhos irresistíveis</Text>
-          </ScrollReveal>
-
-          {loading ? (
-            <HomeGridSkeleton count={4} />
-          ) : (
-            <View style={s.prodGrid}>
-              {maisPedidosMacarrao.map((p, i) => (
-                <ScrollReveal key={p.id} scope={reveal} revealKey={`home_macarrao_${p.id}`}>
-                  <ProdutoCard produto={p} index={i} />
-                </ScrollReveal>
-              ))}
-            </View>
-          )}
-        </View>
+            );
+          })
+        )}
 
       </ScrollView>
 
@@ -618,6 +779,7 @@ export default function Home() {
         categoriasBottomY={categoriasBottomY}
         headerHidden={headerHidden}
         router={router}
+        categories={homeBarItems}
       />
     </View>
   );
@@ -709,6 +871,18 @@ const s = StyleSheet.create({
     marginTop: 1,
     marginLeft: 30 + SPACING[2],
   },
+  sectionBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: RADIUS.full,
+  },
+  sectionBadgeText: {
+    color: COLORS.white,
+    fontSize: 9,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
 
   // ── CATEGORIAS (grid 3x2, estilo iFood — sem sombra/borda) ─────────────────
   catGrid: {
@@ -728,6 +902,7 @@ const s = StyleSheet.create({
     opacity: 0.5,
   },
   catGridBox: {
+    position: 'relative',
     width: '100%',
     aspectRatio: 1.5, // era 2.3 (2 colunas) — mais quadrado pra caber 3 por linha
     borderRadius: RADIUS.xl,
@@ -740,6 +915,22 @@ const s = StyleSheet.create({
     shadowRadius: 0,
     shadowOffset: { width: 0, height: 0 },
     elevation: 0,
+  },
+  catGridBadge: {
+    position: 'absolute',
+    top: -5,
+    right: -3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: RADIUS.full,
+    zIndex: 2,
+  },
+  catGridBadgeText: {
+    color: COLORS.white,
+    fontSize: 9,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
   },
   catGridIcon: {
     width: '62%',
@@ -984,10 +1175,76 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // ── LOADER ───────────────────────────────────────────────────────────────
+  // ── LOADER & FALLBACK ────────────────────────────────────────────────────
   loader: {
     alignItems: 'center',
     paddingVertical: SPACING[10],
+  },
+  errorCard: {
+    marginHorizontal: SPACING[6],
+    padding: SPACING[5],
+    borderRadius: RADIUS.xl,
+    backgroundColor: COLORS.backgroundElevated,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    gap: SPACING[2],
+  },
+  errorTitle: {
+    color: COLORS.text,
+    fontSize: TYPOGRAPHY.sizes.sm,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  errorText: {
+    color: COLORS.textSecondary,
+    fontSize: TYPOGRAPHY.sizes.xs,
+    textAlign: 'center',
+  },
+  retryBtn: {
+    marginTop: SPACING[1],
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.secondary,
+    paddingHorizontal: SPACING[4],
+    paddingVertical: SPACING[2],
+    borderRadius: RADIUS.full,
+  },
+  retryBtnText: {
+    color: COLORS.white,
+    fontSize: TYPOGRAPHY.sizes.xs,
+    fontWeight: '700',
+  },
+  degradedBanner: {
+    marginHorizontal: SPACING[6],
+    marginBottom: SPACING[4],
+    paddingHorizontal: SPACING[3],
+    paddingVertical: SPACING[2],
+    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.backgroundElevated,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING[2],
+  },
+  degradedBannerText: {
+    flex: 1,
+    color: COLORS.textSecondary,
+    fontSize: TYPOGRAPHY.sizes.xs,
+    fontWeight: '500',
+  },
+  degradedRetryBtn: {
+    paddingHorizontal: SPACING[3],
+    paddingVertical: SPACING[1],
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.secondary,
+  },
+  degradedRetryText: {
+    color: COLORS.white,
+    fontSize: TYPOGRAPHY.sizes.xs,
+    fontWeight: '700',
   },
 
 });

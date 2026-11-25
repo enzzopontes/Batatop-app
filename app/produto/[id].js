@@ -25,10 +25,12 @@ import { getEffectiveSession } from '../../utils/authSession';
 import { setPendingCartIntent } from '../../utils/pendingCartIntent';
 import { requestAuthSheet } from '../../utils/authSheetRequest';
 import { resolveProductImage } from '../../utils/resolveProductImage';
+import { normalizeCategorySlug } from '../../utils/resolveCategoryIcon';
 import { COLORS, SHADOWS, RADIUS } from '../../constants/theme';
 import { ProdutoDetalhesSkeleton } from '../../components/Skeleton';
 import useAddressVerification from '../../hooks/useAddressVerification';
 import { useFooterInsets } from '../../hooks/useFooterInsets';
+import { fetchCategoryRuleForProduct } from '../../hooks/useCategories';
 import AddressVerificationModal from '../../components/AddressVerificationModal';
 import NoAddressModal from '../../components/NoAddressModal';
 import PrimaryButton from '../../components/PrimaryButton';
@@ -100,6 +102,7 @@ export default function ProdutoDetail() {
   const resolvedInitialPasta = Array.isArray(initialPastaType) ? initialPastaType[0] : initialPastaType;
 
   const [produto, setProduto] = useState(null);
+  const [categoryRule, setCategoryRule] = useState(null);
   const [adicionais, setAdicionais] = useState([]);
   const [bebidas, setBebidas] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -132,10 +135,9 @@ export default function ProdutoDetail() {
   }));
 
   useEffect(() => {
+    setUseFallback(false);
     if (id) {
       fetchProduto();
-      fetchAdicionais();
-      fetchBebidas();
     }
   }, [id]);
 
@@ -166,6 +168,7 @@ export default function ProdutoDetail() {
   const fetchProduto = async () => {
     try {
       setLoading(true);
+      setCategoryRule(null);
       const [{ data, error }, { data: statusRow }] = await Promise.all([
         supabase
           .from('products')
@@ -181,6 +184,9 @@ export default function ProdutoDetail() {
 
       if (error) throw error;
 
+      const rule = await fetchCategoryRuleForProduct(data);
+      setCategoryRule(rule);
+
       const effectivePrice = resolveEffectivePrice(data, statusRow?.setting_value);
 
       setProduto({
@@ -191,9 +197,23 @@ export default function ProdutoDetail() {
         precoFormatado: `R$ ${effectivePrice.toFixed(2).replace('.', ',')}`,
         categoria: data.category,
         category: String(data.category || '').trim().toLowerCase(),
+        category_id: data.category_id ?? null,
         imagem: data.image_url,
         disponivel: data.available,
       });
+
+      const prodCatNorm = normalizeCategorySlug(data.category);
+      const canUseAddons = rule
+        ? rule.allows_addons !== false
+        : !prodCatNorm.startsWith('bebida');
+
+      if (canUseAddons) {
+        fetchAdicionais();
+        fetchBebidas();
+      } else {
+        setAdicionais([]);
+        setBebidas([]);
+      }
     } catch (err) {
       console.error('Erro ao buscar produto:', err);
       showErrorAlert('Não foi possível carregar o produto.');
@@ -385,20 +405,25 @@ export default function ProdutoDetail() {
 
   // Produto sendo visto já é uma bebida? Nesse caso não mostra a seção
   // (senão a Coca-Cola apareceria dentro da própria tela da Coca-Cola).
-  const isBebida = produto?.categoria?.trim().toLowerCase().startsWith('bebida');
-  const isMacarrao = String(produto?.categoria || '').toLowerCase().includes('macarr');
+  const catNorm = normalizeCategorySlug(produto?.category || produto?.categoria);
+  const isBebida = catNorm.startsWith('bebida');
+  const isMacarrao = catNorm.includes('macarr');
+  const allowsAddons = categoryRule ? categoryRule.allows_addons !== false : !isBebida;
+  const allowsNotes = categoryRule ? categoryRule.allows_notes !== false : true;
 
   const calcularPrecoTotal = () => {
     if (!produto) return 0;
     const basePrice = Number.isFinite(Number(produto.preco)) ? Number(produto.preco) : 0;
-    const extrasPrice = Number.isFinite(Number(totalAdicionais)) ? Number(totalAdicionais) : 0;
+    const extrasPrice = allowsAddons && Number.isFinite(Number(totalAdicionais)) ? Number(totalAdicionais) : 0;
     const produtoCents = Math.round((basePrice + extrasPrice) * 100) * quantidade;
-    const bebidasCents = bebidas.reduce((acc, bebida) => {
-      const qty = bebidasSelecionadas[bebida.id] || 0;
-      if (qty <= 0) return acc;
-      const drinkPrice = Number.isFinite(Number(bebida.price)) ? Number(bebida.price) : 0;
-      return acc + Math.round(drinkPrice * 100) * qty;
-    }, 0);
+    const bebidasCents = allowsAddons
+      ? bebidas.reduce((acc, bebida) => {
+          const qty = bebidasSelecionadas[bebida.id] || 0;
+          if (qty <= 0) return acc;
+          const drinkPrice = Number.isFinite(Number(bebida.price)) ? Number(bebida.price) : 0;
+          return acc + Math.round(drinkPrice * 100) * qty;
+        }, 0)
+      : 0;
     return (produtoCents + bebidasCents) / 100;
   };
 
@@ -417,14 +442,16 @@ export default function ProdutoDetail() {
     if (!produto) return [];
 
     // Agrega adicionais com quantidade > 0 em um objeto por adicional ({ ...a, quantity })
-    const adicionaisList = adicionais
-      .filter((a) => (adicionaisSelecionados[a.id] || 0) > 0)
-      .map((a) => ({
-        ...a,
-        quantity: adicionaisSelecionados[a.id],
-      }));
+    const adicionaisList = allowsAddons
+      ? adicionais
+          .filter((a) => (adicionaisSelecionados[a.id] || 0) > 0)
+          .map((a) => ({
+            ...a,
+            quantity: adicionaisSelecionados[a.id],
+          }))
+      : [];
 
-    const precoTotalItem = produto.preco + totalAdicionais;
+    const precoTotalItem = produto.preco + (allowsAddons ? totalAdicionais : 0);
 
     const items = [
       {
@@ -436,7 +463,7 @@ export default function ProdutoDetail() {
         category: produto.category || String(produto.categoria || '').toLowerCase(),
         quantidade,
         adicionais: adicionaisList,
-        observacoes,
+        observacoes: allowsNotes ? observacoes : '',
         pastaType: isMacarrao ? pastaType : undefined,
       },
     ];
@@ -445,22 +472,24 @@ export default function ProdutoDetail() {
     // adicional deste produto), mas só agora — no clique de "Adicionar" —
     // e não mais assim que a pessoa toca no "+". Se ela sair da tela sem
     // confirmar, as bebidas escolhidas somem junto.
-    bebidas
-      .filter((b) => (bebidasSelecionadas[b.id] || 0) > 0)
-      .forEach((bebida) => {
-        const qty = bebidasSelecionadas[bebida.id];
-        items.push({
-          id: bebida.id,
-          nome: bebida.name,
-          preco: `R$ ${bebida.price.toFixed(2).replace('.', ',')}`,
-          precoNum: Math.round(bebida.price * 100),
-          imagem: bebida.image_url,
-          category: bebida.category || String(bebida.categoria || 'bebida').toLowerCase(),
-          quantidade: qty,
-          adicionais: [],
-          observacoes: '',
+    if (allowsAddons) {
+      bebidas
+        .filter((b) => (bebidasSelecionadas[b.id] || 0) > 0)
+        .forEach((bebida) => {
+          const qty = bebidasSelecionadas[bebida.id];
+          items.push({
+            id: bebida.id,
+            nome: bebida.name,
+            preco: `R$ ${bebida.price.toFixed(2).replace('.', ',')}`,
+            precoNum: Math.round(bebida.price * 100),
+            imagem: bebida.image_url,
+            category: bebida.category || String(bebida.categoria || 'bebida').toLowerCase(),
+            quantidade: qty,
+            adicionais: [],
+            observacoes: '',
+          });
         });
-      });
+    }
 
     return items;
   };
@@ -702,7 +731,7 @@ export default function ProdutoDetail() {
           )}
 
           {/* Adicionais */}
-          {!isBebida && (
+          {allowsAddons && (
             <>
               <View style={s.sectionHeader}>
                 <Text style={s.sectionTitle}>Adicionais</Text>
@@ -767,7 +796,7 @@ export default function ProdutoDetail() {
           {/* Bebidas — mesma vitrine visual das categorias de adicionais,
               mas cada item aqui é um produto próprio (products.category
               começando com "bebida") e vira item separado no carrinho. */}
-          {!isBebida && bebidas.length > 0 && (
+          {allowsAddons && bebidas.length > 0 && (
             <View style={s.categoriaGroup}>
               <View style={s.categoriaHeaderBg}>
                 <Text style={s.categoriaTitle}>{fraseBebida}</Text>
@@ -823,17 +852,21 @@ export default function ProdutoDetail() {
           )}
 
           {/* Observacoes */}
-          <View style={[s.sectionHeader, { marginTop: 8 }]}>
-            <Text style={s.sectionTitle}>Observações</Text>
-          </View>
-          <TextInput
-            style={s.inputObs}
-            placeholder="Ex: sem cebola, maionese à parte..."
-            placeholderTextColor={COLORS.textMuted}
-            multiline
-            value={observacoes}
-            onChangeText={setObservacoes}
-          />
+          {allowsNotes && (
+            <>
+              <View style={[s.sectionHeader, { marginTop: 8 }]}>
+                <Text style={s.sectionTitle}>Observações</Text>
+              </View>
+              <TextInput
+                style={s.inputObs}
+                placeholder="Ex: sem cebola, maionese à parte..."
+                placeholderTextColor={COLORS.textMuted}
+                multiline
+                value={observacoes}
+                onChangeText={setObservacoes}
+              />
+            </>
+          )}
         </View>
       </ScrollView>
 

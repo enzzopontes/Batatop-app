@@ -14,9 +14,16 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://batatatopiacanga.com.br"
       }
     },
-    "production": {}
+    "production": {
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://batatatopiacanga.com.br"
+      }
+    }
   },
   "submit": {
     "production": {}

@@ -7,9 +7,11 @@ export const useProductRanking = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const fetchRanking = useCallback(async () => {
+  const fetchRanking = useCallback(async ({ silent = false } = {}) => {
     try {
-      setLoading(true);
+      if (!silent) {
+        setLoading(true);
+      }
 
       // 1. Busca todos os produtos cadastrados
       const { data: productsData, error: productsError } = await supabase
@@ -77,6 +79,12 @@ export const useProductRanking = () => {
           tempo: '15-20',
           destaque: produto.available,
           disponivel: produto.available,
+          category: produto.category || '',
+          category_id: produto.category_id ?? null,
+          available: produto.available !== false,
+          is_featured: Boolean(produto.is_featured),
+          badge_text: produto.badge_text ?? null,
+          original_price: produto.original_price ?? null,
         };
       });
 
@@ -86,13 +94,17 @@ export const useProductRanking = () => {
       console.error('Erro ao buscar ranking de produtos:', err);
       setError(err.message || 'Erro ao carregar o ranking');
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   }, []);
+
+  const silentRefetch = useCallback(() => fetchRanking({ silent: true }), [fetchRanking]);
 
   useEffect(() => {
     fetchRanking();
   }, [fetchRanking]);
 
-  return { produtos, loading, error, refetch: fetchRanking };
+  return { produtos, loading, error, refetch: fetchRanking, silentRefetch };
 };
