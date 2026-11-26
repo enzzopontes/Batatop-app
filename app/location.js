@@ -72,7 +72,7 @@ export default function LocationScreen() {
           pronto na própria imagem, igual à page 1 */}
       <View style={styles.illustrationWrapper}>
         <Image
-          source={require('../assets/backgraound-page2.png')}
+          source={require('../assets/ui/backgraound-page2.png')}
           style={styles.illustration}
           resizeMode="contain"
         />

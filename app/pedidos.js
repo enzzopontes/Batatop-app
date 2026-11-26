@@ -30,7 +30,7 @@ import OrderFeedbackModal from '../components/orders/OrderFeedbackModal';
 import { ThemedAlertHost, showThemedAlert } from '../components/ThemedAlert';
 import { cartStore } from '../utils/cartStore';
 import { checkPixStatus } from '../utils/mercadoPago';
-import batataDormindo from '../assets/batatadormindo.png';
+import batataDormindo from '../assets/ui/batatadormindo.png';
 
 // ─── Header Minimalista Padrão (Estilo iFood) ─────────────────────────────────
 function MinimalHeader({ title = 'Pedidos' }) {
@@ -242,7 +242,7 @@ function ActiveOrderCard({ order, onDetails }) {
       {/* Cabeçalho do Card */}
       <View style={styles.cardHeader}>
         <View style={styles.cardHeaderLeft}>
-          <Image source={require('../assets/logo.png')} style={styles.storeLogo} resizeMode="contain" />
+          <Image source={require('../assets/brand/logo.png')} style={styles.storeLogo} resizeMode="contain" />
           <View style={styles.storeTextCol}>
             <Text style={styles.storeTitle}>Batata Top</Text>
             <Text style={styles.orderNumberText}>Pedido #{num} • {deliveryTypeLabel}</Text>
@@ -392,7 +392,7 @@ function CompletedOrderCard({
       {/* Cabeçalho do Card */}
       <View style={styles.cardHeader}>
         <View style={styles.cardHeaderLeft}>
-          <Image source={require('../assets/logo.png')} style={styles.storeLogo} resizeMode="contain" />
+          <Image source={require('../assets/brand/logo.png')} style={styles.storeLogo} resizeMode="contain" />
           <View style={styles.storeTextCol}>
             <Text style={styles.storeTitle}>Batata Top</Text>
             <Text style={styles.orderNumberText}>Pedido #{num} • {deliveryTypeLabel}</Text>

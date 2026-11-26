@@ -87,7 +87,7 @@ export default function HelpIndex() {
 
           <View style={s.bannerImgWrapper}>
             <Image
-              source={require('../../assets/imageajuda.png')}
+              source={require('../../assets/ui/imageajuda.png')}
               style={s.bannerImg}
               resizeMode="cover"
             />

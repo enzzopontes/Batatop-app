@@ -140,7 +140,7 @@ export default function Profile() {
             <Text style={sg.headerText}>Falta pouco para matar sua fome!</Text>
             <View style={sg.illustrationWrapper}>
               <Image
-                source={require('../../assets/bolsaprofile.png')}
+                source={require('../../assets/ui/bolsaprofile.png')}
                 style={sg.illustration}
                 resizeMode="contain"
               />
@@ -280,7 +280,7 @@ export default function Profile() {
         <Pressable style={s.paymentCardWrapper} onPress={() => router.push('/profile/payments')}>
           <View style={s.paymentTopCard}>
             <Image
-              source={require('../../assets/batatatopestendida.png')}
+              source={require('../../assets/brand/batatatopestendida.png')}
               style={s.paymentLogo}
               resizeMode="contain"
             />

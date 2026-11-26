@@ -91,7 +91,7 @@ export default function CuponsScreen() {
         <View style={s.inputWrapper}>
           <View style={s.inputRow}>
             <View style={s.inputIconSlot}>
-              <Image source={require('../assets/ticketsolo.png')} style={s.inputIcon} resizeMode="contain" />
+              <Image source={require('../assets/ui/ticketsolo.png')} style={s.inputIcon} resizeMode="contain" />
             </View>
             <TextInput
               style={s.input}
@@ -127,7 +127,7 @@ export default function CuponsScreen() {
         <View style={s.rejectRow}>
           <Pressable style={s.rejectLeft} onPress={handleToggleReject}>
             <View style={s.rejectIconSlot}>
-              <Image source={require('../assets/cuponpretobranco.png')} style={s.rejectIcon} resizeMode="contain" />
+              <Image source={require('../assets/ui/cuponpretobranco.png')} style={s.rejectIcon} resizeMode="contain" />
             </View>
             <Text style={s.rejectText}>Não quero cupom</Text>
           </Pressable>

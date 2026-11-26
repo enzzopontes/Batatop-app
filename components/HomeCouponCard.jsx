@@ -8,7 +8,7 @@ import { TicketDivider } from './CouponCard';
 import { showSuccessAlert } from './ThemedAlert';
 import { useCart } from '../utils/cartStore';
 
-const CUPOM_ICON = require('../assets/cuponverde.png');
+const CUPOM_ICON = require('../assets/ui/cuponverde.png');
 
 export const HOME_COUPON_CARD_WIDTH = 276;
 export const HOME_COUPON_GAP = 12;

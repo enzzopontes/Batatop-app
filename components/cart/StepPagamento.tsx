@@ -15,8 +15,8 @@ import { SavedCard } from '../../utils/usePaymentCards';
 import RipplePressable from './RipplePressable';
 import PaymentCard from './PaymentCard';
 
-const LOGO = require('../../assets/logo.png');
-const CUPOM_ICON = require('../../assets/cuponpretobranco.png');
+const LOGO = require('../../assets/brand/logo.png');
+const CUPOM_ICON = require('../../assets/ui/cuponpretobranco.png');
 
 function formatPhone(value: string) {
   let digits = (value || '').replace(/\D/g, '');

@@ -15,9 +15,9 @@ import PecaTambemList from './PecaTambemList';
 import RipplePressable from './RipplePressable';
 import { resolveProductImage } from '../../utils/resolveProductImage';
 
-const LOGO = require('../../assets/logo.png');
-const CUPOM_ICON = require('../../assets/cuponpretobranco.png');
-const PEDIDOS_EMPTY = require('../../assets/pedidos.png');
+const LOGO = require('../../assets/brand/logo.png');
+const CUPOM_ICON = require('../../assets/ui/cuponpretobranco.png');
+const PEDIDOS_EMPTY = require('../../assets/ui/pedidos.png');
 
 interface StepItensProps {
   items: any[];

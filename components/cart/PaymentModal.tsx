@@ -16,7 +16,7 @@ import RipplePressable from './RipplePressable';
 import SwipeableBottomSheetModal from '../SwipeableBottomSheetModal';
 import CardBrandBadge from './CardBrandBadge';
 
-const LOGO_ESTENDIDA = require('../../assets/batatatopestendida.png');
+const LOGO_ESTENDIDA = require('../../assets/brand/batatatopestendida.png');
 
 interface PaymentModalProps {
   visible: boolean;

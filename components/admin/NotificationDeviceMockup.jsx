@@ -43,7 +43,7 @@ export default function NotificationDeviceMockup({
             <View style={s.appIdentity}>
               <View style={s.appIconBox}>
                 <Image
-                  source={require('../../assets/logo.png')}
+                  source={require('../../assets/brand/logo.png')}
                   style={s.appLogoImg}
                   resizeMode="contain"
                 />

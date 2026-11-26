@@ -83,7 +83,7 @@ export default function AnimatedSplash({ onFinish }) {
   return (
     <Animated.View style={[styles.container, { opacity: opacityAnim }]}>
       <Image
-        source={require('../assets/splash-logo.png')}
+        source={require('../assets/brand/splash-logo.png')}
         style={styles.logo}
         resizeMode="contain"
         onLoad={hideNativeSplashOnce}

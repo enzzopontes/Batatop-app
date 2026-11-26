@@ -4,12 +4,12 @@
     "slug": "batata-top",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/logo.png",
+    "icon": "./assets/icons/app-icon.png",
     "scheme": "batatatop",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-logo.png",
+      "image": "./assets/brand/splash-logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#121212"
     },
@@ -19,8 +19,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/logo.png",
-        "backgroundColor": "#F97316"
+        "foregroundImage": "./assets/icons/adaptive-icon.png",
+        "backgroundColor": "#B31210"
       },
       "package": "com.batatatop.app",
       "googleServicesFile": "./google-services.json",
@@ -40,7 +40,7 @@
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
       "expo-router",
@@ -48,7 +48,7 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#121212",
-          "image": "./assets/splash-logo.png",
+          "image": "./assets/brand/splash-logo.png",
           "imageWidth": 210
         }
       ],
@@ -57,7 +57,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/notification-icon.png",
+          "icon": "./assets/icons/notification-icon.png",
           "color": "#FFB800",
           "sounds": [
             "./assets/sounds/new_order.mp3"

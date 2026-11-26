@@ -389,7 +389,7 @@ export default function AuthBottomSheet({ visible, onClose }: AuthBottomSheetPro
       <Animated.View style={[styles.sheet, sheetStyle]}>
         {/* Imagem grande no topo, altura exata calculada da largura real da tela (9:16) */}
         <Animated.Image
-          source={require('../assets/loginfoto.jpeg')}
+          source={require('../assets/ui/loginfoto.jpeg')}
           style={[styles.image, { width: SCREEN_WIDTH }, imageStyle]}
           resizeMode="cover"
         />
@@ -429,7 +429,7 @@ export default function AuthBottomSheet({ visible, onClose }: AuthBottomSheetPro
                 <View style={styles.foundLoginRow}>
                   <View style={styles.avatarCircle}>
                     <Image
-                      source={require('../assets/batatanacaixa.png')}
+                      source={require('../assets/ui/batatanacaixa.png')}
                       style={styles.avatarImage}
                       resizeMode="cover"
                     />

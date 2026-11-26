@@ -721,7 +721,7 @@ export default function RestaurantHeaderCard({
               source={
                 logoError
                   ? { uri: LOGO_FALLBACK_URI }
-                  : require('../assets/logo.png')
+                  : require('../assets/brand/logo.png')
               }
               style={s.logoImg}
               contentFit="cover"

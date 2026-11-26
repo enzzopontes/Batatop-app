@@ -102,7 +102,7 @@ export default function PaymentsScreen() {
               <Ionicons name="chevron-back" size={20} color="#18181B" />
             </Pressable>
             <Image
-              source={require('../../assets/batatatopestendida.png')}
+              source={require('../../assets/brand/batatatopestendida.png')}
               style={s.headerLogo}
               resizeMode="contain"
             />
@@ -154,7 +154,7 @@ export default function PaymentsScreen() {
             ) : cards.length === 0 ? (
               <View style={s.emptyState}>
                 <Image
-                  source={require('../../assets/batatatoppagamento.png')}
+                  source={require('../../assets/ui/batatatoppagamento.png')}
                   style={s.emptyImage}
                   resizeMode="contain"
                 />

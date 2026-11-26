@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Pressable, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS } from '../constants/theme';
 
-const CUPOM_ICON = require('../assets/cuponverde.png');
+const CUPOM_ICON = require('../assets/ui/cuponverde.png');
 
 const DEFAULT_PAGE_BG = COLORS.background;
 

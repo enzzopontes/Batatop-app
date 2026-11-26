@@ -81,7 +81,7 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
 function MapBackdrop() {
   return (
     <View style={mb.wrap} pointerEvents="none">
-      <Image source={require('../assets/macdrop.png')} style={mb.image} resizeMode="contain" />
+      <Image source={require('../assets/ui/macdrop.png')} style={mb.image} resizeMode="contain" />
     </View>
   );
 }

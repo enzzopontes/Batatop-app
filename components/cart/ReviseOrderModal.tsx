@@ -17,7 +17,7 @@ import RipplePressable from './RipplePressable';
 import PrimaryButton from '../PrimaryButton';
 import SwipeableBottomSheetModal from '../SwipeableBottomSheetModal';
 
-const CUPOM_ICON = require('../../assets/cuponpretobranco.png');
+const CUPOM_ICON = require('../../assets/ui/cuponpretobranco.png');
 
 interface ReviseOrderModalProps {
   visible: boolean;

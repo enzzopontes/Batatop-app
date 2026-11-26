@@ -57,7 +57,7 @@ const PRESSED_OPACITY = 0.7;
 /* topo. Recortamos só a área transparente para a arte ficar grande e  */
 /* centralizada de verdade, sem cortar nada do desenho.                */
 /* ------------------------------------------------------------------ */
-const LOGO_ESTENDIDA = require('../../assets/batatatopestendida.png');
+const LOGO_ESTENDIDA = require('../../assets/brand/batatatopestendida.png');
 const LOGO_SRC = { w: 1310, h: 651 };
 const LOGO_BBOX = { x: 40, y: 165, w: 1270, h: 486 }; // área com pixels visíveis
 const LOGO_SCALE = LOGO_HEIGHT / LOGO_BBOX.h;

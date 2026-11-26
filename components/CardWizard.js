@@ -166,7 +166,7 @@ function CardPreview({ typeLabel, cardNumber, name, expiry, cvv, brand, flipped 
             <CardBrandLogo brand={brand} />
           ) : (
             <Image
-              source={require('../assets/batatanacaixa.png')}
+              source={require('../assets/ui/batatanacaixa.png')}
               style={s.cardGenericIcon}
               resizeMode="contain"
             />

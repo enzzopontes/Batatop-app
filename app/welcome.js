@@ -73,7 +73,7 @@ export default function WelcomeScreen() {
       {/* Ilustração de fundo — já vem com o card de notificação pronto na própria imagem */}
       <View style={styles.illustrationWrapper}>
         <Image
-          source={require('../assets/backgraound-page1.png')}
+          source={require('../assets/ui/backgraound-page1.png')}
           style={styles.illustration}
           resizeMode="contain"
         />

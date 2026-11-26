@@ -7,7 +7,7 @@ import { DELIVERY_FEE } from '../constants/store';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS } from '../constants/theme';
 import RipplePressable from './cart/RipplePressable';
 
-const LOGO = require('../assets/logo.png');
+const LOGO = require('../assets/brand/logo.png');
 
 /* ============================================================
    CART BAR — SACOLA FLUTUANTE
