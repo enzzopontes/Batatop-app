@@ -4,6 +4,16 @@ import {
   View, Text, StatusBar, StyleSheet, Pressable,
   ScrollView, Animated, Image, Easing,
 } from 'react-native';
+import Reanimated, {
+  useSharedValue,
+  useAnimatedReaction,
+  useAnimatedStyle,
+  withTiming,
+  cancelAnimation,
+  interpolate,
+  Extrapolation,
+  Easing as ReanimatedEasing,
+} from 'react-native-reanimated';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { Ionicons } from '@expo/vector-icons';
@@ -49,16 +59,19 @@ export const useNavContext = () => useContext(NavContext);
    header global reapareça ao navegar de volta.
    ============================================================ */
 const ScrollYContext = createContext({
-  scrollY: new Animated.Value(0),
+  scrollY: { value: 0 },
   resetHeader: () => {},
 });
 
 export const useScrollHandler = () => {
   const { scrollY, resetHeader } = useContext(ScrollYContext);
-  const onScroll = (event) => {
-    const y = event?.nativeEvent?.contentOffset?.y ?? 0;
-    scrollY.setValue(y);
-  };
+  const onScroll = useCallback(
+    (event) => {
+      const y = event?.nativeEvent?.contentOffset?.y ?? 0;
+      scrollY.value = y;
+    },
+    [scrollY]
+  );
   return { onScroll, resetHeader, scrollY };
 };
 
@@ -68,7 +81,7 @@ export const useScrollHandler = () => {
    Cada tela usa: const headerHeight = useHeaderHeight()
    e passa pro ScrollView: contentContainerStyle={{ paddingTop: headerHeight }}
    ============================================================ */
-const HeaderHeightContext = createContext(175); // fallback seguro
+const HeaderHeightContext = createContext(104); // fallback seguro (insets.top + 64)
 
 export const useHeaderHeight = () => useContext(HeaderHeightContext);
 
@@ -98,14 +111,16 @@ export const useTabBarHeight = () => useContext(TabBarHeightContext);
    duração/curva, então ficam sincronizados visualmente.
    ============================================================ */
 const HeaderAnimContext = createContext({
-  headerAnim: new Animated.Value(0),
-  // Legado: não é mais usado pra animar nada (ficava travado em pixels, JS thread).
-  // Mantido só pra não quebrar import de tela antiga que ainda referencie isso.
+  headerAnim: { value: 0 },
+  headerHiddenSV: { value: false },
+  headerHeightSV: { value: 104 },
+  // Legado: mantido só pra não quebrar import de tela antiga que ainda referencie isso.
   headerSpacerAnim: new Animated.Value(0),
 });
 
 export const useHeaderAnim = () => useContext(HeaderAnimContext).headerAnim;
 export const useHeaderSpacerAnim = () => useContext(HeaderAnimContext).headerSpacerAnim;
+export const useHeaderHiddenSV = () => useContext(HeaderAnimContext).headerHiddenSV;
 
 /* ============================================================
    CONSTANTES DE ANIMAÇÃO DO HEADER
@@ -116,8 +131,9 @@ export const useHeaderSpacerAnim = () => useContext(HeaderAnimContext).headerSpa
    ============================================================ */
 export const HEADER_SHOW_THRESHOLD = 90;
 export const HEADER_HYSTERESIS = 24;
-export const HEADER_ANIM_DURATION = 650;
-export const HEADER_EASING = Easing.out(Easing.cubic); // desacelera no final, fica mais orgânico
+export const HEADER_ANIM_DURATION = 240;
+export const HEADER_EASING = Easing.out(Easing.cubic);
+export const HEADER_REANIMATED_EASING = ReanimatedEasing.out(ReanimatedEasing.cubic);
 
 const HeaderHiddenContext = createContext({
   headerHidden: false,
@@ -194,7 +210,7 @@ function MenuDrawer({ visible, onClose, user, router }) {
           <View style={sd.drawerHeader}>
             <View style={sd.drawerLogo}>
               <Image
-                source={{ uri: 'https://eucwoxjmjfqylyrqunwk.supabase.co/storage/v1/object/public/logo/logo.png' }}
+                source={require('../assets/brand/logo.png')}
                 style={sd.drawerLogoImg}
                 resizeMode="contain"
               />
@@ -377,26 +393,16 @@ function Header({ onHeightChange, onRegisterReset }) {
   const { setAnimation, setLastRoute } = useNavContext();
   const { scrollY } = useContext(ScrollYContext);
 
-  // Threshold: em vez de um número mágico fixo, usa a ALTURA REAL do header
-  // (medida via onLayout). Assim ele some exatamente quando o scroll já
-  // passou da área dele, e só volta quando o scroll reentra nessa área —
-  // antes o limite era um valor fixo (90px) bem menor que a altura real do
-  // header, então ele ficava escondendo/aparecendo fora de hora.
-  const [measuredHeight, setMeasuredHeight] = useState(175);
-  const measuredHeightRef = useRef(measuredHeight);
-  useEffect(() => {
-    measuredHeightRef.current = measuredHeight;
-  }, [measuredHeight]);
+  const { headerAnim, headerHiddenSV, headerHeightSV } = useContext(HeaderAnimContext);
 
-  const { headerAnim } = useContext(HeaderAnimContext);
-  const { setHeaderHidden } = useContext(HeaderHiddenContext);
-  const headerHiddenRef = useRef(false);
-
-  useEffect(() => {
-    const id = scrollY.addListener(({ value }) => {
-      const hiddenNow = headerHiddenRef.current;
+  // Toda a detecção de threshold/histerese e a animação do header rodam na UI thread
+  // via Reanimated 4 (zero setState durante scroll, zero recriação de interpolate).
+  useAnimatedReaction(
+    () => scrollY.value,
+    (value) => {
+      const hiddenNow = headerHiddenSV.value;
       let shouldHide = hiddenNow;
-      const hideAt = measuredHeightRef.current;
+      const hideAt = headerHeightSV.value;
 
       if (!hiddenNow && value > hideAt + HEADER_HYSTERESIS) {
         shouldHide = true;
@@ -405,33 +411,34 @@ function Header({ onHeightChange, onRegisterReset }) {
       }
 
       if (shouldHide !== hiddenNow) {
-        headerHiddenRef.current = shouldHide;
-        // O header desliza/some via native driver (translateY + opacity).
-        // setHeaderHidden só avisa a barra de categorias que o header já
-        // terminou de sumir/aparecer — não empurra mais nada na tela.
-        Animated.timing(headerAnim, {
-          toValue: shouldHide ? 1 : 0,
+        headerHiddenSV.value = shouldHide;
+        cancelAnimation(headerAnim);
+        headerAnim.value = withTiming(shouldHide ? 1 : 0, {
           duration: HEADER_ANIM_DURATION,
-          easing: HEADER_EASING,
-          useNativeDriver: true,
-        }).start();
-        setHeaderHidden(shouldHide);
+          easing: HEADER_REANIMATED_EASING,
+        });
       }
-    });
-    return () => scrollY.removeListener(id);
-  }, []);
+    }
+  );
 
-  const headerTranslateY = headerAnim.interpolate({
-    inputRange: [0, 1],
-    // Sai completamente da tela usando a altura REAL medida (+ folga), em
-    // vez de um -160 fixo — se o header for mais alto que isso, sobrava uma
-    // tirinha visível mesmo "escondido", parecendo que ele "ainda tá lá".
-    outputRange: [0, -(measuredHeight + 40)],
-  });
-
-  const headerOpacity = headerAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1, 0],
+  const headerAnimatedStyle = useAnimatedStyle(() => {
+    const hideOffset = -(headerHeightSV.value + 40);
+    const translateY = interpolate(
+      headerAnim.value,
+      [0, 1],
+      [0, hideOffset],
+      Extrapolation.CLAMP
+    );
+    const opacity = interpolate(
+      headerAnim.value,
+      [0, 1],
+      [1, 0],
+      Extrapolation.CLAMP
+    );
+    return {
+      opacity,
+      transform: [{ translateY }],
+    };
   });
 
   /* ---- Status da loja (aberto/fechado) — tabela store_settings ---- */
@@ -606,13 +613,15 @@ function Header({ onHeightChange, onRegisterReset }) {
      Como o headerTranslateY/headerOpacity agora são interpolações diretas do
      scrollY compartilhado, resetar é só zerar o valor do scroll. */
   useEffect(() => {
-    if (typeof onRegisterReset === 'function') onRegisterReset(() => {
-      scrollY.setValue(0);
-      headerHiddenRef.current = false;
-      headerAnim.setValue(0);
-      setHeaderHidden(false); // reset instantâneo ao trocar de tela
-    });
-  }, []);
+    if (typeof onRegisterReset === 'function') {
+      onRegisterReset(() => {
+        scrollY.value = 0;
+        headerHiddenSV.value = false;
+        cancelAnimation(headerAnim);
+        headerAnim.value = 0;
+      });
+    }
+  }, [onRegisterReset, scrollY, headerHiddenSV, headerAnim]);
 
   /* ---- authRow em /addresses ---- */
   const isAuthPage    = pathname.includes('auth');
@@ -648,19 +657,20 @@ function Header({ onHeightChange, onRegisterReset }) {
 
   return (
     <>
-      <Animated.View
+      <Reanimated.View
         style={[
           s.headerSafeAnimated,
+          headerAnimatedStyle,
           {
-            transform: [{ translateY: headerTranslateY }],
-            opacity: headerOpacity,
             position: 'absolute', top: 0, left: 0, right: 0, zIndex: 1000,
           },
         ]}
         onLayout={(e) => {
-          const h = e.nativeEvent.layout.height;
-          setMeasuredHeight(h);
-          onHeightChange && onHeightChange(h);
+          const h = Math.round(e.nativeEvent.layout.height);
+          if (h > 0 && Math.abs(headerHeightSV.value - h) >= 1) {
+            headerHeightSV.value = h;
+            onHeightChange && onHeightChange(h);
+          }
         }}
       >
         <SafeAreaView style={s.headerSafe} edges={['top']}>
@@ -685,7 +695,7 @@ function Header({ onHeightChange, onRegisterReset }) {
                   transform: [{ translateY: greetingTranslateY }, { scale: scaleAnim }],
                 }}
               >
-                <Text style={s.greetingText}>{greeting}</Text>
+                <Text style={s.greetingText} numberOfLines={1} ellipsizeMode="tail">{greeting}</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                   <Text style={s.addressValueText} numberOfLines={1}>
                     {selectedAddress}
@@ -712,7 +722,7 @@ function Header({ onHeightChange, onRegisterReset }) {
             </Pressable>
           </View>
         </SafeAreaView>
-      </Animated.View>
+      </Reanimated.View>
 
       <MenuDrawer visible={drawerVisible} onClose={() => setDrawerVisible(false)} user={user} router={router} />
     </>
@@ -799,23 +809,46 @@ function BottomTabBar({ onHeightChange }) {
 /* ============================================================
    ROOT LAYOUT
    ============================================================ */
-const rootScrollY = new Animated.Value(0);
-const rootHeaderAnim = new Animated.Value(0);
 const rootHeaderSpacerAnim = new Animated.Value(0);
-const rootHeaderAnimCtxValue = { headerAnim: rootHeaderAnim, headerSpacerAnim: rootHeaderSpacerAnim };
+const noopSetHeaderHidden = () => {};
+const stableHeaderHiddenCtxValue = { headerHidden: false, setHeaderHidden: noopSetHeaderHidden };
 let splashAlreadyShown = false;
 
-export default function RootLayout() {
+function RootLayoutShell() {
   const router = useRouter();
   const pathname = usePathname();
-  const [headerHeight, setHeaderHeight] = useState(175);
+  const insets = useSafeAreaInsets();
+  const initialHeaderHeight = Math.round(insets.top + 64);
+
+  const [headerHeight, setHeaderHeight] = useState(initialHeaderHeight);
   const [tabBarHeight, setTabBarHeight] = useState(70);
   const [animation, setAnimation]       = useState('slide_from_right');
   const [lastRoute, setLastRoute]       = useState('/');
-  const [headerHidden, setHeaderHiddenState] = useState(false);
   const [authSheetVisible, setAuthSheetVisible] = useState(false);
   const [showSplash, setShowSplash] = useState(() => !splashAlreadyShown);
   const resetHeaderRef = useRef(() => {});
+
+  const scrollY = useSharedValue(0);
+  const headerAnim = useSharedValue(0);
+  const headerHiddenSV = useSharedValue(false);
+  const headerHeightSV = useSharedValue(initialHeaderHeight);
+
+  // Preserva altura real medida do header com guarda >= 1px (inclusive ao navegar para /cupons)
+  const handleHeaderHeightChange = useCallback(
+    (h) => {
+      const rounded = Math.round(h);
+      if (rounded <= 0) return;
+      if (Math.abs(headerHeightSV.value - rounded) >= 1) {
+        headerHeightSV.value = rounded;
+      }
+      setHeaderHeight((prev) => (Math.abs(prev - rounded) >= 1 ? rounded : prev));
+    },
+    [headerHeightSV]
+  );
+
+  const handleRegisterReset = useCallback((fn) => {
+    resetHeaderRef.current = fn;
+  }, []);
 
   // Permite que qualquer tela (ex: produto/[id].js, no gate de login do
   // "Adicionar") peça pra abrir este mesmo AuthBottomSheet global sem
@@ -825,20 +858,33 @@ export default function RootLayout() {
     return subscribeAuthSheetRequest(() => setAuthSheetVisible(true));
   }, []);
 
-  const scrollCtxValue = useRef({
-    scrollY: rootScrollY,
-    resetHeader: () => resetHeaderRef.current(),
-  }).current;
+  const scrollCtxValue = useMemo(
+    () => ({
+      scrollY,
+      resetHeader: () => {
+        scrollY.value = 0;
+        headerHiddenSV.value = false;
+        cancelAnimation(headerAnim);
+        headerAnim.value = 0;
+        resetHeaderRef.current();
+      },
+    }),
+    [scrollY, headerHiddenSV, headerAnim]
+  );
 
-  // Só um sinalizador booleano agora — nada de altura anima mais com ele.
-  // A barra de categorias usa isso pra saber se o header já sumiu.
-  const setHeaderHidden = useCallback((value) => {
-    setHeaderHiddenState(value);
-  }, []);
+  const headerAnimCtxValue = useMemo(
+    () => ({
+      headerAnim,
+      headerHiddenSV,
+      headerHeightSV,
+      headerSpacerAnim: rootHeaderSpacerAnim,
+    }),
+    [headerAnim, headerHiddenSV, headerHeightSV]
+  );
 
-  const headerHiddenCtxValue = useMemo(
-    () => ({ headerHidden, setHeaderHidden }),
-    [headerHidden, setHeaderHidden]
+  const navCtxValue = useMemo(
+    () => ({ animation, setAnimation, lastRoute, setLastRoute }),
+    [animation, lastRoute]
   );
 
   useEffect(() => {
@@ -858,14 +904,12 @@ export default function RootLayout() {
   }, [pathname]);
 
   return (
-    <KeyboardProvider>
-    <NavContext.Provider value={{ animation, setAnimation, lastRoute, setLastRoute }}>
+    <NavContext.Provider value={navCtxValue}>
     <ScrollYContext.Provider value={scrollCtxValue}>
     <HeaderHeightContext.Provider value={headerHeight}>
     <TabBarHeightContext.Provider value={tabBarHeight}>
-    <HeaderHiddenContext.Provider value={headerHiddenCtxValue}>
-    <HeaderAnimContext.Provider value={rootHeaderAnimCtxValue}>
-    <SafeAreaProvider>
+    <HeaderHiddenContext.Provider value={stableHeaderHiddenCtxValue}>
+    <HeaderAnimContext.Provider value={headerAnimCtxValue}>
       <StatusBar
         backgroundColor={
           showSplash || authSheetVisible || pathname.includes('payments')
@@ -879,8 +923,8 @@ export default function RootLayout() {
       <View style={{ flex: 1 }}>
         {!pathname.includes('cupons') && (
           <Header
-            onHeightChange={setHeaderHeight}
-            onRegisterReset={(fn) => { resetHeaderRef.current = fn; }}
+            onHeightChange={handleHeaderHeightChange}
+            onRegisterReset={handleRegisterReset}
           />
         )}
         <View style={{ flex: 1 }}>
@@ -907,13 +951,21 @@ export default function RootLayout() {
         <AnimatedSplash onFinish={() => { splashAlreadyShown = true; setShowSplash(false); }} />
       )}
       <ThemedAlertHost />
-    </SafeAreaProvider>
     </HeaderAnimContext.Provider>
     </HeaderHiddenContext.Provider>
     </TabBarHeightContext.Provider>
     </HeaderHeightContext.Provider>
     </ScrollYContext.Provider>
     </NavContext.Provider>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <KeyboardProvider>
+      <SafeAreaProvider>
+        <RootLayoutShell />
+      </SafeAreaProvider>
     </KeyboardProvider>
   );
 }

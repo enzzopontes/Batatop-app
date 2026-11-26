@@ -5,24 +5,20 @@ import {
   StyleSheet,
   Animated,
   Pressable,
-  ActivityIndicator,
-  Image,
-  FlatList,
-  ToastAndroid,
-  Platform,
-  Dimensions,
   RefreshControl,
   useWindowDimensions,
 } from 'react-native';
-import * as Clipboard from 'expo-clipboard';
+import Reanimated, {
+  useAnimatedScrollHandler,
+  useSharedValue,
+  runOnJS,
+} from 'react-native-reanimated';
 import { useRouter, useFocusEffect, Redirect } from 'expo-router';
 import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { safeGetNotificationPermissions } from '../utils/pushNotifications';
 import { signalAppReady } from '../utils/appReady';
 import { ALREADY_SEEN_WELCOME_KEY } from './welcome';
 import { ALREADY_SEEN_LOCATION_KEY } from './location';
@@ -42,28 +38,19 @@ import CategoryIcon from '../components/CategoryIcon';
 import RestaurantHeaderCard from '../components/RestaurantHeaderCard';
 import { handleCategoriaPress } from '../constants/categorias';
 import { fetchHomeCoupons } from '../utils/homeCoupons';
-import HomeCouponCard, { HOME_COUPON_CARD_WIDTH, HOME_COUPON_GAP } from '../components/HomeCouponCard';
+import HomeCouponCarousel from '../components/HomeCouponCarousel';
 import { HomeDestaquesSkeleton, HomeGridSkeleton } from '../components/Skeleton';
 import {
   useScrollHandler,
   useHeaderHeight,
-  useHeaderHidden,
-  HEADER_HYSTERESIS,
-  HEADER_ANIM_DURATION,
-  HEADER_EASING,
+  useHeaderHiddenSV,
 } from './_layout';
 
-// ─── Cupons (dimensões e compatibilidade de bundle Metro) ────────────────────
-const CUPOM_GAP = HOME_COUPON_GAP;
-const CUPOM_CARD_WIDTH = HOME_COUPON_CARD_WIDTH;
-
-// ─── Grid "Batatas mais pedidas" (2 colunas, largura fixa calculada) ──────────
+// ─── Grid "Batatas mais pedidas" (2 colunas, largura dinâmica via useWindowDimensions) ──
 const PROD_GRID_GAP = 14;
-const PROD_CARD_WIDTH = (Dimensions.get('window').width - SPACING[6] * 2 - PROD_GRID_GAP) / 2;
-const PROD_IMG_HEIGHT = PROD_CARD_WIDTH * 0.9;
 
 // ─── Pressable com scale ───────────────────────────────────────────────────────
-function PressableScale({ children, onPress, style }) {
+function PressableScale({ children, onPress, style, contentStyle }) {
   const scale = useRef(new Animated.Value(1)).current;
   const handlePressIn = () =>
     Animated.timing(scale, { toValue: 0.97, duration: 100, useNativeDriver: true }).start();
@@ -72,29 +59,25 @@ function PressableScale({ children, onPress, style }) {
 
   return (
     <Pressable onPress={onPress} onPressIn={handlePressIn} onPressOut={handlePressOut} style={style}>
-      <Animated.View style={{ transform: [{ scale }] }}>{children}</Animated.View>
+      <Animated.View style={[{ transform: [{ scale }] }, contentStyle]}>{children}</Animated.View>
     </Pressable>
   );
 }
 
-// ─── Fallbacks de imagem por categoria (fixos — não recriar a cada render) ────
+// ─── Fallbacks locais de imagem por categoria (sem dependência externa) ───────
+const LOCAL_BATATA_FALLBACK = require('../assets/products/costela.jpg');
+const LOCAL_GENERIC_FALLBACK = require('../assets/ui/placeholder.jpg');
 const PROD_IMG_FALLBACKS = {
-  batata: 'https://images.unsplash.com/photo-1518013391915-e40643a1bce1?w=600',
-  batatas: 'https://images.unsplash.com/photo-1518013391915-e40643a1bce1?w=600',
-  bebida: 'https://images.unsplash.com/photo-1544145945-f904253d0c7b?w=600',
-  bebidas: 'https://images.unsplash.com/photo-1544145945-f904253d0c7b?w=600',
-  macarrao: 'https://images.unsplash.com/photo-1551183053-bf91a1d81141?w=600',
+  batata: LOCAL_BATATA_FALLBACK,
+  batatas: LOCAL_BATATA_FALLBACK,
+  bebida: LOCAL_GENERIC_FALLBACK,
+  bebidas: LOCAL_GENERIC_FALLBACK,
+  macarrao: LOCAL_GENERIC_FALLBACK,
 };
-const MINI_IMG_FALLBACKS = {
-  batata: 'https://images.unsplash.com/photo-1518013391915-e40643a1bce1?w=400',
-  batatas: 'https://images.unsplash.com/photo-1518013391915-e40643a1bce1?w=400',
-  bebida: 'https://images.unsplash.com/photo-1544145945-f904253d0c7b?w=400',
-  bebidas: 'https://images.unsplash.com/photo-1544145945-f904253d0c7b?w=400',
-  macarrao: 'https://images.unsplash.com/photo-1551183053-bf91a1d81141?w=400',
-};
+const MINI_IMG_FALLBACKS = PROD_IMG_FALLBACKS;
 
 // ─── Card de Produto (Batatas mais pedidas) ───────────────────────────────────
-const ProdutoCard = memo(function ProdutoCard({ produto }) {
+const ProdutoCard = memo(function ProdutoCard({ produto, cardWidth, imgHeight }) {
   const router = useRouter();
   const [useFallback, setUseFallback] = useState(false);
 
@@ -105,17 +88,18 @@ const ProdutoCard = memo(function ProdutoCard({ produto }) {
   const fallbackKey = normalizeCategorySlug(produto.categoria);
   const imageSource =
     useFallback || !produto.imagem
-      ? { uri: PROD_IMG_FALLBACKS[fallbackKey] || PROD_IMG_FALLBACKS.batatas }
+      ? (PROD_IMG_FALLBACKS[fallbackKey] || LOCAL_GENERIC_FALLBACK)
       : { uri: produto.imagem };
 
   return (
     <PressableScale onPress={() => router.push(`/produto/${produto.id}`)}>
-      <View style={s.prodCard}>
+      <View style={[s.prodCard, { width: cardWidth }]}>
         {/* Imagem */}
-        <View style={s.prodImgWrapper}>
+        <View style={[s.prodImgWrapper, { height: imgHeight }]}>
           <ExpoImage
             source={imageSource}
             style={s.prodImg}
+            contentFit="cover"
             cachePolicy="memory-disk"
             onError={() => setUseFallback(true)}
           />
@@ -162,11 +146,16 @@ const DestaqueMiniCard = memo(function DestaqueMiniCard({ produto }) {
   const fallbackKey = normalizeCategorySlug(produto.categoria);
   const imageSource =
     useFallback || !produto.imagem
-      ? { uri: MINI_IMG_FALLBACKS[fallbackKey] || MINI_IMG_FALLBACKS.batatas }
+      ? (MINI_IMG_FALLBACKS[fallbackKey] || LOCAL_GENERIC_FALLBACK)
       : { uri: produto.imagem };
+  const descricao = typeof produto.descricao === 'string' ? produto.descricao.trim() : '';
 
   return (
-    <PressableScale onPress={() => router.push(`/produto/${produto.id}`)}>
+    <PressableScale
+      onPress={() => router.push(`/produto/${produto.id}`)}
+      style={s.miniCardPress}
+      contentStyle={s.miniCardPress}
+    >
       <View style={s.miniCard}>
         <View style={s.miniImgWrapper}>
           <ExpoImage
@@ -178,7 +167,14 @@ const DestaqueMiniCard = memo(function DestaqueMiniCard({ produto }) {
           />
         </View>
         <View style={s.miniBody}>
-          <Text style={s.miniNome} numberOfLines={2}>{produto.nome}</Text>
+          <View style={s.miniHeaderText}>
+            <Text style={s.miniNome} numberOfLines={2}>{produto.nome}</Text>
+            {descricao ? (
+              <Text style={s.miniDesc} numberOfLines={2} ellipsizeMode="tail">
+                {descricao}
+              </Text>
+            ) : null}
+          </View>
 
           <View style={s.miniTags}>
             <View style={s.miniTag}>
@@ -232,25 +228,54 @@ export default function Home() {
   const gridAvailableWidth =
     gridContainerWidth > 0 ? gridContainerWidth : Math.max(0, windowWidth - SPACING[6] * 2);
   const gridSlotWidthPx =
-    gridAvailableWidth > 0 ? (gridAvailableWidth - gridGap * (gridCols - 1) - 1) / gridCols : 0;
-  const gridSlotWidthPct =
-    gridAvailableWidth > 0 && gridSlotWidthPx > 0
-      ? `${Math.floor(((gridSlotWidthPx / gridAvailableWidth) * 100) * 100) / 100}%`
-      : `${Math.floor((100 / gridCols) * 100) / 100}%`;
-  const gridPaddingH = Math.max(4, Math.round(gridPadding * 0.75));
+    gridAvailableWidth > 0
+      ? Math.floor((gridAvailableWidth - gridGap * (gridCols - 1)) / gridCols)
+      : 0;
+  const gridPaddingH =
+    gridSlotWidthPx > 0
+      ? Math.min(gridPadding, Math.max(4, Math.floor((gridSlotWidthPx - 48) / 2)))
+      : gridPadding;
   const maxSafeIcon = Math.max(24, Math.floor(gridSlotWidthPx - gridPaddingH * 2));
   const gridIconSize = Math.min(homeGridLayout.app_icon_size, maxSafeIcon);
-  const gridRowGap = Math.max(gridGap, 12);
-  const { onScroll, resetHeader, scrollY } = useScrollHandler();
+  const gridRowGap = Math.max(gridGap, 10);
+  const gridCardMinHeight =
+    gridIconSize + gridPadding * 2 + Math.round(gridLabelSize * 1.35) + 8;
+
+  // Largura dinâmica do grid 2 colunas de produtos (evita quebra por subpixel)
+  const prodCardWidth = Math.max(
+    120,
+    Math.floor((windowWidth - SPACING[6] * 2 - PROD_GRID_GAP - 1) / 2)
+  );
+  const prodImgHeight = Math.round(prodCardWidth * 0.9);
+
+  const { resetHeader, scrollY } = useScrollHandler();
   const headerHeight = useHeaderHeight();
-  const headerHidden = useHeaderHidden();
+  const headerHiddenSV = useHeaderHiddenSV();
   const scrollRef = useRef(null);
   const reveal = useRevealScope('home');
-  const couponScrollRef = useRef(null);
-  const couponTimerRef = useRef(null);
-  const couponIndexRef = useRef(0);
-  const [activeCouponIndex, setActiveCouponIndex] = useState(0);
+  const lastRevealTickSV = useSharedValue(0);
+  const triggerRevealOnScroll = useCallback(() => {
+    reveal.onScroll();
+  }, [reveal]);
+
+  const handleHomeScroll = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      scrollY.value = event.contentOffset.y;
+      const now = Date.now();
+      if (now - lastRevealTickSV.value >= 64) {
+        lastRevealTickSV.value = now;
+        runOnJS(triggerRevealOnScroll)();
+      }
+    },
+  });
+
   const [categoriasBottomY, setCategoriasBottomY] = useState(null);
+  const handleCategoriasSectionLayout = useCallback((e) => {
+    const nextBottom = Math.round(e.nativeEvent.layout.y + e.nativeEvent.layout.height);
+    setCategoriasBottomY((prev) =>
+      prev == null || Math.abs(prev - nextBottom) >= 1 ? nextBottom : prev
+    );
+  }, []);
   const [homeCoupons, setHomeCoupons] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -261,9 +286,7 @@ export default function Home() {
         refreshCategories(),
         refetchRanking(),
         fetchHomeCoupons().then((list) => {
-          if (Array.isArray(list) && list.length > 0) {
-            setHomeCoupons(list);
-          }
+          setHomeCoupons(Array.isArray(list) ? list : []);
         }),
       ]);
     } finally {
@@ -274,45 +297,12 @@ export default function Home() {
   useEffect(() => {
     let active = true;
     fetchHomeCoupons().then((list) => {
-      if (active && Array.isArray(list) && list.length > 0) {
-        setHomeCoupons(list);
+      if (active) {
+        setHomeCoupons(Array.isArray(list) ? list : []);
       }
     }).catch(console.warn);
     return () => { active = false; };
   }, []);
-
-  const stopCouponAutoplay = useCallback(() => {
-    if (couponTimerRef.current) {
-      clearInterval(couponTimerRef.current);
-      couponTimerRef.current = null;
-    }
-  }, []);
-
-  const scrollToCouponIndex = useCallback((nextIdx) => {
-    const total = homeCoupons.length;
-    if (total <= 0) return;
-    const bounded = ((nextIdx % total) + total) % total;
-    couponIndexRef.current = bounded;
-    setActiveCouponIndex(bounded);
-    couponScrollRef.current?.scrollTo({
-      x: bounded * (HOME_COUPON_CARD_WIDTH + HOME_COUPON_GAP),
-      animated: true,
-    });
-  }, [homeCoupons.length]);
-
-  const startCouponAutoplay = useCallback(() => {
-    stopCouponAutoplay();
-    if (homeCoupons.length <= 1) return;
-    couponTimerRef.current = setInterval(() => {
-      const nextIdx = (couponIndexRef.current + 1) % homeCoupons.length;
-      scrollToCouponIndex(nextIdx);
-    }, 4500);
-  }, [stopCouponAutoplay, homeCoupons.length, scrollToCouponIndex]);
-
-  useEffect(() => {
-    startCouponAutoplay();
-    return () => stopCouponAutoplay();
-  }, [startCouponAutoplay, stopCouponAutoplay]);
 
   // ── Onboarding: mostra /welcome e depois /location, cada um só na
   // primeira vez ──────────────────────────────────────────────────────────
@@ -331,29 +321,45 @@ export default function Home() {
   const FORCE_SHOW_WELCOME = false;
 
   useEffect(() => {
+    let active = true;
     if (FORCE_SHOW_WELCOME) {
       setNeedsWelcome(true);
       return;
     }
 
     (async () => {
-      // 1) Etapa /welcome (notificações): só pula se o usuário já passou pela tela (flag salva)
-      const seenWelcome = await AsyncStorage.getItem(ALREADY_SEEN_WELCOME_KEY);
-      const welcomeNeeded = seenWelcome !== 'true';
-      setNeedsWelcome(welcomeNeeded);
+      try {
+        // 1) Etapa /welcome (notificações): só pula se o usuário já passou pela tela (flag salva)
+        const seenWelcome = await AsyncStorage.getItem(ALREADY_SEEN_WELCOME_KEY);
+        const welcomeNeeded = seenWelcome !== 'true';
+        if (!active) return;
+        setNeedsWelcome(welcomeNeeded);
 
-      // Se ainda falta mostrar /welcome, o fluxo leva para /welcome e em seguida /location
-      if (welcomeNeeded) return;
+        // Se ainda falta mostrar /welcome, o fluxo leva para /welcome e em seguida /location
+        if (welcomeNeeded) return;
 
-      // 2) Etapa /location — só chega aqui se /welcome já foi visto.
-      const { status: locStatus } = await Location.getForegroundPermissionsAsync();
-      if (locStatus === 'granted') {
-        setNeedsLocation(false);
-        return;
+        // 2) Etapa /location — só chega aqui se /welcome já foi visto.
+        const { status: locStatus } = await Location.getForegroundPermissionsAsync();
+        if (!active) return;
+        if (locStatus === 'granted') {
+          setNeedsLocation(false);
+          return;
+        }
+        const seenLocation = await AsyncStorage.getItem(ALREADY_SEEN_LOCATION_KEY);
+        if (!active) return;
+        setNeedsLocation(seenLocation !== 'true');
+      } catch (err) {
+        console.warn('Falha ao checar onboarding, seguindo para a Home:', err);
+        if (active) {
+          setNeedsWelcome(false);
+          setNeedsLocation(false);
+        }
       }
-      const seenLocation = await AsyncStorage.getItem(ALREADY_SEEN_LOCATION_KEY);
-      setNeedsLocation(seenLocation !== 'true');
     })();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -376,15 +382,22 @@ export default function Home() {
 
   useFocusEffect(
     useCallback(() => {
+      let active = true;
       resetHeader();
-      setTimeout(() => {
+      const focusTimer = setTimeout(() => {
         scrollRef.current?.scrollTo({ y: 0, animated: false });
       }, 50);
-      fetchHomeCoupons().then((list) => {
-        if (Array.isArray(list) && list.length > 0) {
-          setHomeCoupons(list);
-        }
-      }).catch(console.warn);
+      fetchHomeCoupons()
+        .then((list) => {
+          if (active) {
+            setHomeCoupons(Array.isArray(list) ? list : []);
+          }
+        })
+        .catch(console.warn);
+      return () => {
+        active = false;
+        clearTimeout(focusTimer);
+      };
     }, [resetHeader])
   );
 
@@ -394,8 +407,8 @@ export default function Home() {
   );
 
   const homeBarItems = useMemo(
-    () => getHomeBarItems(produtos),
-    [getHomeBarItems, produtos]
+    () => getHomeBarItems(),
+    [getHomeBarItems]
   );
 
   const homeFeaturedCategories = useMemo(
@@ -472,12 +485,12 @@ export default function Home() {
 
   return (
     <View style={s.container}>
-      <ScrollView
+      <Reanimated.ScrollView
         ref={scrollRef}
         style={s.scroll}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: SPACING[10] }}
-        onScroll={(e) => { onScroll(e); reveal.onScroll(); }}
+        onScroll={handleHomeScroll}
         scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
@@ -512,10 +525,10 @@ export default function Home() {
           <RestaurantHeaderCard />
         </ScrollReveal>
 
-        {/* ══════════════════ CATEGORIAS (estilo iFood, grid 3x2) ══════════════════ */}
+        {/* ══════════════════ CATEGORIAS VITRINE (paridade com Site-da-mara) ══════════════════ */}
         <View
           style={[s.section, { paddingTop: SPACING[4] }]}
-          onLayout={(e) => setCategoriasBottomY(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}
+          onLayout={handleCategoriasSectionLayout}
         >
           <View
             style={[s.catGrid, { columnGap: gridGap, rowGap: gridRowGap }]}
@@ -532,42 +545,40 @@ export default function Home() {
                   key={itemKey}
                   scope={reveal}
                   revealKey={`home_cat_${cat.slug || itemKey}`}
-                  style={[s.catGridSlot, { width: gridSlotWidthPct }]}
+                  style={[s.catGridSlot, gridSlotWidthPx > 0 ? { width: gridSlotWidthPx } : null]}
                 >
                   <Pressable
-                    style={[s.catGridPress, cat.disabled && s.catGridItemDisabled]}
+                    style={[
+                      s.catGridCard,
+                      {
+                        paddingVertical: gridPadding,
+                        paddingHorizontal: gridPaddingH,
+                        borderRadius: gridCardRadius,
+                        minHeight: gridCardMinHeight,
+                      },
+                      cat.disabled && s.catGridItemDisabled,
+                    ]}
                     disabled={cat.disabled}
                     onPress={() => handleCategoriaPress(router, cat)}
                   >
-                    <View
-                      style={[
-                        s.catGridBox,
-                        {
-                          paddingVertical: gridPadding,
-                          paddingHorizontal: gridPaddingH,
-                          borderRadius: gridCardRadius,
-                        },
-                      ]}
-                    >
-                      <CategoryIcon category={cat} size={gridIconSize} />
-                      {badgeText ? (
-                        <View
-                          style={[
-                            s.catGridBadge,
-                            { backgroundColor: cat.badge_color || COLORS.secondary },
-                          ]}
+                    {badgeText ? (
+                      <View
+                        style={[
+                          s.catGridBadge,
+                          { backgroundColor: cat.badge_color || COLORS.secondary },
+                        ]}
+                      >
+                        <Text
+                          style={s.catGridBadgeText}
+                          numberOfLines={1}
+                          ellipsizeMode="tail"
+                          maxFontSizeMultiplier={1.15}
                         >
-                          <Text
-                            style={s.catGridBadgeText}
-                            numberOfLines={1}
-                            ellipsizeMode="tail"
-                            maxFontSizeMultiplier={1.15}
-                          >
-                            {badgeText}
-                          </Text>
-                        </View>
-                      ) : null}
-                    </View>
+                          {badgeText}
+                        </Text>
+                      </View>
+                    ) : null}
+                    <CategoryIcon category={cat} size={gridIconSize} />
                     <Text
                       style={[
                         s.catGridLabel,
@@ -590,7 +601,7 @@ export default function Home() {
         </View>
 
         {/* ══════════════════ BANNERS (carrossel) ══════════════════ */}
-        <ScrollReveal scope={reveal} revealKey="home_banners" style={s.section}>
+        <ScrollReveal scope={reveal} revealKey="home_banners">
           <BannerCarousel />
         </ScrollReveal>
 
@@ -607,6 +618,7 @@ export default function Home() {
         ) : null}
 
         {/* ══════════════════ DESTAQUES (scroll horizontal) ══════════════════ */}
+        {loading || productsError || destaques.length > 0 || disponiveis.length === 0 ? (
         <ScrollReveal scope={reveal} revealKey="home_destaques" style={s.section}>
           <View style={s.sectionRow}>
             <Text style={s.sectionTitle}>Destaques</Text>
@@ -650,98 +662,29 @@ export default function Home() {
             </ScrollView>
           )}
         </ScrollReveal>
+        ) : null}
 
-        {/* ══════════════════ CUPONS (estilo idêntico à página de cupons, com rotação automática igual ao site) ══════════════════ */}
+        {/* ══════════════════ CUPONS (carrossel centralizado espelhando o banner rotativo) ══════════════════ */}
         {displayCoupons && displayCoupons.length > 0 ? (
           <ScrollReveal scope={reveal} revealKey="home_cupons" style={s.section}>
             <View style={s.sectionRow}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <View style={s.cupomTitleWrap}>
                 <View style={s.cupomSectionIcon}>
-                  <Ionicons name="pricetag" size={13} color="#FFD54F" />
+                  <Ionicons name="pricetag" size={13} color={COLORS.primaryText} />
                 </View>
-                <Text style={s.sectionTitle}>Cupons disponíveis</Text>
+                <Text style={[s.sectionTitle, { flexShrink: 1 }]} numberOfLines={1}>
+                  Cupons disponíveis
+                </Text>
               </View>
-              <View style={s.cupomHeaderRight}>
-                {displayCoupons.length > 1 ? (
-                  <View style={s.cupomNavControls}>
-                    <Pressable
-                      onPress={() => {
-                        stopCouponAutoplay();
-                        scrollToCouponIndex(couponIndexRef.current - 1);
-                        startCouponAutoplay();
-                      }}
-                      style={s.cupomNavBtn}
-                      hitSlop={6}
-                    >
-                      <Ionicons name="chevron-back" size={14} color={COLORS.text} />
-                    </Pressable>
-                    <Pressable
-                      onPress={() => {
-                        stopCouponAutoplay();
-                        scrollToCouponIndex(couponIndexRef.current + 1);
-                        startCouponAutoplay();
-                      }}
-                      style={s.cupomNavBtn}
-                      hitSlop={6}
-                    >
-                      <Ionicons name="chevron-forward" size={14} color={COLORS.text} />
-                    </Pressable>
-                  </View>
-                ) : null}
-                <Pressable onPress={() => router.push('/cupons')} style={s.verTodos}>
-                  <Text style={s.verTodosText}>Ver todos ({displayCoupons.length})</Text>
-                  <Ionicons name="chevron-forward" size={13} color={COLORS.primary} />
-                </Pressable>
-              </View>
+              <Pressable onPress={() => router.push('/cupons')} style={s.verTodos}>
+                <Text style={s.verTodosText}>Ver todos ({displayCoupons.length})</Text>
+                <Ionicons name="chevron-forward" size={13} color={COLORS.primary} />
+              </Pressable>
             </View>
-            <ScrollView
-              ref={couponScrollRef}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={s.cupomRow}
-              decelerationRate="fast"
-              snapToInterval={HOME_COUPON_CARD_WIDTH + HOME_COUPON_GAP}
-              snapToAlignment="start"
-              onScrollBeginDrag={stopCouponAutoplay}
-              onMomentumScrollEnd={(e) => {
-                const offsetX = e.nativeEvent.contentOffset.x;
-                const newIdx = Math.round(offsetX / (HOME_COUPON_CARD_WIDTH + HOME_COUPON_GAP));
-                const bounded = Math.max(0, Math.min(displayCoupons.length - 1, newIdx));
-                couponIndexRef.current = bounded;
-                setActiveCouponIndex(bounded);
-                startCouponAutoplay();
-              }}
-              onScrollEndDrag={() => {
-                startCouponAutoplay();
-              }}
-            >
-              {displayCoupons.map((c) => (
-                <HomeCouponCard
-                  key={c.id || c.codigo}
-                  coupon={c}
-                  onCardPress={() => router.push('/cupons')}
-                />
-              ))}
-            </ScrollView>
-            {displayCoupons.length > 1 ? (
-              <View style={s.cupomDotsRow}>
-                {displayCoupons.map((c, idx) => (
-                  <Pressable
-                    key={c.id || c.codigo || idx}
-                    onPress={() => {
-                      stopCouponAutoplay();
-                      scrollToCouponIndex(idx);
-                      startCouponAutoplay();
-                    }}
-                    hitSlop={6}
-                    style={[
-                      s.cupomDot,
-                      idx === activeCouponIndex && s.cupomDotActive,
-                    ]}
-                  />
-                ))}
-              </View>
-            ) : null}
+            <HomeCouponCarousel
+              coupons={displayCoupons}
+              onCardPress={() => router.push('/cupons')}
+            />
           </ScrollReveal>
         ) : null}
 
@@ -825,7 +768,12 @@ export default function Home() {
                       scope={reveal}
                       revealKey={`home_${cat.slug}_${p.id}`}
                     >
-                      <ProdutoCard produto={p} index={i} />
+                      <ProdutoCard
+                        produto={p}
+                        index={i}
+                        cardWidth={prodCardWidth}
+                        imgHeight={prodImgHeight}
+                      />
                     </ScrollReveal>
                   ))}
                 </View>
@@ -834,12 +782,12 @@ export default function Home() {
           })
         )}
 
-      </ScrollView>
+      </Reanimated.ScrollView>
 
       <CategoriasFlutuantes
         scrollY={scrollY}
         categoriasBottomY={categoriasBottomY}
-        headerHidden={headerHidden}
+        headerHiddenSV={headerHiddenSV}
         router={router}
         categories={homeBarItems}
       />
@@ -934,6 +882,7 @@ const s = StyleSheet.create({
     marginLeft: 30 + SPACING[2],
   },
   sectionBadge: {
+    flexShrink: 0,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: RADIUS.full,
@@ -946,51 +895,52 @@ const s = StyleSheet.create({
     letterSpacing: 0.3,
   },
 
-  // ── CATEGORIAS (grid 3x2, estilo iFood — sem sombra/borda) ─────────────────
+  // ── CATEGORIAS VITRINE (paridade com category-bar.tsx do Site-da-mara) ────
   catGrid: {
     paddingHorizontal: SPACING[6],
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'flex-start',
-    rowGap: SPACING[4],
+    alignItems: 'stretch',
+    rowGap: SPACING[3],
   },
-  catGridSlot: { width: '30%' },
-  catGridPress: { width: '100%', alignItems: 'center' },
+  catGridSlot: {
+    flexDirection: 'column',
+  },
+  catGridCard: {
+    position: 'relative',
+    width: '100%',
+    flex: 1,
+    overflow: 'hidden',
+    backgroundColor: '#F7F4EF',
+    borderWidth: 1,
+    borderColor: '#ECE7E0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
   catGridItemDisabled: {
     opacity: 0.5,
   },
-  catGridBox: {
-    position: 'relative',
-    width: '100%',
-    borderRadius: RADIUS.xl,
-    backgroundColor: COLORS.backgroundElevated,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: SPACING[2],
-    shadowColor: 'transparent',
-    shadowOpacity: 0,
-    shadowRadius: 0,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 0,
-  },
   catGridBadge: {
     position: 'absolute',
-    top: -5,
-    right: -3,
-    maxWidth: '100%',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    top: 4,
+    right: 4,
+    maxWidth: '90%',
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
     borderRadius: RADIUS.full,
     zIndex: 2,
   },
   catGridBadgeText: {
     color: COLORS.white,
-    fontSize: 9,
+    fontSize: 8.5,
     fontWeight: '800',
     textTransform: 'uppercase',
     letterSpacing: 0.3,
   },
   catGridLabel: {
+    width: '100%',
     color: COLORS.text,
     fontWeight: '700',
     fontSize: TYPOGRAPHY.sizes.sm,
@@ -1002,9 +952,14 @@ const s = StyleSheet.create({
   miniCarousel: {
     paddingHorizontal: SPACING[6],
     gap: SPACING[3],
+    alignItems: 'stretch',
+  },
+  miniCardPress: {
+    flex: 1,
   },
   miniCard: {
     width: 170,
+    flex: 1,
     backgroundColor: COLORS.backgroundCard,
     borderRadius: RADIUS.xl,
     borderWidth: 1,
@@ -1027,12 +982,19 @@ const s = StyleSheet.create({
     flex: 1,
     justifyContent: 'space-between',
   },
+  miniHeaderText: {
+    gap: 3,
+  },
   miniNome: {
     color: COLORS.text,
     fontWeight: '700',
     fontSize: 13,
     lineHeight: 16,
-    height: 32, // fixo pra 2 linhas — evita card esticar quando nome é grande
+  },
+  miniDesc: {
+    color: COLORS.textMuted,
+    fontSize: 11,
+    lineHeight: 14,
   },
   miniPreco: {
     color: '#000000',
@@ -1076,6 +1038,13 @@ const s = StyleSheet.create({
 
 
   // ── CUPONS (iFood style) ──────────────────────────────────────────────────
+  cupomTitleWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+    marginRight: SPACING[3],
+  },
   cupomSectionIcon: {
     width: 26,
     height: 26,
@@ -1086,65 +1055,8 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#FFD54F33',
   },
-  cupomRow: {
-    paddingHorizontal: SPACING[6],
-    gap: HOME_COUPON_GAP,
-    paddingVertical: 4,
-  },
-  cupomHeaderRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  cupomNavControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  cupomNavBtn: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: COLORS.white,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cupomDotsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    marginTop: 2,
-  },
-  cupomDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#D4CFC7',
-  },
-  cupomDotActive: {
-    width: 18,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: COLORS.primary,
-  },
-  cupomQtd: {
-    backgroundColor: '#FFB80015',
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderWidth: 1,
-    borderColor: '#FFB80040',
-  },
-  cupomQtdText: {
-    color: '#B8860B',
-    fontSize: 11,
-    fontWeight: '700',
-  },
 
-  // ── GRID "Batatas mais pedidas" (2 colunas, largura fixa) ─────────────────
+  // ── GRID "Batatas mais pedidas" (2 colunas, largura dinâmica) ─────────────
   prodGrid: {
     paddingHorizontal: SPACING[6],
     flexDirection: 'row',
@@ -1152,7 +1064,6 @@ const s = StyleSheet.create({
     gap: PROD_GRID_GAP,
   },
   prodCard: {
-    width: PROD_CARD_WIDTH,
     backgroundColor: COLORS.backgroundCard,
     borderRadius: RADIUS.xl,
     borderWidth: 1,
@@ -1162,7 +1073,6 @@ const s = StyleSheet.create({
   },
   prodImgWrapper: {
     width: '100%',
-    height: PROD_IMG_HEIGHT,
     position: 'relative',
   },
   prodImg: {

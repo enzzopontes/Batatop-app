@@ -1,17 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../supabaseConfig';
 import { resolveProductImage } from '../utils/resolveProductImage';
 
 export const sanitizePostgrestSearch = (raw) => {
   if (raw == null) return '';
   return String(raw)
-    .replace(/[,()\\*%]/g, '')
+    .replace(/[,()\\*%"]/g, '')
     .trim()
     .slice(0, 80)
     .trim();
 };
 
-const fetchActivePromoConfig = async () => {
+export const fetchActivePromoConfig = async () => {
   try {
     const { data, error } = await supabase
       .from('store_settings')
@@ -86,8 +86,10 @@ export const resolveProductPrice = (produto, promoCfg) => {
 };
 
 const formatProduto = (produto, promoCfg) => {
-  const precoOriginal = Number(produto.price);
-  const effectivePrice = resolveProductPrice(produto, promoCfg);
+  const rawBase = Number(produto?.price);
+  const precoOriginal = Number.isFinite(rawBase) ? rawBase : 0;
+  const resolved = resolveProductPrice(produto, promoCfg);
+  const effectivePrice = Number.isFinite(resolved) ? resolved : precoOriginal;
 
   return {
     id: produto.id,
@@ -133,7 +135,8 @@ export const useProdutos = () => {
       if (error) throw error;
 
       // Mapear dados do Supabase para o formato esperado pelo app
-      const produtosFormatados = data.map((produto) => formatProduto(produto, promoCfg));
+      const rows = Array.isArray(data) ? data : [];
+      const produtosFormatados = rows.map((produto) => formatProduto(produto, promoCfg));
 
       setProdutos(produtosFormatados);
       setError(null);
@@ -154,7 +157,11 @@ export const useProdutoById = (id) => {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (!id) return;
+    if (!id) {
+      setProduto(null);
+      setLoading(false);
+      return;
+    }
     fetchProduto();
   }, [id]);
 
@@ -222,7 +229,8 @@ export const useProdutosPorCategoria = (categoria) => {
 
       if (error) throw error;
 
-      const produtosFormatados = data.map((produto) => formatProduto(produto, promoCfg));
+      const rows = Array.isArray(data) ? data : [];
+      const produtosFormatados = rows.map((produto) => formatProduto(produto, promoCfg));
 
       setProdutos(produtosFormatados);
       setError(null);
@@ -241,28 +249,32 @@ export const useBuscarProdutos = (termo) => {
   const [produtos, setProdutos] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const requestIdRef = useRef(0);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
-    const sanitizedTermo = sanitizePostgrestSearch(termo);
-    if (!sanitizedTermo) {
-      setProdutos([]);
-      setError(null);
-      return;
-    }
-    buscar(sanitizedTermo);
-  }, [termo]);
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
-  const buscar = async (sanitizedTermo) => {
-    try {
-      const cleanTermo = sanitizePostgrestSearch(sanitizedTermo);
-      if (!cleanTermo) {
+  const buscar = useCallback(async (rawTermo) => {
+    const cleanTermo = sanitizePostgrestSearch(rawTermo);
+    const reqId = ++requestIdRef.current;
+
+    if (!cleanTermo) {
+      if (mountedRef.current) {
         setProdutos([]);
         setError(null);
-        return;
+        setLoading(false);
       }
+      return;
+    }
 
-      setLoading(true);
-      const [{ data, error }, promoCfg] = await Promise.all([
+    try {
+      if (mountedRef.current) setLoading(true);
+      const [{ data, error: queryError }, promoCfg] = await Promise.all([
         supabase
           .from('products')
           .select('*')
@@ -272,19 +284,43 @@ export const useBuscarProdutos = (termo) => {
         fetchActivePromoConfig(),
       ]);
 
-      if (error) throw error;
+      if (!mountedRef.current || reqId !== requestIdRef.current) return;
+      if (queryError) throw queryError;
 
-      const produtosFormatados = data.map((produto) => formatProduto(produto, promoCfg));
+      const rows = Array.isArray(data) ? data : [];
+      const produtosFormatados = rows.map((produto) => formatProduto(produto, promoCfg));
 
       setProdutos(produtosFormatados);
       setError(null);
     } catch (err) {
+      if (!mountedRef.current || reqId !== requestIdRef.current) return;
       console.error('Erro ao buscar produtos:', err);
-      setError(err.message);
+      setError(err.message || 'Erro ao buscar produtos');
     } finally {
-      setLoading(false);
+      if (mountedRef.current && reqId === requestIdRef.current) {
+        setLoading(false);
+      }
     }
-  };
+  }, []);
 
-  return { produtos, loading, error };
+  useEffect(() => {
+    const sanitizedTermo = sanitizePostgrestSearch(termo);
+    if (!sanitizedTermo) {
+      requestIdRef.current += 1;
+      setProdutos([]);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
+    const debounceTimer = setTimeout(() => {
+      buscar(sanitizedTermo);
+    }, 250);
+
+    return () => clearTimeout(debounceTimer);
+  }, [termo, buscar]);
+
+  const refetch = useCallback(() => buscar(termo), [buscar, termo]);
+
+  return { produtos, loading, error, refetch };
 };

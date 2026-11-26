@@ -53,7 +53,7 @@ function safeDecodeURIComponent(value) {
 
 const CONTROL_CHARS_RE = /[\u0000-\u001f\u007f]/;
 const DANGEROUS_SCHEME_RE = /^(?:javascript|data|vbscript|file|http):/i;
-const SAFE_STORAGE_FILENAME_RE = /^[a-zA-Z0-9._-]+$/;
+const SAFE_STORAGE_SEGMENT_RE = /^[a-zA-Z0-9._\-\s()]+$/;
 
 export function isSafeIconUrl(raw) {
   if (typeof raw !== 'string') return false;
@@ -103,18 +103,63 @@ export function resolveCategoryIconSource(category) {
     const pathname = match ? match[1] : trimmed;
     const search = match && match[2] ? match[2] : '';
     const hash = match && match[3] ? match[3] : '';
-    const encodedPath = pathname
-      .split('/')
-      .map((seg) => encodeURIComponent(safeDecodeURIComponent(seg)))
-      .join('/');
-    return { uri: `${API_BASE_URL.replace(/\/+$/, '')}${encodedPath}${search}${hash}` };
+    const rawParts = pathname.split('/');
+    const encodedParts = [];
+    for (let i = 0; i < rawParts.length; i += 1) {
+      const seg = rawParts[i];
+      if (seg === '' && i === 0) {
+        encodedParts.push('');
+        continue;
+      }
+      if (!seg) return null;
+      const dec = safeDecodeURIComponent(seg);
+      const dec2 = safeDecodeURIComponent(dec);
+      if (
+        dec === '.' ||
+        dec === '..' ||
+        dec.includes('..') ||
+        dec.includes('/') ||
+        dec.includes('\\') ||
+        dec2 === '.' ||
+        dec2 === '..' ||
+        dec2.includes('..') ||
+        dec2.includes('/') ||
+        dec2.includes('\\')
+      ) {
+        return null;
+      }
+      encodedParts.push(encodeURIComponent(dec));
+    }
+    return { uri: `${API_BASE_URL.replace(/\/+$/, '')}${encodedParts.join('/')}${search}${hash}` };
   }
 
-  if (!SAFE_STORAGE_FILENAME_RE.test(trimmed) || trimmed.includes('..')) {
+  const segments = trimmed.replace(/^\/+/, '').split('/');
+  const encodedStorageSegments = [];
+  for (const seg of segments) {
+    if (!seg) return null;
+    const dec = safeDecodeURIComponent(seg);
+    const dec2 = safeDecodeURIComponent(dec);
+    if (
+      !dec ||
+      dec === '.' ||
+      dec === '..' ||
+      dec.includes('..') ||
+      dec.includes('/') ||
+      dec.includes('\\') ||
+      dec2 === '.' ||
+      dec2 === '..' ||
+      dec2.includes('..') ||
+      !SAFE_STORAGE_SEGMENT_RE.test(dec)
+    ) {
+      return null;
+    }
+    encodedStorageSegments.push(encodeURIComponent(dec));
+  }
+  if (encodedStorageSegments.length === 0) {
     return null;
   }
 
-  return { uri: `${SUPABASE_URL}/storage/v1/object/public/category-icons/${encodeURIComponent(trimmed)}` };
+  return { uri: `${SUPABASE_URL}/storage/v1/object/public/category-icons/${encodedStorageSegments.join('/')}` };
 }
 
 export function normalizeCategorySlug(raw) {

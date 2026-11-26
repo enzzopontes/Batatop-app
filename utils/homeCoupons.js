@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { resolveBannerImageUrl } from './resolveProductImage';
 
 export const DEFAULT_HOME_COUPONS_CONFIG = {
   mode: 'auto', // 'auto' | 'manual'
@@ -17,7 +18,14 @@ export async function fetchHomeCouponsConfig() {
     if (error || !data?.setting_value) {
       return DEFAULT_HOME_COUPONS_CONFIG;
     }
-    return { ...DEFAULT_HOME_COUPONS_CONFIG, ...data.setting_value };
+    const parsed =
+      typeof data.setting_value === 'string'
+        ? JSON.parse(data.setting_value)
+        : data.setting_value;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return DEFAULT_HOME_COUPONS_CONFIG;
+    }
+    return { ...DEFAULT_HOME_COUPONS_CONFIG, ...parsed };
   } catch {
     return DEFAULT_HOME_COUPONS_CONFIG;
   }
@@ -102,14 +110,27 @@ export async function fetchHighlightCouponBanners() {
       .order('created_at', { ascending: false });
 
     if (!homeBannersErr && Array.isArray(homeBannersData) && homeBannersData.length > 0) {
-      return homeBannersData.map((b) => ({
-        id: `banner-${b.id}`,
-        banner_image_url: b.image_url,
-        title: b.title || b.coupons?.title || null,
-        code: b.coupons?.code || null,
-        badge_label: b.coupons?.badge_label || null,
-        coupon: b.coupons?.active ? b.coupons : null,
-      }));
+      const nowMs = Date.now();
+      const resolvedBanners = homeBannersData
+        .map((b) => {
+          const linked = Array.isArray(b.coupons) ? b.coupons[0] : b.coupons;
+          const expiresMs = linked?.expires_at ? new Date(linked.expires_at).getTime() : null;
+          const isNotExpired = expiresMs == null || (Number.isFinite(expiresMs) && expiresMs > nowMs);
+          const validCoupon = linked && linked.active && isNotExpired ? linked : null;
+          return {
+            id: `banner-${b.id}`,
+            banner_image_url: resolveBannerImageUrl(b.image_url),
+            title: b.title || validCoupon?.title || null,
+            code: validCoupon?.code || null,
+            badge_label: validCoupon?.badge_label || null,
+            coupon: validCoupon,
+          };
+        })
+        .filter((b) => Boolean(b.banner_image_url));
+
+      if (resolvedBanners.length > 0) {
+        return resolvedBanners;
+      }
     }
 
     // 2. Retrocompatibilidade: busca cupons com is_banner_highlight ativo
@@ -129,14 +150,16 @@ export async function fetchHighlightCouponBanners() {
       return [];
     }
 
-    return (data || []).map((c) => ({
-      id: `coupon-${c.id}`,
-      banner_image_url: c.banner_image_url,
-      title: c.title,
-      code: c.code,
-      badge_label: c.badge_label,
-      coupon: c,
-    }));
+    return (data || [])
+      .map((c) => ({
+        id: `coupon-${c.id}`,
+        banner_image_url: resolveBannerImageUrl(c.banner_image_url),
+        title: c.title,
+        code: c.code,
+        badge_label: c.badge_label,
+        coupon: c,
+      }))
+      .filter((c) => Boolean(c.banner_image_url));
   } catch (err) {
     console.warn('Falha em fetchHighlightCouponBanners:', err);
     return [];
@@ -144,53 +167,62 @@ export async function fetchHighlightCouponBanners() {
 }
 
 export async function fetchHomeCoupons() {
-  const config = await fetchHomeCouponsConfig();
-  const now = new Date().toISOString();
+  try {
+    const config = await fetchHomeCouponsConfig();
+    const now = new Date().toISOString();
 
-  let query = supabase
-    .from('coupons')
-    .select('*')
-    .eq('active', true)
-    .or(`expires_at.is.null,expires_at.gt.${now}`);
-
-  if (config.mode === 'manual') {
-    query = query
-      .eq('show_on_home', true)
-      .order('home_priority', { ascending: false })
-      .order('created_at', { ascending: false });
-  } else {
-    // Modo automático
-    if (config.auto_criteria === 'recent') {
-      query = query.order('created_at', { ascending: false });
-    } else {
-      // highest_discount padrão
-      query = query.order('discount_value', { ascending: false });
-    }
-  }
-
-  const limit = config.mode === 'manual'
-    ? 20
-    : Math.max(1, parseInt(config.max_items, 10) || 5);
-  let { data, error } = await query.limit(limit);
-
-  if (error) {
-    console.warn('Erro ao buscar cupons da home:', error);
-    return [];
-  }
-
-  // Fallback se modo manual não tiver nenhum cupom selecionado
-  if (config.mode === 'manual' && (!data || data.length === 0)) {
-    const { data: fallbackData } = await supabase
+    let query = supabase
       .from('coupons')
       .select('*')
       .eq('active', true)
-      .or(`expires_at.is.null,expires_at.gt.${now}`)
-      .order('discount_value', { ascending: false })
-      .limit(limit);
+      .or(`expires_at.is.null,expires_at.gt.${now}`);
 
-    data = fallbackData || [];
+    if (config.mode === 'manual') {
+      query = query
+        .eq('show_on_home', true)
+        .order('home_priority', { ascending: false })
+        .order('created_at', { ascending: false });
+    } else {
+      // Modo automático
+      if (config.auto_criteria === 'recent') {
+        query = query.order('created_at', { ascending: false });
+      } else {
+        // highest_discount padrão
+        query = query.order('discount_value', { ascending: false });
+      }
+    }
+
+    const limit = config.mode === 'manual'
+      ? 20
+      : Math.max(1, parseInt(config.max_items, 10) || 5);
+    let { data, error } = await query.limit(limit);
+
+    if (error) {
+      console.warn('Erro ao buscar cupons da home:', error);
+      return [];
+    }
+
+    // Fallback se modo manual não tiver nenhum cupom selecionado
+    if (config.mode === 'manual' && (!data || data.length === 0)) {
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('coupons')
+        .select('*')
+        .eq('active', true)
+        .or(`expires_at.is.null,expires_at.gt.${now}`)
+        .order('discount_value', { ascending: false })
+        .limit(limit);
+
+      if (fallbackError) {
+        console.warn('Erro no fallback de cupons da home:', fallbackError);
+        return [];
+      }
+      data = fallbackData || [];
+    }
+
+    return formatCouponsForHome(data || []);
+  } catch (err) {
+    console.warn('Falha em fetchHomeCoupons:', err);
+    return [];
   }
-
-  return formatCouponsForHome(data || []);
 }
 

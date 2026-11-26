@@ -83,6 +83,7 @@ export const DEFAULT_CATEGORIES = [
     custom_href: '/cardapio',
     is_active: true,
     show_on_home_bar: true,
+    show_on_home_bar_app: false,
     home_bar_order: 0,
     show_on_home_featured: false,
     home_featured_order: 10,
@@ -109,6 +110,7 @@ export const DEFAULT_CATEGORIES = [
     custom_href: null,
     is_active: true,
     show_on_home_bar: true,
+    show_on_home_bar_app: true,
     home_bar_order: 1,
     show_on_home_featured: true,
     home_featured_order: 0,
@@ -135,6 +137,7 @@ export const DEFAULT_CATEGORIES = [
     custom_href: null,
     is_active: true,
     show_on_home_bar: true,
+    show_on_home_bar_app: true,
     home_bar_order: 2,
     show_on_home_featured: true,
     home_featured_order: 1,
@@ -161,6 +164,7 @@ export const DEFAULT_CATEGORIES = [
     custom_href: null,
     is_active: true,
     show_on_home_bar: true,
+    show_on_home_bar_app: true,
     home_bar_order: 3,
     show_on_home_featured: false,
     home_featured_order: 2,
@@ -187,6 +191,7 @@ export const DEFAULT_CATEGORIES = [
     custom_href: '/cupons',
     is_active: true,
     show_on_home_bar: true,
+    show_on_home_bar_app: true,
     home_bar_order: 4,
     show_on_home_featured: false,
     home_featured_order: 11,
@@ -213,6 +218,7 @@ export const DEFAULT_CATEGORIES = [
     custom_href: '/cardapio',
     is_active: true,
     show_on_home_bar: true,
+    show_on_home_bar_app: true,
     home_bar_order: 5,
     show_on_home_featured: false,
     home_featured_order: 12,
@@ -230,9 +236,9 @@ export function mapCategoryRow(row) {
   const hasBadgeText =
     typeof row.badge_text === 'string' && row.badge_text.trim().length > 0;
   return {
-    id: String(row.id),
-    slug: String(row.slug),
-    name: String(row.name),
+    id: row?.id != null ? String(row.id) : '',
+    slug: row?.slug != null ? String(row.slug) : '',
+    name: row?.name != null ? String(row.name) : '',
     description: row.description ?? null,
     kind: row.kind === 'home_shortcut' ? 'home_shortcut' : 'product_category',
     icon_url: row.icon_url ?? null,
@@ -244,6 +250,7 @@ export function mapCategoryRow(row) {
     custom_href: row.custom_href ?? null,
     is_active: row.is_active !== false,
     show_on_home_bar: row.show_on_home_bar !== false,
+    show_on_home_bar_app: row.show_on_home_bar_app ?? (row.show_on_home_bar !== false),
     home_bar_order: Number.isFinite(Number(row.home_bar_order)) ? Number(row.home_bar_order) : 0,
     show_on_home_featured: Boolean(row.show_on_home_featured),
     home_featured_order: Number.isFinite(Number(row.home_featured_order)) ? Number(row.home_featured_order) : 0,
@@ -290,18 +297,22 @@ export function getActiveCountForCategory(category, countMaps) {
 }
 
 export async function fetchActiveCategories() {
-  const { data, error } = await supabase
-    .from('categories')
-    .select('*')
-    .eq('is_active', true)
-    .order('home_bar_order', { ascending: true })
-    .order('name', { ascending: true });
+  try {
+    const { data, error } = await supabase
+      .from('categories')
+      .select('*')
+      .eq('is_active', true)
+      .order('home_bar_order', { ascending: true })
+      .order('name', { ascending: true });
 
-  if (error || !data || data.length === 0) {
-    return { categories: DEFAULT_CATEGORIES, error: error || null, isFallback: true };
+    if (error || !Array.isArray(data) || data.length === 0) {
+      return { categories: DEFAULT_CATEGORIES, error: error || null, isFallback: true };
+    }
+
+    return { categories: data.map(mapCategoryRow), error: null, isFallback: false };
+  } catch (err) {
+    return { categories: DEFAULT_CATEGORIES, error: err, isFallback: true };
   }
-
-  return { categories: data.map(mapCategoryRow), error: null, isFallback: false };
 }
 
 export async function fetchCategoryRuleForProduct(product) {
@@ -475,19 +486,10 @@ export function useCategories({ subscribeRealtime = true, refetchOnFocus = true 
   );
 
   const getHomeBarItems = useCallback(
-    (products = []) => {
-      const hasProductsLoaded = Array.isArray(products) && products.length > 0;
-      const counts = hasProductsLoaded ? countActiveProductsByCategory(products) : null;
-      return categories
-        .filter((c) => {
-          if (!c.is_active || !c.show_on_home_bar) return false;
-          if (c.kind === 'product_category' && counts) {
-            return getActiveCountForCategory(c, counts) > 0;
-          }
-          return true;
-        })
-        .sort((a, b) => a.home_bar_order - b.home_bar_order || a.name.localeCompare(b.name));
-    },
+    () =>
+      categories
+        .filter((c) => Boolean(c.is_active && c.show_on_home_bar_app))
+        .sort((a, b) => a.home_bar_order - b.home_bar_order || a.name.localeCompare(b.name)),
     [categories]
   );
 

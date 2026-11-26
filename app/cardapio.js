@@ -25,13 +25,15 @@ import { normalizeCategorySlug } from '../utils/resolveCategoryIcon';
 import { useCart } from '../utils/cartStore';
 import { ScrollReveal, useRevealScope, REVEAL_VIEWABILITY_CONFIG } from '../components/ui/ScrollReveal';
 
-// ─── Fallbacks de imagem por categoria (mesmos do index.js) ───────────────────
+// ─── Fallbacks locais de imagem por categoria (mesmos do index.js) ────────────
+const LOCAL_BATATA_FALLBACK = require('../assets/products/costela.jpg');
+const LOCAL_GENERIC_FALLBACK = require('../assets/ui/placeholder.jpg');
 const PROD_IMG_FALLBACKS = {
-  batata: 'https://images.unsplash.com/photo-1518013391915-e40643a1bce1?w=600',
-  batatas: 'https://images.unsplash.com/photo-1518013391915-e40643a1bce1?w=600',
-  bebida: 'https://images.unsplash.com/photo-1544145945-f904253d0c7b?w=600',
-  bebidas: 'https://images.unsplash.com/photo-1544145945-f904253d0c7b?w=600',
-  macarrao: 'https://images.unsplash.com/photo-1551183053-bf91a1d81141?w=600',
+  batata: LOCAL_BATATA_FALLBACK,
+  batatas: LOCAL_BATATA_FALLBACK,
+  bebida: LOCAL_GENERIC_FALLBACK,
+  bebidas: LOCAL_GENERIC_FALLBACK,
+  macarrao: LOCAL_GENERIC_FALLBACK,
 };
 
 // Ícone 3D da aba "Todas"
@@ -85,7 +87,7 @@ const ProdutoCard = memo(function ProdutoCard({ produto }) {
   const fallbackKey = normalizeCategorySlug(produto.categoria);
   const imageSource =
     useFallback || !produto.imagem
-      ? { uri: PROD_IMG_FALLBACKS[fallbackKey] || PROD_IMG_FALLBACKS.batatas }
+      ? (PROD_IMG_FALLBACKS[fallbackKey] || LOCAL_GENERIC_FALLBACK)
       : { uri: produto.imagem };
 
   return (
@@ -201,7 +203,12 @@ export default function Cardapio() {
     refresh: refreshCategories,
     getMenuCategories,
   } = useCategories();
-  const { produtos: buscados, loading: lBusca } = useBuscarProdutos(query);
+  const {
+    produtos: buscados,
+    loading: lBusca,
+    error: buscaError,
+    refetch: refetchBusca,
+  } = useBuscarProdutos(query);
 
   const disponiveis = useMemo(
     () => produtos.filter((p) => p.disponivel !== false),
@@ -465,14 +472,25 @@ export default function Cardapio() {
             viewabilityConfig={REVEAL_VIEWABILITY_CONFIG}
             removeClippedSubviews={true}
             ListEmptyComponent={
-              <View style={s.center}>
-                <Ionicons name="search-outline" size={44} color={COLORS.border} />
-                <Text style={s.emptyTitle}>Nenhum produto encontrado</Text>
-                <Text style={s.emptyDesc}>Não encontramos itens para "{query.trim()}".</Text>
-                <Pressable style={s.ctaBtn} onPress={() => setQuery('')}>
-                  <Text style={s.ctaBtnTxt}>Limpar busca</Text>
-                </Pressable>
-              </View>
+              buscaError ? (
+                <View style={s.center}>
+                  <Ionicons name="cloud-offline-outline" size={44} color={COLORS.textMuted} />
+                  <Text style={s.emptyTitle}>Erro ao buscar produtos</Text>
+                  <Text style={s.emptyDesc}>Verifique sua conexão e tente novamente.</Text>
+                  <Pressable style={s.ctaBtn} onPress={refetchBusca}>
+                    <Text style={s.ctaBtnTxt}>Tentar novamente</Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <View style={s.center}>
+                  <Ionicons name="search-outline" size={44} color={COLORS.border} />
+                  <Text style={s.emptyTitle}>Nenhum produto encontrado</Text>
+                  <Text style={s.emptyDesc}>Não encontramos itens para "{query.trim()}".</Text>
+                  <Pressable style={s.ctaBtn} onPress={() => setQuery('')}>
+                    <Text style={s.ctaBtnTxt}>Limpar busca</Text>
+                  </Pressable>
+                </View>
+              )
             }
           />
         )
@@ -743,6 +761,7 @@ const s = StyleSheet.create({
     flexShrink: 1,
   },
   sectionBadgePill: {
+    flexShrink: 0,
     paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: RADIUS.full,
@@ -769,7 +788,7 @@ const s = StyleSheet.create({
   listContent: {
     paddingHorizontal: SPACING[5],
     paddingTop: SPACING[4],
-    paddingBottom: SPACING[12],
+    paddingBottom: 48,
     gap: SPACING[4],
   },
   row: {
@@ -782,7 +801,8 @@ const s = StyleSheet.create({
     paddingHorizontal: SPACING[5],
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: SPACING[4],
+    justifyContent: 'space-between',
+    rowGap: SPACING[4],
   },
 
   // CARD GRANDE — igual ao do index.js

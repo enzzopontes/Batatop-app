@@ -1,10 +1,9 @@
-import { useState, useRef } from 'react';
-import { View, Text, StyleSheet, Pressable, Image, Animated, Platform, ToastAndroid } from 'react-native';
+import { useState, useRef, useEffect } from 'react';
+import { View, Text, StyleSheet, Pressable, Image, Platform, ToastAndroid } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, TYPOGRAPHY, SPACING, RADIUS } from '../constants/theme';
-import { TicketDivider } from './CouponCard';
+import { COLORS } from '../constants/theme';
 import { showSuccessAlert } from './ThemedAlert';
 import { useCart } from '../utils/cartStore';
 
@@ -14,17 +13,36 @@ export const HOME_COUPON_CARD_WIDTH = 276;
 export const HOME_COUPON_GAP = 12;
 
 function formatMoney(v) {
-  return `R$ ${Number(v).toFixed(2).replace('.', ',')}`;
+  const n = Number(v);
+  return `R$ ${(Number.isFinite(n) ? n : 0).toFixed(2).replace('.', ',')}`;
 }
 
-export default function HomeCouponCard({ coupon, onCardPress }) {
+function parseNumericValue(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().replace(',', '.');
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+export default function HomeCouponCard({ coupon, onCardPress, width = HOME_COUPON_CARD_WIDTH }) {
   const [copied, setCopied] = useState(false);
-  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const copiedTimerRef = useRef(null);
   const { total } = useCart();
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current) {
+        clearTimeout(copiedTimerRef.current);
+      }
+    };
+  }, []);
 
   const raw = coupon?.raw || coupon;
   const code = coupon?.codigo || raw?.code || 'CUPOM';
-  const valNum = Number(raw?.discount_value ?? coupon?.valor);
+  const valNum = parseNumericValue(raw?.discount_value ?? coupon?.valor);
   const isPercent = raw?.discount_type === 'percentage' || coupon?.unidade === '%';
 
   const discountLabel = raw?.title || (
@@ -39,11 +57,11 @@ export default function HomeCouponCard({ coupon, onCardPress }) {
   }
 
   // Lógica de pedido mínimo e barra de progresso (igual à página de cupons)
-  const currentTotal = (total || 0) / 100;
-  const minOrderVal = Number(raw?.min_order_value || 0);
-  const missingAmount = minOrderVal > 0 ? minOrderVal - currentTotal : 0;
+  const currentTotal = Math.max(0, (total || 0) / 100);
+  const minOrderVal = parseNumericValue(raw?.min_order_value);
+  const missingAmount = minOrderVal > 0 ? Math.max(0, minOrderVal - currentTotal) : 0;
   const unavailable = minOrderVal > 0 && missingAmount > 0;
-  const progress = minOrderVal > 0 ? Math.min(currentTotal / minOrderVal, 1) : 1;
+  const progress = minOrderVal > 0 ? Math.max(0, Math.min(currentTotal / minOrderVal, 1)) : 1;
 
   let expiryLabel = null;
   if (raw?.expires_at) {
@@ -58,137 +76,143 @@ export default function HomeCouponCard({ coupon, onCardPress }) {
   const handleCopyCode = async () => {
     try {
       await Clipboard.setStringAsync(code);
-      Haptics.notificationAsync?.(Haptics.NotificationFeedbackType.Success);
+      Haptics.notificationAsync?.(Haptics.NotificationFeedbackType.Success)?.catch?.(() => {});
       setCopied(true);
-
-      Animated.sequence([
-        Animated.timing(scaleAnim, { toValue: 0.96, duration: 80, useNativeDriver: true }),
-        Animated.spring(scaleAnim, { toValue: 1, friction: 4, useNativeDriver: true }),
-      ]).start();
 
       if (Platform.OS === 'android') {
         ToastAndroid.show('Cupom copiado!', ToastAndroid.SHORT);
       }
       showSuccessAlert(`Cupom "${code}" copiado!`);
 
-      setTimeout(() => setCopied(false), 2200);
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+      copiedTimerRef.current = setTimeout(() => setCopied(false), 2200);
     } catch {
       // ignore
     }
   };
 
-  const borderColor = '#E5E7EB';
-
   return (
-    <View style={styles.cardWrapper}>
-      <Pressable 
-        style={styles.cardPressable}
-        onPress={onCardPress || handleCopyCode}
-        activeOpacity={0.92}
-      >
-        {/* Parte Superior do Ticket (Minimalista, limpo e sem amarelo berrante) */}
-        <View style={[styles.ticketTop, { borderColor }]}>
-          <View style={styles.topRow}>
-            <View style={styles.iconWrap}>
-              <Image source={CUPOM_ICON} style={styles.icon} resizeMode="contain" />
-            </View>
+    <View style={[styles.cardWrapper, { width }]}>
+      <View style={styles.cardContainer}>
+        <Pressable
+          style={styles.cardPressable}
+          onPress={onCardPress || handleCopyCode}
+        >
+          {/* Parte Superior do Ticket (Minimalista, limpo e sem amarelo berrante) */}
+          <View style={styles.ticketTop}>
+            <View style={styles.topRow}>
+              <View style={styles.iconWrap}>
+                <Image source={CUPOM_ICON} style={styles.icon} resizeMode="contain" />
+              </View>
 
-            <View style={styles.headerInfo}>
-              <Text style={styles.discountValue} numberOfLines={1}>{discountLabel}</Text>
-              {minOrderVal > 0 ? (
-                <Text style={styles.minOrderSubText} numberOfLines={1}>
-                  Pedido mínimo de {formatMoney(minOrderVal)}
-                </Text>
-              ) : (
-                <Text style={styles.minOrderSubText} numberOfLines={1}>
-                  Válido para todo o cardápio
-                </Text>
-              )}
-            </View>
-          </View>
-
-          <Text style={styles.descText} numberOfLines={2}>{desc}</Text>
-
-          {expiryLabel ? (
-            <View style={styles.metaRow}>
-              <View style={styles.expiryWrap}>
-                <Ionicons name="time-outline" size={12} color="#9CA3AF" />
-                <Text style={styles.expiryText}>{expiryLabel}</Text>
+              <View style={styles.headerInfo}>
+                <Text style={styles.discountValue} numberOfLines={1}>{discountLabel}</Text>
+                {minOrderVal > 0 ? (
+                  <Text style={styles.minOrderSubText} numberOfLines={1}>
+                    Pedido mínimo de {formatMoney(minOrderVal)}
+                  </Text>
+                ) : (
+                  <Text style={styles.minOrderSubText} numberOfLines={1}>
+                    Válido para todo o cardápio
+                  </Text>
+                )}
               </View>
             </View>
-          ) : null}
-        </View>
 
-        {/* Divisória do Ticket com mordidas laterais redondas */}
-        <TicketDivider pageBackgroundColor={COLORS.background} borderColor={borderColor} />
+            <Text style={styles.descText} numberOfLines={2}>{desc}</Text>
 
-        {/* Parte Inferior do Ticket (Cupom ocupa toda a largura, sem botão pegar) */}
-        <View style={[styles.ticketBottom, { borderColor }]}>
-          <Pressable 
-            style={[styles.fullCodeBox, copied && styles.fullCodeBoxCopied]}
-            onPress={handleCopyCode}
-            hitSlop={6}
-          >
-            <View style={styles.codeLeft}>
-              <Ionicons 
-                name={copied ? "checkmark-circle" : "copy-outline"} 
-                size={14} 
-                color={copied ? COLORS.success : "#FFB800"} 
-              />
-              <Text style={[styles.codeText, copied && styles.codeTextCopied]} numberOfLines={1}>
-                {copied ? 'CUPOM COPIADO!' : code}
+            {expiryLabel ? (
+              <View style={styles.metaRow}>
+                <View style={styles.expiryWrap}>
+                  <Ionicons name="time-outline" size={12} color="#9CA3AF" />
+                  <Text style={styles.expiryText}>{expiryLabel}</Text>
+                </View>
+              </View>
+            ) : null}
+          </View>
+
+          {/* Divisória tracejada limpa dentro do mesmo container */}
+          <View style={styles.dashedDivider} />
+
+          {/* Parte Inferior do Ticket (Cupom ocupa toda a largura, sem botão pegar) */}
+          <View style={styles.ticketBottom}>
+            <Pressable
+              style={[styles.fullCodeBox, copied && styles.fullCodeBoxCopied]}
+              onPress={handleCopyCode}
+              hitSlop={6}
+            >
+              <View style={styles.codeLeft}>
+                <Ionicons
+                  name={copied ? 'checkmark-circle' : 'copy-outline'}
+                  size={14}
+                  color={copied ? COLORS.success : COLORS.primaryText}
+                />
+                <Text style={[styles.codeText, copied && styles.codeTextCopied]} numberOfLines={1}>
+                  {copied ? 'CUPOM COPIADO!' : code}
+                </Text>
+              </View>
+              <Text style={[styles.codeActionHint, copied && styles.codeActionHintCopied]}>
+                {copied ? 'Pronto' : 'Copiar'}
+              </Text>
+            </Pressable>
+          </View>
+        </Pressable>
+
+        {/* Seção de Pedido Mínimo integrada ao mesmo container (sem sobreposição negativa) */}
+        {unavailable && (
+          <View style={styles.progressSection}>
+            <View style={styles.progressLabelRow}>
+              <Ionicons name="lock-closed" size={12} color="#71717A" />
+              <Text style={styles.progressText}>
+                Faltam {formatMoney(missingAmount)} para usar
               </Text>
             </View>
-            <Text style={[styles.codeActionHint, copied && styles.codeActionHintCopied]}>
-              {copied ? 'Pronto' : 'Copiar'}
-            </Text>
-          </Pressable>
-        </View>
-      </Pressable>
-
-      {/* Seção de Pedido Mínimo com Cadeado e Barra de Progresso (Idêntico à página de cupons) */}
-      {unavailable && (
-        <View style={styles.progressCard}>
-          <View style={styles.progressLabelRow}>
-            <Ionicons name="lock-closed" size={12} color="#71717A" />
-            <Text style={styles.progressText}>
-              Faltam {formatMoney(missingAmount)} para usar
-            </Text>
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
+            </View>
           </View>
-          <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
-          </View>
-        </View>
-      )}
+        )}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   cardWrapper: {
-    width: HOME_COUPON_CARD_WIDTH,
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
     elevation: 2,
-    marginVertical: 4,
+    marginVertical: 2,
+  },
+  cardContainer: {
+    width: '100%',
+    flex: 1,
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    overflow: 'hidden',
   },
   cardPressable: {
     width: '100%',
-    zIndex: 2,
   },
   ticketTop: {
     backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    borderLeftWidth: 1.5,
-    borderRightWidth: 1.5,
-    borderTopWidth: 1.5,
-    borderBottomWidth: 0,
     paddingHorizontal: 14,
     paddingTop: 12,
-    paddingBottom: 6,
+    paddingBottom: 10,
+  },
+  dashedDivider: {
+    marginHorizontal: 12,
+    borderTopWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: '#E5E7EB',
   },
   topRow: {
     flexDirection: 'row',
@@ -239,19 +263,13 @@ const styles = StyleSheet.create({
   },
   expiryText: {
     fontSize: 11,
-    color: '#9CA3AF',
+    color: '#6B7280',
     fontWeight: '500',
   },
   ticketBottom: {
     backgroundColor: '#FFFFFF',
-    borderBottomLeftRadius: 16,
-    borderBottomRightRadius: 16,
-    borderLeftWidth: 1.5,
-    borderRightWidth: 1.5,
-    borderBottomWidth: 1.5,
-    borderTopWidth: 0,
     paddingHorizontal: 12,
-    paddingTop: 6,
+    paddingTop: 10,
     paddingBottom: 10,
   },
   fullCodeBox: {
@@ -289,26 +307,20 @@ const styles = StyleSheet.create({
   codeActionHint: {
     fontSize: 11,
     fontWeight: '800',
-    color: '#FFB800',
+    color: COLORS.primaryText,
     marginLeft: 6,
   },
   codeActionHintCopied: {
     color: '#16A34A',
   },
 
-  /* Barra de progresso com cadeado colada abaixo (Idêntico ao CouponCard da página de cupons) */
-  progressCard: {
+  /* Barra de progresso integrada ao mesmo container do card (sem margem negativa) */
+  progressSection: {
     backgroundColor: '#F3F4F6',
-    borderWidth: 1.5,
-    borderColor: '#E5E7EB',
-    borderTopWidth: 0,
-    borderBottomLeftRadius: 16,
-    borderBottomRightRadius: 16,
-    marginTop: -16,
-    paddingTop: 16 + 8,
-    paddingHorizontal: 12,
-    paddingBottom: 8,
-    zIndex: 1,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
   },
   progressLabelRow: {
     flexDirection: 'row',

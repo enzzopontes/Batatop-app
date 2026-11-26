@@ -1,30 +1,50 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../supabaseConfig';
 import { resolveProductImage } from '../utils/resolveProductImage';
+import { fetchActivePromoConfig, resolveProductPrice } from './useProdutos';
 
 export const useProductRanking = () => {
   const [produtos, setProdutos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const fetchRanking = useCallback(async ({ silent = false } = {}) => {
     try {
-      if (!silent) {
+      if (!silent && mountedRef.current) {
         setLoading(true);
       }
 
-      // 1. Busca todos os produtos cadastrados
-      const { data: productsData, error: productsError } = await supabase
-        .from('products')
-        .select('*');
+      // 1. Busca produtos, ranking via RPC (degradável) e configuração de promoções em paralelo
+      const [productsResult, salesResult, promoCfg] = await Promise.all([
+        supabase.from('products').select('*'),
+        supabase
+          .rpc('get_product_ranking', { p_limit: 50 })
+          .catch((rpcErr) => ({ data: null, error: rpcErr })),
+        fetchActivePromoConfig(),
+      ]);
 
+      if (!mountedRef.current) return;
+
+      const { data: rawProductsData, error: productsError } = productsResult;
       if (productsError) throw productsError;
 
-      // 2. Busca itens mais vendidos via RPC agregada no Postgres (get_product_ranking)
-      const { data: salesData, error: salesError } = await supabase
-        .rpc('get_product_ranking', { p_limit: 50 });
+      const productsData = Array.isArray(rawProductsData) ? rawProductsData : [];
 
-      if (salesError) throw salesError;
+      // 2. Degrada falha na RPC sem derrubar o catálogo de produtos
+      let salesData = [];
+      if (salesResult?.error) {
+        console.warn('Erro ao buscar ranking de produtos (RPC), mantendo catálogo sem ordenação por vendas:', salesResult.error);
+      } else if (Array.isArray(salesResult?.data)) {
+        salesData = salesResult.data;
+      }
 
       // 3. Mapeia quantidades vendidas por produto
       const salesCounts = {};
@@ -35,9 +55,10 @@ export const useProductRanking = () => {
       });
 
       // Conta as vendas dos itens retornados pela RPC
-      if (salesData && salesData.length > 0) {
+      if (salesData.length > 0) {
         salesData.forEach(item => {
-          const qty = Number(item.total_quantity ?? item.total_sold ?? item.quantity ?? 0);
+          const rawQty = Number(item.total_quantity ?? item.total_sold ?? item.quantity ?? 0);
+          const qty = Number.isFinite(rawQty) ? rawQty : 0;
           if (item.product_id && salesCounts[item.product_id] !== undefined) {
             salesCounts[item.product_id] = qty;
           }
@@ -55,21 +76,25 @@ export const useProductRanking = () => {
         }
 
         // Desempate: mais recente criado primeiro
-        const dateA = new Date(a.created_at || 0);
-        const dateB = new Date(b.created_at || 0);
-        return dateB - dateA;
+        const tsA = new Date(a.created_at || 0).getTime();
+        const tsB = new Date(b.created_at || 0).getTime();
+        return (Number.isFinite(tsB) ? tsB : 0) - (Number.isFinite(tsA) ? tsA : 0);
       });
 
       // 5. Mapeia no formato esperado pelas telas do aplicativo React Native
-      const produtosRankeados = sortedProducts.map((produto, index) => {
-        const parsedPrice = Number(produto.price);
-        const safePrice = Number.isFinite(parsedPrice) ? parsedPrice : 0;
+      const produtosRankeados = sortedProducts.map((produto) => {
+        const parsedBase = Number(produto.price);
+        const precoOriginal = Number.isFinite(parsedBase) ? parsedBase : 0;
+        const resolved = resolveProductPrice(produto, promoCfg);
+        const safePrice = Number.isFinite(resolved) ? resolved : precoOriginal;
         return {
           id: produto.id,
           nome: produto.name,
           descricao: produto.description,
           descricaoLonga: produto.description,
           preco: safePrice,
+          precoOriginal,
+          emPromocao: safePrice < precoOriginal,
           precoFormatado: `R$ ${safePrice.toFixed(2).replace('.', ',')}`,
           categoria: produto.category ? produto.category.charAt(0).toUpperCase() + produto.category.slice(1) : 'Outros',
           imagem: resolveProductImage(produto.image_url, null),
@@ -88,13 +113,17 @@ export const useProductRanking = () => {
         };
       });
 
-      setProdutos(produtosRankeados);
-      setError(null);
+      if (mountedRef.current) {
+        setProdutos(produtosRankeados);
+        setError(null);
+      }
     } catch (err) {
       console.error('Erro ao buscar ranking de produtos:', err);
-      setError(err.message || 'Erro ao carregar o ranking');
+      if (mountedRef.current) {
+        setError(err.message || 'Erro ao carregar o ranking');
+      }
     } finally {
-      if (!silent) {
+      if (!silent && mountedRef.current) {
         setLoading(false);
       }
     }
