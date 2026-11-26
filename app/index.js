@@ -224,9 +224,11 @@ export default function Home() {
     const innerWidth = Math.max(0, e.nativeEvent.layout.width - SPACING[6] * 2);
     setGridContainerWidth((prev) => (Math.abs(prev - innerWidth) >= 1 ? innerWidth : prev));
   }, []);
-  const gridCols = homeGridLayout.mobile_columns;
-  const gridGap = homeGridLayout.mobile_card_gap;
-  const gridPadding = homeGridLayout.mobile_card_padding;
+  const gridCols = homeGridLayout.app_columns;
+  const gridGap = homeGridLayout.app_card_gap;
+  const gridPadding = homeGridLayout.app_card_padding;
+  const gridCardRadius = homeGridLayout.app_card_radius;
+  const gridLabelSize = homeGridLayout.app_label_size;
   const gridAvailableWidth =
     gridContainerWidth > 0 ? gridContainerWidth : Math.max(0, windowWidth - SPACING[6] * 2);
   const gridSlotWidthPx =
@@ -237,7 +239,7 @@ export default function Home() {
       : `${Math.floor((100 / gridCols) * 100) / 100}%`;
   const gridPaddingH = Math.max(4, Math.round(gridPadding * 0.75));
   const maxSafeIcon = Math.max(24, Math.floor(gridSlotWidthPx - gridPaddingH * 2));
-  const gridIconSize = Math.min(homeGridLayout.mobile_icon_size, maxSafeIcon);
+  const gridIconSize = Math.min(homeGridLayout.app_icon_size, maxSafeIcon);
   const gridRowGap = Math.max(gridGap, 12);
   const { onScroll, resetHeader, scrollY } = useScrollHandler();
   const headerHeight = useHeaderHeight();
@@ -540,7 +542,11 @@ export default function Home() {
                     <View
                       style={[
                         s.catGridBox,
-                        { paddingVertical: gridPadding, paddingHorizontal: gridPaddingH },
+                        {
+                          paddingVertical: gridPadding,
+                          paddingHorizontal: gridPaddingH,
+                          borderRadius: gridCardRadius,
+                        },
                       ]}
                     >
                       <CategoryIcon category={cat} size={gridIconSize} />
@@ -566,8 +572,8 @@ export default function Home() {
                       style={[
                         s.catGridLabel,
                         {
-                          fontSize: homeGridLayout.mobile_label_size,
-                          lineHeight: Math.round(homeGridLayout.mobile_label_size * 1.35),
+                          fontSize: gridLabelSize,
+                          lineHeight: Math.round(gridLabelSize * 1.35),
                         },
                       ]}
                       numberOfLines={1}

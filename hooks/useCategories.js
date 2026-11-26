@@ -4,16 +4,12 @@ import { supabase } from '../supabaseConfig';
 import { normalizeCategorySlug } from '../utils/resolveCategoryIcon';
 
 export const DEFAULT_HOME_GRID_LAYOUT = {
-  mobile_columns: 3,
-  mobile_card_padding: 12,
-  mobile_card_gap: 10,
-  mobile_icon_size: 52,
-  mobile_label_size: 12,
-  desktop_columns: 6,
-  desktop_card_padding: 16,
-  desktop_card_gap: 16,
-  desktop_icon_size: 64,
-  desktop_label_size: 14,
+  app_columns: 3,
+  app_card_padding: 12,
+  app_card_gap: 10,
+  app_icon_size: 52,
+  app_label_size: 12,
+  app_card_radius: 16,
 };
 
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
@@ -38,16 +34,12 @@ export function normalizeHomeGridLayout(row) {
     return { ...DEFAULT_HOME_GRID_LAYOUT };
   }
   return {
-    mobile_columns: clampInt(row.mobile_columns, 2, 4, DEFAULT_HOME_GRID_LAYOUT.mobile_columns),
-    mobile_card_padding: clampInt(row.mobile_card_padding, 4, 20, DEFAULT_HOME_GRID_LAYOUT.mobile_card_padding),
-    mobile_card_gap: clampInt(row.mobile_card_gap, 4, 16, DEFAULT_HOME_GRID_LAYOUT.mobile_card_gap),
-    mobile_icon_size: clampInt(row.mobile_icon_size, 28, 68, DEFAULT_HOME_GRID_LAYOUT.mobile_icon_size),
-    mobile_label_size: clampInt(row.mobile_label_size, 9, 14, DEFAULT_HOME_GRID_LAYOUT.mobile_label_size),
-    desktop_columns: clampInt(row.desktop_columns, 3, 8, DEFAULT_HOME_GRID_LAYOUT.desktop_columns),
-    desktop_card_padding: clampInt(row.desktop_card_padding, 6, 24, DEFAULT_HOME_GRID_LAYOUT.desktop_card_padding),
-    desktop_card_gap: clampInt(row.desktop_card_gap, 6, 24, DEFAULT_HOME_GRID_LAYOUT.desktop_card_gap),
-    desktop_icon_size: clampInt(row.desktop_icon_size, 36, 80, DEFAULT_HOME_GRID_LAYOUT.desktop_icon_size),
-    desktop_label_size: clampInt(row.desktop_label_size, 11, 16, DEFAULT_HOME_GRID_LAYOUT.desktop_label_size),
+    app_columns: clampInt(row.app_columns, 2, 4, DEFAULT_HOME_GRID_LAYOUT.app_columns),
+    app_card_padding: clampInt(row.app_card_padding, 4, 20, DEFAULT_HOME_GRID_LAYOUT.app_card_padding),
+    app_card_gap: clampInt(row.app_card_gap, 4, 16, DEFAULT_HOME_GRID_LAYOUT.app_card_gap),
+    app_icon_size: clampInt(row.app_icon_size, 28, 68, DEFAULT_HOME_GRID_LAYOUT.app_icon_size),
+    app_label_size: clampInt(row.app_label_size, 9, 14, DEFAULT_HOME_GRID_LAYOUT.app_label_size),
+    app_card_radius: clampInt(row.app_card_radius, 8, 24, DEFAULT_HOME_GRID_LAYOUT.app_card_radius),
   };
 }
 
@@ -56,7 +48,7 @@ export async function fetchHomeGridLayout() {
     const { data, error } = await supabase
       .from('home_grid_layout')
       .select(
-        'mobile_columns, mobile_card_padding, mobile_card_gap, mobile_icon_size, mobile_label_size, desktop_columns, desktop_card_padding, desktop_card_gap, desktop_icon_size, desktop_label_size'
+        'app_columns, app_card_padding, app_card_gap, app_icon_size, app_label_size, app_card_radius'
       )
       .eq('id', 'default')
       .maybeSingle();
