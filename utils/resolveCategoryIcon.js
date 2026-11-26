@@ -51,6 +51,21 @@ function safeDecodeURIComponent(value) {
   }
 }
 
+const CONTROL_CHARS_RE = /[\u0000-\u001f\u007f]/;
+const DANGEROUS_SCHEME_RE = /^(?:javascript|data|vbscript|file|http):/i;
+const SAFE_STORAGE_FILENAME_RE = /^[a-zA-Z0-9._-]+$/;
+
+export function isSafeIconUrl(raw) {
+  if (typeof raw !== 'string') return false;
+  if (CONTROL_CHARS_RE.test(raw)) return false;
+  const trimmed = raw.trim();
+  if (!trimmed) return false;
+  if (trimmed.includes('\\')) return false;
+  if (trimmed.startsWith('//')) return false;
+  if (DANGEROUS_SCHEME_RE.test(trimmed)) return false;
+  return true;
+}
+
 /**
  * Resolves a category's icon into an expo-image compatible source:
  * - Returns null when icon_type === 'lucide' or no icon_url
@@ -61,31 +76,45 @@ function safeDecodeURIComponent(value) {
 export function resolveCategoryIconSource(category) {
   if (!category || category.icon_type === 'lucide') return null;
 
-  const raw = typeof category.icon_url === 'string' ? category.icon_url.trim() : '';
-  if (!raw) return null;
+  if (!isSafeIconUrl(category.icon_url)) return null;
+  const trimmed = category.icon_url.trim();
 
-  if (LOCAL_3D_ICONS[raw]) {
-    return LOCAL_3D_ICONS[raw];
+  if (LOCAL_3D_ICONS[trimmed]) {
+    return LOCAL_3D_ICONS[trimmed];
   }
 
-  const decoded = safeDecodeURIComponent(raw);
+  const decoded = safeDecodeURIComponent(trimmed);
   if (LOCAL_3D_ICONS[decoded]) {
     return LOCAL_3D_ICONS[decoded];
   }
 
-  if (/^https?:\/\//i.test(raw)) {
-    return { uri: raw };
+  if (/^https:\/\//i.test(trimmed)) {
+    try {
+      const url = new URL(trimmed);
+      if (url.protocol !== 'https:') return null;
+      return { uri: url.toString() };
+    } catch {
+      return null;
+    }
   }
 
-  if (raw.startsWith('/')) {
-    const encodedPath = raw
+  if (trimmed.startsWith('/')) {
+    const match = trimmed.match(/^([^?#]*)(\?[^#]*)?(#.*)?$/);
+    const pathname = match ? match[1] : trimmed;
+    const search = match && match[2] ? match[2] : '';
+    const hash = match && match[3] ? match[3] : '';
+    const encodedPath = pathname
       .split('/')
       .map((seg) => encodeURIComponent(safeDecodeURIComponent(seg)))
       .join('/');
-    return { uri: `${API_BASE_URL.replace(/\/+$/, '')}${encodedPath}` };
+    return { uri: `${API_BASE_URL.replace(/\/+$/, '')}${encodedPath}${search}${hash}` };
   }
 
-  return { uri: `${SUPABASE_URL}/storage/v1/object/public/category-icons/${encodeURIComponent(raw)}` };
+  if (!SAFE_STORAGE_FILENAME_RE.test(trimmed) || trimmed.includes('..')) {
+    return null;
+  }
+
+  return { uri: `${SUPABASE_URL}/storage/v1/object/public/category-icons/${encodeURIComponent(trimmed)}` };
 }
 
 export function normalizeCategorySlug(raw) {

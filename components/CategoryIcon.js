@@ -5,6 +5,8 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, RADIUS } from '../constants/theme';
 import { resolveCategoryIconSource, mapFallbackIconToMci } from '../utils/resolveCategoryIcon';
 
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+
 export default function CategoryIcon({
   category,
   size = 44,
@@ -34,7 +36,8 @@ export default function CategoryIcon({
     );
   }
 
-  const accent = category?.accent_color || COLORS.primary;
+  const rawAccent = typeof category?.accent_color === 'string' ? category.accent_color.trim() : '';
+  const accent = HEX_COLOR_RE.test(rawAccent) ? rawAccent : COLORS.primary;
   const mciName = mapFallbackIconToMci(category?.fallback_icon);
   const boxSize = typeof size === 'number' && size > 0 ? size : 44;
   const glyphSize = iconSize || Math.round(boxSize * 0.54);
