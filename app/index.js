@@ -30,7 +30,11 @@ import {
   matchProductToCategory,
   DEFAULT_HOME_GRID_LAYOUT,
 } from '../hooks/useCategories';
-import { normalizeCategorySlug, mapFallbackIconToMci } from '../utils/resolveCategoryIcon';
+import {
+  normalizeCategorySlug,
+  mapFallbackIconToMci,
+  resolveLocalPreset3DIcon,
+} from '../utils/resolveCategoryIcon';
 import BannerCarousel from '../components/BannerCarousel';
 import { ScrollReveal, useRevealScope } from '../components/ui/ScrollReveal';
 import CategoriasFlutuantes from '../components/CategoriasFlutuantes';
@@ -420,7 +424,13 @@ export default function Home() {
     () =>
       homeFeaturedCategories
         .map((cat) => {
-          const limit = cat.home_featured_limit || 6;
+          const slugNorm = normalizeCategorySlug(cat.slug);
+          const fallbackLimit = slugNorm === 'batata' ? 8 : slugNorm === 'macarrao' ? 4 : 6;
+          const parsedLimit = Number(cat.home_featured_limit);
+          const limit =
+            Number.isFinite(parsedLimit) && parsedLimit >= 1
+              ? Math.min(24, Math.max(1, Math.trunc(parsedLimit)))
+              : fallbackLimit;
           const items = disponiveis
             .filter((p) => matchProductToCategory(p, cat))
             .slice(0, limit);
@@ -605,7 +615,7 @@ export default function Home() {
           <BannerCarousel />
         </ScrollReveal>
 
-        {categoriesError || (productsError && produtos.length > 0) ? (
+        {!(productsError && destaques.length === 0) && (categoriesError || (productsError && produtos.length > 0)) ? (
           <View style={s.degradedBanner}>
             <Ionicons name="cloud-offline-outline" size={16} color={COLORS.secondary} />
             <Text style={s.degradedBannerText} numberOfLines={2}>
@@ -709,6 +719,8 @@ export default function Home() {
                 : slugNorm === 'macarrao'
                 ? 'Massas artesanais com molhos irresistíveis'
                 : cat.description;
+            const is3dCategory = slugNorm === 'batata' || slugNorm === 'macarrao';
+            const section3dIcon = is3dCategory ? resolveLocalPreset3DIcon(slugNorm) : null;
             const sectionMciIcon =
               slugNorm === 'batata'
                 ? 'carrot'
@@ -729,12 +741,21 @@ export default function Home() {
                 >
                   <View style={s.cardapioHeaderRow}>
                     <View style={s.cardapioHeaderLeft}>
-                      <MaterialCommunityIcons
-                        name={sectionMciIcon}
-                        size={30}
-                        color={COLORS.primary}
-                      />
-                      <Text style={s.cardapioTitle} numberOfLines={1}>{sectionTitle}</Text>
+                      {section3dIcon ? (
+                        <ExpoImage
+                          source={section3dIcon}
+                          style={s.section3dIcon}
+                          contentFit="contain"
+                          cachePolicy="memory-disk"
+                        />
+                      ) : (
+                        <MaterialCommunityIcons
+                          name={sectionMciIcon}
+                          size={30}
+                          color={COLORS.primary}
+                        />
+                      )}
+                      <Text style={s.cardapioTitle} numberOfLines={2}>{sectionTitle}</Text>
                       {badgeText ? (
                         <View
                           style={[
@@ -842,6 +863,7 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
+    flexShrink: 0,
   },
   verTodosText: {
     color: COLORS.primary,
@@ -867,6 +889,11 @@ const s = StyleSheet.create({
     alignItems: 'center',
     gap: SPACING[2],
     flexShrink: 1,
+  },
+  section3dIcon: {
+    width: 30,
+    height: 30,
+    flexShrink: 0,
   },
   cardapioTitle: {
     color: COLORS.text,

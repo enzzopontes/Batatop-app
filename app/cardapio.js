@@ -20,7 +20,7 @@ import { useProductRanking } from '../hooks/useProductRanking';
 import { useBuscarProdutos } from '../hooks/useProdutos';
 import { useCategories, matchProductToCategory } from '../hooks/useCategories';
 import CategoryIcon from '../components/CategoryIcon';
-import { normalizeCategorySlug } from '../utils/resolveCategoryIcon';
+import { normalizeCategorySlug, resolveLocalPreset3DIcon } from '../utils/resolveCategoryIcon';
 import { useCart } from '../utils/cartStore';
 import { ScrollReveal, useRevealScope, REVEAL_VIEWABILITY_CONFIG } from '../components/ui/ScrollReveal';
 
@@ -548,48 +548,63 @@ export default function Cardapio() {
               </Pressable>
             </View>
           ) : (
-            secoesComProdutos.map((secao) => (
-              <View
-                key={secao.id || secao.slug}
-                style={s.section}
-                onLayout={(e) => handleSectionLayout(secao.slug, e.nativeEvent.layout.y)}
-              >
-                <ScrollReveal scope={reveal} revealKey={`cardapio_header_${secao.slug}`} style={s.cardapioHeaderWrap}>
-                  <View style={s.cardapioHeaderRow}>
-                    <View style={s.cardapioHeaderLeft}>
-                      <CategoryIcon category={secao} size={26} />
-                      <Text style={s.cardapioTitle} numberOfLines={1}>{secao.name}</Text>
-                      {Boolean(secao.badge_text) && (
-                        <View
-                          style={[
-                            s.sectionBadgePill,
-                            { backgroundColor: secao.badge_color || COLORS.secondary },
-                          ]}
-                        >
-                          <Text style={s.sectionBadgeTxt} numberOfLines={1}>
-                            {secao.badge_text}
-                          </Text>
-                        </View>
-                      )}
+            secoesComProdutos.map((secao) => {
+              const slugNorm = normalizeCategorySlug(secao.slug);
+              const section3dIcon = (slugNorm === 'batata' || slugNorm === 'macarrao')
+                ? resolveLocalPreset3DIcon(slugNorm)
+                : null;
+              return (
+                <View
+                  key={secao.id || secao.slug}
+                  style={s.section}
+                  onLayout={(e) => handleSectionLayout(secao.slug, e.nativeEvent.layout.y)}
+                >
+                  <ScrollReveal scope={reveal} revealKey={`cardapio_header_${secao.slug}`} style={s.cardapioHeaderWrap}>
+                    <View style={s.cardapioHeaderRow}>
+                      <View style={s.cardapioHeaderLeft}>
+                        {section3dIcon ? (
+                          <ExpoImage
+                            source={section3dIcon}
+                            style={s.section3dIcon}
+                            contentFit="contain"
+                            cachePolicy="memory-disk"
+                          />
+                        ) : (
+                          <CategoryIcon category={secao} size={26} />
+                        )}
+                        <Text style={s.cardapioTitle} numberOfLines={2}>{secao.name}</Text>
+                        {Boolean(secao.badge_text) && (
+                          <View
+                            style={[
+                              s.sectionBadgePill,
+                              { backgroundColor: secao.badge_color || COLORS.secondary },
+                            ]}
+                          >
+                            <Text style={s.sectionBadgeTxt} numberOfLines={1}>
+                              {secao.badge_text}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={s.sectionCountTxt}>
+                        {secao.produtos.length} {secao.produtos.length === 1 ? 'item' : 'itens'}
+                      </Text>
                     </View>
-                    <Text style={s.sectionCountTxt}>
-                      {secao.produtos.length} {secao.produtos.length === 1 ? 'item' : 'itens'}
-                    </Text>
-                  </View>
-                  {Boolean(secao.description) && (
-                    <Text style={s.cardapioDesc}>{secao.description}</Text>
-                  )}
-                </ScrollReveal>
+                    {Boolean(secao.description) && (
+                      <Text style={s.cardapioDesc}>{secao.description}</Text>
+                    )}
+                  </ScrollReveal>
 
-                <View style={s.prodGrid}>
-                  {secao.produtos.map((p) => (
-                    <ScrollReveal key={p.id} scope={reveal} revealKey={`cardapio_produto_${p.id}`} style={s.prodCardSlot}>
-                      <ProdutoCard produto={p} />
-                    </ScrollReveal>
-                  ))}
+                  <View style={s.prodGrid}>
+                    {secao.produtos.map((p) => (
+                      <ScrollReveal key={p.id} scope={reveal} revealKey={`cardapio_produto_${p.id}`} style={s.prodCardSlot}>
+                        <ProdutoCard produto={p} />
+                      </ScrollReveal>
+                    ))}
+                  </View>
                 </View>
-              </View>
-            ))
+              );
+            })
           )}
         </ScrollView>
       )}
@@ -754,6 +769,11 @@ const s = StyleSheet.create({
     alignItems: 'center',
     gap: SPACING[2],
     flexShrink: 1,
+  },
+  section3dIcon: {
+    width: 28,
+    height: 28,
+    flexShrink: 0,
   },
   cardapioTitle: {
     color: COLORS.text,

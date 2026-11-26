@@ -114,7 +114,7 @@ export const DEFAULT_CATEGORIES = [
     home_bar_order: 1,
     show_on_home_featured: true,
     home_featured_order: 0,
-    home_featured_limit: 6,
+    home_featured_limit: 8,
     show_on_menu: true,
     menu_order: 0,
     menu_layout_zone: 'main',
@@ -141,7 +141,7 @@ export const DEFAULT_CATEGORIES = [
     home_bar_order: 2,
     show_on_home_featured: true,
     home_featured_order: 1,
-    home_featured_limit: 6,
+    home_featured_limit: 4,
     show_on_menu: true,
     menu_order: 1,
     menu_layout_zone: 'main',
@@ -235,6 +235,8 @@ export const DEFAULT_CATEGORIES = [
 export function mapCategoryRow(row) {
   const hasBadgeText =
     typeof row.badge_text === 'string' && row.badge_text.trim().length > 0;
+  const slugNorm = normalizeCategorySlug(row?.slug);
+  const defaultFeaturedLimit = slugNorm === 'batata' ? 8 : slugNorm === 'macarrao' ? 4 : 6;
   return {
     id: row?.id != null ? String(row.id) : '',
     slug: row?.slug != null ? String(row.slug) : '',
@@ -254,7 +256,7 @@ export function mapCategoryRow(row) {
     home_bar_order: Number.isFinite(Number(row.home_bar_order)) ? Number(row.home_bar_order) : 0,
     show_on_home_featured: Boolean(row.show_on_home_featured),
     home_featured_order: Number.isFinite(Number(row.home_featured_order)) ? Number(row.home_featured_order) : 0,
-    home_featured_limit: Math.min(24, Math.max(1, Number(row.home_featured_limit) || 6)),
+    home_featured_limit: clampInt(row.home_featured_limit, 1, 24, defaultFeaturedLimit),
     show_on_menu: row.show_on_menu !== false,
     menu_order: Number.isFinite(Number(row.menu_order)) ? Number(row.menu_order) : 0,
     menu_layout_zone: row.menu_layout_zone === 'sidebar_right' ? 'sidebar_right' : 'main',
