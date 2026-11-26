@@ -12,6 +12,7 @@ import {
   Platform,
   Dimensions,
   RefreshControl,
+  useWindowDimensions,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useRouter, useFocusEffect, Redirect } from 'expo-router';
@@ -28,7 +29,11 @@ import { ALREADY_SEEN_LOCATION_KEY } from './location';
 import * as Location from 'expo-location';
 import { COLORS, TYPOGRAPHY, SPACING, RADIUS, SHADOWS } from '../constants/theme';
 import { useProductRanking } from '../hooks/useProductRanking';
-import { useCategories, matchProductToCategory } from '../hooks/useCategories';
+import {
+  useCategories,
+  matchProductToCategory,
+  DEFAULT_HOME_GRID_LAYOUT,
+} from '../hooks/useCategories';
 import { normalizeCategorySlug, mapFallbackIconToMci } from '../utils/resolveCategoryIcon';
 import BannerCarousel from '../components/BannerCarousel';
 import { ScrollReveal, useRevealScope } from '../components/ui/ScrollReveal';
@@ -203,14 +208,37 @@ const DestaqueMiniCard = memo(function DestaqueMiniCard({ produto }) {
 export default function Home() {
   const router = useRouter();
   const { produtos, loading, error: productsError, refetch: refetchRanking } = useProductRanking();
+  const { width: windowWidth } = useWindowDimensions();
   const {
     categories,
+    homeGridLayout: rawHomeGridLayout,
     getHomeBarItems,
     getHomeFeaturedCategories,
     refresh: refreshCategories,
     loading: categoriesLoading,
     error: categoriesError,
   } = useCategories();
+  const homeGridLayout = rawHomeGridLayout || DEFAULT_HOME_GRID_LAYOUT;
+  const [gridContainerWidth, setGridContainerWidth] = useState(0);
+  const handleCatGridLayout = useCallback((e) => {
+    const innerWidth = Math.max(0, e.nativeEvent.layout.width - SPACING[6] * 2);
+    setGridContainerWidth((prev) => (Math.abs(prev - innerWidth) >= 1 ? innerWidth : prev));
+  }, []);
+  const gridCols = homeGridLayout.mobile_columns;
+  const gridGap = homeGridLayout.mobile_card_gap;
+  const gridPadding = homeGridLayout.mobile_card_padding;
+  const gridAvailableWidth =
+    gridContainerWidth > 0 ? gridContainerWidth : Math.max(0, windowWidth - SPACING[6] * 2);
+  const gridSlotWidthPx =
+    gridAvailableWidth > 0 ? (gridAvailableWidth - gridGap * (gridCols - 1) - 1) / gridCols : 0;
+  const gridSlotWidthPct =
+    gridAvailableWidth > 0 && gridSlotWidthPx > 0
+      ? `${Math.floor(((gridSlotWidthPx / gridAvailableWidth) * 100) * 100) / 100}%`
+      : `${Math.floor((100 / gridCols) * 100) / 100}%`;
+  const gridPaddingH = Math.max(4, Math.round(gridPadding * 0.75));
+  const maxSafeIcon = Math.max(24, Math.floor(gridSlotWidthPx - gridPaddingH * 2));
+  const gridIconSize = Math.min(homeGridLayout.mobile_icon_size, maxSafeIcon);
+  const gridRowGap = Math.max(gridGap, 12);
   const { onScroll, resetHeader, scrollY } = useScrollHandler();
   const headerHeight = useHeaderHeight();
   const headerHidden = useHeaderHidden();
@@ -487,7 +515,10 @@ export default function Home() {
           style={[s.section, { paddingTop: SPACING[4] }]}
           onLayout={(e) => setCategoriasBottomY(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}
         >
-          <View style={s.catGrid}>
+          <View
+            style={[s.catGrid, { columnGap: gridGap, rowGap: gridRowGap }]}
+            onLayout={handleCatGridLayout}
+          >
             {homeBarItems.map((cat) => {
               const itemKey = cat.id || cat.slug || cat.name;
               const badgeText =
@@ -499,15 +530,20 @@ export default function Home() {
                   key={itemKey}
                   scope={reveal}
                   revealKey={`home_cat_${cat.slug || itemKey}`}
-                  style={s.catGridSlot}
+                  style={[s.catGridSlot, { width: gridSlotWidthPct }]}
                 >
                   <Pressable
                     style={[s.catGridPress, cat.disabled && s.catGridItemDisabled]}
                     disabled={cat.disabled}
                     onPress={() => handleCategoriaPress(router, cat)}
                   >
-                    <View style={s.catGridBox}>
-                      <CategoryIcon category={cat} size={null} style={s.catGridIcon} />
+                    <View
+                      style={[
+                        s.catGridBox,
+                        { paddingVertical: gridPadding, paddingHorizontal: gridPaddingH },
+                      ]}
+                    >
+                      <CategoryIcon category={cat} size={gridIconSize} />
                       {badgeText ? (
                         <View
                           style={[
@@ -515,11 +551,31 @@ export default function Home() {
                             { backgroundColor: cat.badge_color || COLORS.secondary },
                           ]}
                         >
-                          <Text style={s.catGridBadgeText} numberOfLines={1}>{badgeText}</Text>
+                          <Text
+                            style={s.catGridBadgeText}
+                            numberOfLines={1}
+                            ellipsizeMode="tail"
+                            maxFontSizeMultiplier={1.15}
+                          >
+                            {badgeText}
+                          </Text>
                         </View>
                       ) : null}
                     </View>
-                    <Text style={s.catGridLabel} numberOfLines={1}>{cat.name}</Text>
+                    <Text
+                      style={[
+                        s.catGridLabel,
+                        {
+                          fontSize: homeGridLayout.mobile_label_size,
+                          lineHeight: Math.round(homeGridLayout.mobile_label_size * 1.35),
+                        },
+                      ]}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                      maxFontSizeMultiplier={1.15}
+                    >
+                      {cat.name}
+                    </Text>
                   </Pressable>
                 </ScrollReveal>
               );
@@ -889,12 +945,8 @@ const s = StyleSheet.create({
     paddingHorizontal: SPACING[6],
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     rowGap: SPACING[4],
-  },
-  catGridItem: {
-    width: '30%', // 3 colunas (era 48% / 2 colunas)
-    alignItems: 'center',
   },
   catGridSlot: { width: '30%' },
   catGridPress: { width: '100%', alignItems: 'center' },
@@ -904,7 +956,6 @@ const s = StyleSheet.create({
   catGridBox: {
     position: 'relative',
     width: '100%',
-    aspectRatio: 1.5, // era 2.3 (2 colunas) — mais quadrado pra caber 3 por linha
     borderRadius: RADIUS.xl,
     backgroundColor: COLORS.backgroundElevated,
     alignItems: 'center',
@@ -920,6 +971,7 @@ const s = StyleSheet.create({
     position: 'absolute',
     top: -5,
     right: -3,
+    maxWidth: '100%',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: RADIUS.full,
@@ -932,15 +984,12 @@ const s = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.3,
   },
-  catGridIcon: {
-    width: '62%',
-    height: '62%',
-  },
   catGridLabel: {
     color: COLORS.text,
     fontWeight: '700',
     fontSize: TYPOGRAPHY.sizes.sm,
     textAlign: 'center',
+    includeFontPadding: false,
   },
 
   // ── MINI CAROUSEL (Em alta) ───────────────────────────────────────────────

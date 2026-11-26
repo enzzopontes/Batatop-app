@@ -3,6 +3,78 @@ import { useFocusEffect } from 'expo-router';
 import { supabase } from '../supabaseConfig';
 import { normalizeCategorySlug } from '../utils/resolveCategoryIcon';
 
+export const DEFAULT_HOME_GRID_LAYOUT = {
+  mobile_columns: 3,
+  mobile_card_padding: 12,
+  mobile_card_gap: 10,
+  mobile_icon_size: 52,
+  mobile_label_size: 12,
+  desktop_columns: 6,
+  desktop_card_padding: 16,
+  desktop_card_gap: 16,
+  desktop_icon_size: 64,
+  desktop_label_size: 14,
+};
+
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+
+function normalizeHexColor(value, fallback) {
+  if (typeof value !== 'string') return fallback;
+  const trimmed = value.trim();
+  return HEX_COLOR_RE.test(trimmed) ? trimmed : fallback;
+}
+
+function clampInt(value, min, max, fallback) {
+  if (typeof value !== 'number' && (typeof value !== 'string' || value.trim() === '')) {
+    return fallback;
+  }
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(n)));
+}
+
+export function normalizeHomeGridLayout(row) {
+  if (!row || typeof row !== 'object') {
+    return { ...DEFAULT_HOME_GRID_LAYOUT };
+  }
+  return {
+    mobile_columns: clampInt(row.mobile_columns, 2, 4, DEFAULT_HOME_GRID_LAYOUT.mobile_columns),
+    mobile_card_padding: clampInt(row.mobile_card_padding, 4, 20, DEFAULT_HOME_GRID_LAYOUT.mobile_card_padding),
+    mobile_card_gap: clampInt(row.mobile_card_gap, 4, 16, DEFAULT_HOME_GRID_LAYOUT.mobile_card_gap),
+    mobile_icon_size: clampInt(row.mobile_icon_size, 28, 68, DEFAULT_HOME_GRID_LAYOUT.mobile_icon_size),
+    mobile_label_size: clampInt(row.mobile_label_size, 9, 14, DEFAULT_HOME_GRID_LAYOUT.mobile_label_size),
+    desktop_columns: clampInt(row.desktop_columns, 3, 8, DEFAULT_HOME_GRID_LAYOUT.desktop_columns),
+    desktop_card_padding: clampInt(row.desktop_card_padding, 6, 24, DEFAULT_HOME_GRID_LAYOUT.desktop_card_padding),
+    desktop_card_gap: clampInt(row.desktop_card_gap, 6, 24, DEFAULT_HOME_GRID_LAYOUT.desktop_card_gap),
+    desktop_icon_size: clampInt(row.desktop_icon_size, 36, 80, DEFAULT_HOME_GRID_LAYOUT.desktop_icon_size),
+    desktop_label_size: clampInt(row.desktop_label_size, 11, 16, DEFAULT_HOME_GRID_LAYOUT.desktop_label_size),
+  };
+}
+
+export async function fetchHomeGridLayout() {
+  try {
+    const { data, error } = await supabase
+      .from('home_grid_layout')
+      .select(
+        'mobile_columns, mobile_card_padding, mobile_card_gap, mobile_icon_size, mobile_label_size, desktop_columns, desktop_card_padding, desktop_card_gap, desktop_icon_size, desktop_label_size'
+      )
+      .eq('id', 'default')
+      .maybeSingle();
+
+    if (error) {
+      return { layout: null, error };
+    }
+
+    if (!data) {
+      return { layout: { ...DEFAULT_HOME_GRID_LAYOUT }, error: null };
+    }
+
+    return { layout: normalizeHomeGridLayout(data), error: null };
+  } catch (err) {
+    return { layout: null, error: err };
+  }
+}
+
 export const DEFAULT_CATEGORIES = [
   {
     id: 'default-cardapio',
@@ -163,6 +235,8 @@ export const DEFAULT_CATEGORIES = [
 ];
 
 export function mapCategoryRow(row) {
+  const hasBadgeText =
+    typeof row.badge_text === 'string' && row.badge_text.trim().length > 0;
   return {
     id: String(row.id),
     slug: String(row.slug),
@@ -172,9 +246,9 @@ export function mapCategoryRow(row) {
     icon_url: row.icon_url ?? null,
     icon_type: row.icon_type === 'upload' || row.icon_type === 'lucide' ? row.icon_type : 'preset_3d',
     fallback_icon: row.fallback_icon || 'UtensilsCrossed',
-    accent_color: row.accent_color || '#E3A008',
+    accent_color: normalizeHexColor(row.accent_color, '#E3A008'),
     badge_text: row.badge_text ?? null,
-    badge_color: row.badge_color || '#C1440E',
+    badge_color: normalizeHexColor(row.badge_color, hasBadgeText ? '#C1440E' : null),
     custom_href: row.custom_href ?? null,
     is_active: row.is_active !== false,
     show_on_home_bar: row.show_on_home_bar !== false,
@@ -278,64 +352,127 @@ export async function fetchCategoryRuleForProduct(product) {
 
 export function useCategories({ subscribeRealtime = true, refetchOnFocus = true } = {}) {
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
+  const [homeGridLayout, setHomeGridLayout] = useState(DEFAULT_HOME_GRID_LAYOUT);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isFallback, setIsFallback] = useState(true);
   const mountedRef = useRef(true);
+  const hasLoadedDbRef = useRef(false);
+  const hasMountedFocusRef = useRef(false);
+  const realtimeTimerRef = useRef({ categories: null, layout: null });
 
   const loadCategories = useCallback(async ({ silent = false } = {}) => {
     try {
       if (!silent) setLoading(true);
       const res = await fetchActiveCategories();
       if (!mountedRef.current) return;
-      setCategories(res.categories);
-      setIsFallback(res.isFallback);
-      setError(res.error ? res.error.message || 'Erro ao carregar categorias' : null);
+      if (res.error) {
+        if (!hasLoadedDbRef.current) {
+          setCategories(res.categories);
+          setIsFallback(res.isFallback);
+        }
+        setError(res.error.message || 'Erro ao carregar categorias');
+      } else {
+        hasLoadedDbRef.current = !res.isFallback;
+        setCategories(res.categories);
+        setIsFallback(res.isFallback);
+        setError(null);
+      }
     } catch (err) {
       if (!mountedRef.current) return;
       setError(err?.message || 'Sem conexão ao carregar categorias');
-      setIsFallback(true);
+      if (!hasLoadedDbRef.current) {
+        setIsFallback(true);
+      }
     } finally {
       if (mountedRef.current) setLoading(false);
+    }
+  }, []);
+
+  const loadHomeGridLayout = useCallback(async () => {
+    try {
+      const res = await fetchHomeGridLayout();
+      if (!mountedRef.current) return;
+      if (!res.error && res.layout) {
+        setHomeGridLayout(res.layout);
+      }
+    } catch {
+      // Keep current layout on transient error
     }
   }, []);
 
   useEffect(() => {
     mountedRef.current = true;
     loadCategories();
+    loadHomeGridLayout();
     return () => {
       mountedRef.current = false;
     };
-  }, [loadCategories]);
+  }, [loadCategories, loadHomeGridLayout]);
 
   // Refetch silently whenever the screen regains focus
   useFocusEffect(
     useCallback(() => {
+      if (!hasMountedFocusRef.current) {
+        hasMountedFocusRef.current = true;
+        return;
+      }
       if (refetchOnFocus) {
         loadCategories({ silent: true });
+        loadHomeGridLayout();
       }
-    }, [refetchOnFocus, loadCategories])
+    }, [refetchOnFocus, loadCategories, loadHomeGridLayout])
   );
 
   // Supabase Realtime subscription for instant updates from Admin
   useEffect(() => {
     if (!subscribeRealtime) return;
+    const scheduleCategoriesReload = () => {
+      if (realtimeTimerRef.current.categories) {
+        clearTimeout(realtimeTimerRef.current.categories);
+      }
+      realtimeTimerRef.current.categories = setTimeout(() => {
+        realtimeTimerRef.current.categories = null;
+        loadCategories({ silent: true });
+      }, 200);
+    };
+    const scheduleLayoutReload = () => {
+      if (realtimeTimerRef.current.layout) {
+        clearTimeout(realtimeTimerRef.current.layout);
+      }
+      realtimeTimerRef.current.layout = setTimeout(() => {
+        realtimeTimerRef.current.layout = null;
+        loadHomeGridLayout();
+      }, 200);
+    };
+
     const channelName = `categories_realtime_${Math.random().toString(36).slice(2, 9)}`;
     const channel = supabase
       .channel(channelName)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'categories' },
-        () => {
-          loadCategories({ silent: true });
-        }
+        scheduleCategoriesReload
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'home_grid_layout' },
+        scheduleLayoutReload
       )
       .subscribe();
 
     return () => {
+      if (realtimeTimerRef.current.categories) {
+        clearTimeout(realtimeTimerRef.current.categories);
+        realtimeTimerRef.current.categories = null;
+      }
+      if (realtimeTimerRef.current.layout) {
+        clearTimeout(realtimeTimerRef.current.layout);
+        realtimeTimerRef.current.layout = null;
+      }
       supabase.removeChannel(channel);
     };
-  }, [subscribeRealtime, loadCategories]);
+  }, [subscribeRealtime, loadCategories, loadHomeGridLayout]);
 
   const productCategories = useMemo(
     () =>
@@ -392,11 +529,18 @@ export function useCategories({ subscribeRealtime = true, refetchOnFocus = true 
     [categories]
   );
 
-  const refresh = useCallback(() => loadCategories({ silent: false }), [loadCategories]);
-  const silentRefresh = useCallback(() => loadCategories({ silent: true }), [loadCategories]);
+  const refresh = useCallback(
+    () => Promise.all([loadCategories({ silent: false }), loadHomeGridLayout()]),
+    [loadCategories, loadHomeGridLayout]
+  );
+  const silentRefresh = useCallback(
+    () => Promise.all([loadCategories({ silent: true }), loadHomeGridLayout()]),
+    [loadCategories, loadHomeGridLayout]
+  );
 
   return {
     categories,
+    homeGridLayout,
     productCategories,
     loading,
     error,
