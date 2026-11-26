@@ -10,6 +10,24 @@ const LOCAL_3D_ICONS = {
   '/assets/icones3d/iconetodos.png': require('../assets/icones3d/iconetodos.png'),
 };
 
+const LOCAL_3D_BY_SLUG = {
+  cardapio: LOCAL_3D_ICONS['/assets/icones3d/icone cardapio.png'],
+  batata: LOCAL_3D_ICONS['/assets/icones3d/icone batata.png'],
+  macarrao: LOCAL_3D_ICONS['/assets/icones3d/icone macarrao.png'],
+  bebida: LOCAL_3D_ICONS['/assets/icones3d/icone bebidas geladas.png'],
+  cupom: LOCAL_3D_ICONS['/assets/icones3d/icone cupom.png'],
+  cupons: LOCAL_3D_ICONS['/assets/icones3d/icone cupom.png'],
+  todos: LOCAL_3D_ICONS['/assets/icones3d/iconetodos.png'],
+  todas: LOCAL_3D_ICONS['/assets/icones3d/iconetodos.png'],
+};
+
+const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
+
+export function resolveLocalPreset3DIcon(slug) {
+  const norm = normalizeCategorySlug(slug);
+  return hasOwn(LOCAL_3D_BY_SLUG, norm) ? LOCAL_3D_BY_SLUG[norm] : null;
+}
+
 // Map Lucide fallback icon names (saved by web Admin) to MaterialCommunityIcons names
 const LUCIDE_TO_MCI = {
   UtensilsCrossed: 'silverware-fork-knife',
@@ -40,7 +58,7 @@ export function mapFallbackIconToMci(fallbackIcon) {
   if (!fallbackIcon || typeof fallbackIcon !== 'string') {
     return 'silverware-fork-knife';
   }
-  return LUCIDE_TO_MCI[fallbackIcon] || 'silverware-fork-knife';
+  return hasOwn(LUCIDE_TO_MCI, fallbackIcon) ? LUCIDE_TO_MCI[fallbackIcon] : 'silverware-fork-knife';
 }
 
 function safeDecodeURIComponent(value) {
@@ -52,7 +70,7 @@ function safeDecodeURIComponent(value) {
 }
 
 const CONTROL_CHARS_RE = /[\u0000-\u001f\u007f]/;
-const DANGEROUS_SCHEME_RE = /^(?:javascript|data|vbscript|file|http):/i;
+const SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
 const SAFE_STORAGE_SEGMENT_RE = /^[a-zA-Z0-9._\-\s()]+$/;
 
 export function isSafeIconUrl(raw) {
@@ -61,8 +79,9 @@ export function isSafeIconUrl(raw) {
   const trimmed = raw.trim();
   if (!trimmed) return false;
   if (trimmed.includes('\\')) return false;
+  if (trimmed.includes('..')) return false;
   if (trimmed.startsWith('//')) return false;
-  if (DANGEROUS_SCHEME_RE.test(trimmed)) return false;
+  if (SCHEME_RE.test(trimmed) && !/^https:\/\//i.test(trimmed)) return false;
   return true;
 }
 
@@ -76,25 +95,27 @@ export function isSafeIconUrl(raw) {
 export function resolveCategoryIconSource(category) {
   if (!category || category.icon_type === 'lucide') return null;
 
-  if (!isSafeIconUrl(category.icon_url)) return null;
+  if (!isSafeIconUrl(category.icon_url)) return resolveLocalPreset3DIcon(category.slug);
   const trimmed = category.icon_url.trim();
 
-  if (LOCAL_3D_ICONS[trimmed]) {
+  if (hasOwn(LOCAL_3D_ICONS, trimmed)) {
     return LOCAL_3D_ICONS[trimmed];
   }
 
   const decoded = safeDecodeURIComponent(trimmed);
-  if (LOCAL_3D_ICONS[decoded]) {
+  if (hasOwn(LOCAL_3D_ICONS, decoded)) {
     return LOCAL_3D_ICONS[decoded];
   }
 
   if (/^https:\/\//i.test(trimmed)) {
     try {
       const url = new URL(trimmed);
-      if (url.protocol !== 'https:') return null;
+      if (url.protocol !== 'https:' || url.username || url.password) {
+        return resolveLocalPreset3DIcon(category.slug);
+      }
       return { uri: url.toString() };
     } catch {
-      return null;
+      return resolveLocalPreset3DIcon(category.slug);
     }
   }
 
@@ -111,7 +132,7 @@ export function resolveCategoryIconSource(category) {
         encodedParts.push('');
         continue;
       }
-      if (!seg) return null;
+      if (!seg) return resolveLocalPreset3DIcon(category.slug);
       const dec = safeDecodeURIComponent(seg);
       const dec2 = safeDecodeURIComponent(dec);
       if (
@@ -126,7 +147,7 @@ export function resolveCategoryIconSource(category) {
         dec2.includes('/') ||
         dec2.includes('\\')
       ) {
-        return null;
+        return resolveLocalPreset3DIcon(category.slug);
       }
       encodedParts.push(encodeURIComponent(dec));
     }
@@ -136,7 +157,7 @@ export function resolveCategoryIconSource(category) {
   const segments = trimmed.replace(/^\/+/, '').split('/');
   const encodedStorageSegments = [];
   for (const seg of segments) {
-    if (!seg) return null;
+    if (!seg) return resolveLocalPreset3DIcon(category.slug);
     const dec = safeDecodeURIComponent(seg);
     const dec2 = safeDecodeURIComponent(dec);
     if (
@@ -151,12 +172,12 @@ export function resolveCategoryIconSource(category) {
       dec2.includes('..') ||
       !SAFE_STORAGE_SEGMENT_RE.test(dec)
     ) {
-      return null;
+      return resolveLocalPreset3DIcon(category.slug);
     }
     encodedStorageSegments.push(encodeURIComponent(dec));
   }
   if (encodedStorageSegments.length === 0) {
-    return null;
+    return resolveLocalPreset3DIcon(category.slug);
   }
 
   return { uri: `${SUPABASE_URL}/storage/v1/object/public/category-icons/${encodedStorageSegments.join('/')}` };

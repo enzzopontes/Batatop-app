@@ -5,7 +5,6 @@ import {
   StyleSheet,
   Pressable,
   TextInput,
-  Image,
   ScrollView,
   Animated,
   RefreshControl,
@@ -35,9 +34,6 @@ const PROD_IMG_FALLBACKS = {
   bebidas: LOCAL_GENERIC_FALLBACK,
   macarrao: LOCAL_GENERIC_FALLBACK,
 };
-
-// Ícone 3D da aba "Todas"
-const ICONE_TODAS = require('../assets/icones3d/iconetodos.png');
 
 // Nome do restaurante — troque aqui se precisar
 const NOME_RESTAURANTE = 'Batata Top - Delivery';
@@ -197,6 +193,7 @@ export default function Cardapio() {
     refetch,
   } = useProductRanking();
   const {
+    categories,
     loading: loadingCategories,
     error: categoriesError,
     isFallback: categoriesFallback,
@@ -221,10 +218,19 @@ export default function Cardapio() {
     [getMenuCategories, produtos]
   );
 
-  const tabs = useMemo(
-    () => [{ slug: 'todos', name: 'Todas', isAll: true }, ...menuCategories],
-    [menuCategories]
-  );
+  const tabs = useMemo(() => {
+    const todosCategory = categories.find(
+      (c) => normalizeCategorySlug(c.slug) === 'todos'
+    );
+    const allTab = {
+      ...todosCategory,
+      slug: 'todos',
+      name: 'Todas',
+      isAll: true,
+      fallback_icon: todosCategory?.fallback_icon || 'LayoutGrid',
+    };
+    return [allTab, ...menuCategories];
+  }, [categories, menuCategories]);
 
   // separa por categoria, mantendo a ordem do ranking (mais pedido primeiro)
   const secoesComProdutos = useMemo(
@@ -409,21 +415,21 @@ export default function Cardapio() {
             const ativo = tab.slug === tabAtiva && !buscando;
             return (
               <Pressable
-                key={tab.slug}
+                key={tab.id || tab.slug}
                 style={s.tabItem}
                 onPress={() => irParaSecao(tab.slug)}
               >
                 <View style={s.tabLabelRow}>
                   {tab.isAll ? (
                     <>
-                      <Image source={ICONE_TODAS} style={s.tabIconTodas} resizeMode="contain" />
+                      <CategoryIcon category={tab} size={22} />
                       <Text style={[s.tabTxt, ativo ? s.tabTxtAtivo : s.tabTxtInativo]} numberOfLines={1}>
                         {tab.name}
                       </Text>
                     </>
                   ) : (
                     <>
-                      <CategoryIcon category={tab} size={18} />
+                      <CategoryIcon category={tab} size={20} />
                       <Text style={[s.tabTxt, ativo ? s.tabTxtAtivo : s.tabTxtInativo]} numberOfLines={1}>
                         {tab.name}
                       </Text>
@@ -544,14 +550,14 @@ export default function Cardapio() {
           ) : (
             secoesComProdutos.map((secao) => (
               <View
-                key={secao.slug}
+                key={secao.id || secao.slug}
                 style={s.section}
                 onLayout={(e) => handleSectionLayout(secao.slug, e.nativeEvent.layout.y)}
               >
                 <ScrollReveal scope={reveal} revealKey={`cardapio_header_${secao.slug}`} style={s.cardapioHeaderWrap}>
                   <View style={s.cardapioHeaderRow}>
                     <View style={s.cardapioHeaderLeft}>
-                      <CategoryIcon category={secao} size={24} />
+                      <CategoryIcon category={secao} size={26} />
                       <Text style={s.cardapioTitle} numberOfLines={1}>{secao.name}</Text>
                       {Boolean(secao.badge_text) && (
                         <View
@@ -698,10 +704,6 @@ const s = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     height: 34,
-  },
-  tabIconTodas: {
-    width: 22,
-    height: 22,
   },
   tabTxt: {
     fontSize: TYPOGRAPHY.sizes.sm,

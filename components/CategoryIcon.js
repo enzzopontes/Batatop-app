@@ -3,7 +3,11 @@ import { View, StyleSheet } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, RADIUS } from '../constants/theme';
-import { resolveCategoryIconSource, mapFallbackIconToMci } from '../utils/resolveCategoryIcon';
+import {
+  resolveCategoryIconSource,
+  resolveLocalPreset3DIcon,
+  mapFallbackIconToMci,
+} from '../utils/resolveCategoryIcon';
 
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 
@@ -14,24 +18,34 @@ export default function CategoryIcon({
   style,
   fallbackContainerStyle,
 }) {
-  const [failed, setFailed] = useState(false);
+  const [stage, setStage] = useState(0);
 
   useEffect(() => {
-    setFailed(false);
-  }, [category?.icon_url, category?.icon_type]);
+    setStage(0);
+  }, [category?.icon_url, category?.icon_type, category?.slug]);
 
   const source = resolveCategoryIconSource(category);
-  const showImage = Boolean(source) && !failed;
+  const slugFallback =
+    category?.icon_type !== 'lucide' ? resolveLocalPreset3DIcon(category?.slug) : null;
+  const hasDistinctSlugFallback = Boolean(slugFallback && slugFallback !== source);
+  const activeSource =
+    stage === 0 ? source : stage === 1 && hasDistinctSlugFallback ? slugFallback : null;
 
-  if (showImage) {
+  if (activeSource) {
     return (
       <ExpoImage
-        source={source}
+        source={activeSource}
         style={[size != null ? { width: size, height: size } : null, style]}
         contentFit="contain"
         cachePolicy="memory-disk"
         transition={150}
-        onError={() => setFailed(true)}
+        onError={() => {
+          if (stage === 0 && hasDistinctSlugFallback) {
+            setStage(1);
+          } else {
+            setStage(2);
+          }
+        }}
       />
     );
   }
