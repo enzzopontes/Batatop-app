@@ -25,8 +25,7 @@ export const useProductRanking = () => {
       // 1. Busca produtos, ranking via RPC (degradável) e configuração de promoções em paralelo
       const [productsResult, salesResult, promoCfg] = await Promise.all([
         supabase.from('products').select('*'),
-        supabase
-          .rpc('get_product_ranking', { p_limit: 50 })
+        Promise.resolve(supabase.rpc('get_product_ranking', { p_limit: 50 }))
           .catch((rpcErr) => ({ data: null, error: rpcErr })),
         fetchActivePromoConfig(),
       ]);
