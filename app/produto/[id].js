@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
 import { Ionicons } from '@expo/vector-icons';
@@ -104,6 +104,11 @@ export default function ProdutoDetail() {
   const [produto, setProduto] = useState(null);
   const [categoryRule, setCategoryRule] = useState(null);
   const [adicionais, setAdicionais] = useState([]);
+  const [adicionaisLoading, setAdicionaisLoading] = useState(false);
+  const [adicionaisError, setAdicionaisError] = useState(false);
+  const adicionaisReqIdRef = useRef(0);
+  const userModifiedAdicionaisRef = useRef(false);
+  const parsedInitialAdicionaisRef = useRef([]);
   const [bebidas, setBebidas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [useFallback, setUseFallback] = useState(false);
@@ -135,7 +140,17 @@ export default function ProdutoDetail() {
   }));
 
   useEffect(() => {
+    adicionaisReqIdRef.current += 1;
     setUseFallback(false);
+    setAdicionais([]);
+    setAdicionaisLoading(false);
+    setAdicionaisError(false);
+    setBebidas([]);
+    setBebidasSelecionadas({});
+    userModifiedAdicionaisRef.current = false;
+    if (!initialAdicionais) {
+      setAdicionaisSelecionados({});
+    }
     if (id) {
       fetchProduto();
     }
@@ -151,17 +166,36 @@ export default function ProdutoDetail() {
         const parsed = JSON.parse(initialAdicionais);
         if (Array.isArray(parsed)) {
           const map = {};
+          const byKey = new Map();
           parsed.forEach((a) => {
-            const key = a.id || a.adicional_id;
+            const key = a?.id || a?.adicional_id;
             if (key) {
-              map[key] = (map[key] || 0) + (Number(a.quantity ?? a.quantidade) || 1);
+              const qty = Number(a.quantity ?? a.quantidade) || 1;
+              map[key] = (map[key] || 0) + qty;
+              const existing = byKey.get(key);
+              if (existing) {
+                existing.quantity += qty;
+              } else {
+                byKey.set(key, {
+                  ...a,
+                  id: key,
+                  price: Number(a.price ?? a.preco) || 0,
+                  quantity: qty,
+                });
+              }
             }
           });
+          parsedInitialAdicionaisRef.current = Array.from(byKey.values());
           setAdicionaisSelecionados(map);
+        } else {
+          parsedInitialAdicionaisRef.current = [];
         }
       } catch (e) {
+        parsedInitialAdicionaisRef.current = [];
         console.warn('Erro ao parsear initialAdicionais:', e);
       }
+    } else {
+      parsedInitialAdicionaisRef.current = [];
     }
   }, [initialAdicionais]);
 
@@ -212,6 +246,8 @@ export default function ProdutoDetail() {
         fetchBebidas();
       } else {
         setAdicionais([]);
+        setAdicionaisLoading(false);
+        setAdicionaisError(false);
         setBebidas([]);
       }
     } catch (err) {
@@ -223,26 +259,49 @@ export default function ProdutoDetail() {
   };
 
   const fetchAdicionais = async () => {
+    const reqId = ++adicionaisReqIdRef.current;
+    let timeoutId;
     try {
-      const { data: linked } = await supabase
+      setAdicionaisLoading(true);
+      setAdicionaisError(false);
+      const queryPromise = supabase
         .from('product_adicionais')
         .select('adicional_id, adicionais(*)')
         .eq('product_id', id);
+      const timeoutPromise = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('Timeout ao buscar adicionais')), 8000);
+      });
+      const { data: linked, error } = await Promise.race([queryPromise, timeoutPromise]);
 
-      if (linked && linked.length > 0) {
-        setAdicionais(linked.map((r) => r.adicionais).filter((a) => a && a.available !== false));
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from('adicionais')
-        .select('*')
-        .or('available.eq.true,available.is.null');
-
+      if (reqId !== adicionaisReqIdRef.current) return;
       if (error) throw error;
-      setAdicionais(data || []);
+
+      const byId = new Map();
+      for (const r of linked || []) {
+        const a = Array.isArray(r?.adicionais) ? r.adicionais[0] : r?.adicionais;
+        if (!a || a.available === false) continue;
+        const key = String(a.id);
+        if (!byId.has(key)) {
+          byId.set(key, {
+            ...a,
+            price: Number(a.price) || 0,
+          });
+        }
+      }
+      const normalized = Array.from(byId.values()).sort((a, b) =>
+        String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR')
+      );
+      setAdicionais(normalized);
     } catch (err) {
+      if (reqId !== adicionaisReqIdRef.current) return;
       console.error('Erro ao buscar adicionais:', err);
+      setAdicionaisError(true);
+      setAdicionais([]);
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (reqId === adicionaisReqIdRef.current) {
+        setAdicionaisLoading(false);
+      }
     }
   };
 
@@ -278,6 +337,7 @@ export default function ProdutoDetail() {
   };
 
   const incrementAdicional = (adicionalId) => {
+    userModifiedAdicionaisRef.current = true;
     setAdicionaisSelecionados((prev) => ({
       ...prev,
       [adicionalId]: (prev[adicionalId] || 0) + 1,
@@ -285,6 +345,7 @@ export default function ProdutoDetail() {
   };
 
   const decrementAdicional = (adicionalId) => {
+    userModifiedAdicionaisRef.current = true;
     setAdicionaisSelecionados((prev) => {
       const current = prev[adicionalId] || 0;
       if (current <= 1) {
@@ -316,10 +377,21 @@ export default function ProdutoDetail() {
     });
   };
 
-  const totalAdicionais = adicionais.reduce((acc, item) => {
-    const qty = adicionaisSelecionados[item.id] || 0;
-    return acc + item.price * qty;
-  }, 0);
+  const preserveInitialAdicionais =
+    Boolean(editCartItemId) &&
+    adicionaisError &&
+    !userModifiedAdicionaisRef.current &&
+    parsedInitialAdicionaisRef.current.length > 0;
+
+  const totalAdicionais = preserveInitialAdicionais
+    ? parsedInitialAdicionaisRef.current.reduce(
+        (acc, item) => acc + (Number(item.price) || 0) * (Number(item.quantity) || 1),
+        0
+      )
+    : adicionais.reduce((acc, item) => {
+        const qty = adicionaisSelecionados[item.id] || 0;
+        return acc + item.price * qty;
+      }, 0);
 
   // Agrupa adicionais por adicional_categoria (ordem = primeira aparição no array)
   const categoriasAdicionais = useMemo(() => {
@@ -409,7 +481,7 @@ export default function ProdutoDetail() {
   const isBebida = catNorm.startsWith('bebida');
   const isMacarrao = catNorm.includes('macarr');
   const allowsAddons = categoryRule ? categoryRule.allows_addons !== false : !isBebida;
-  const allowsNotes = categoryRule ? categoryRule.allows_notes !== false : true;
+  const allowsNotes = categoryRule ? categoryRule.allows_notes !== false : !isBebida;
 
   const calcularPrecoTotal = () => {
     if (!produto) return 0;
@@ -443,12 +515,14 @@ export default function ProdutoDetail() {
 
     // Agrega adicionais com quantidade > 0 em um objeto por adicional ({ ...a, quantity })
     const adicionaisList = allowsAddons
-      ? adicionais
-          .filter((a) => (adicionaisSelecionados[a.id] || 0) > 0)
-          .map((a) => ({
-            ...a,
-            quantity: adicionaisSelecionados[a.id],
-          }))
+      ? preserveInitialAdicionais
+        ? parsedInitialAdicionaisRef.current
+        : adicionais
+            .filter((a) => (adicionaisSelecionados[a.id] || 0) > 0)
+            .map((a) => ({
+              ...a,
+              quantity: adicionaisSelecionados[a.id],
+            }))
       : [];
 
     const precoTotalItem = produto.preco + (allowsAddons ? totalAdicionais : 0);
@@ -506,7 +580,7 @@ export default function ProdutoDetail() {
   };
 
   const handleAdicionarAoCarrinho = async () => {
-    if (!produto || isAdding) return;
+    if (!produto || isAdding || (editCartItemId && adicionaisLoading)) return;
     setIsAdding(true);
     try {
       if (editCartItemId) {
@@ -731,7 +805,7 @@ export default function ProdutoDetail() {
           )}
 
           {/* Adicionais */}
-          {allowsAddons && (
+          {allowsAddons && (adicionaisLoading || adicionaisError || adicionais.length > 0) && (
             <>
               <View style={s.sectionHeader}>
                 <Text style={s.sectionTitle}>Adicionais</Text>
@@ -740,8 +814,18 @@ export default function ProdutoDetail() {
                 </View>
               </View>
 
-              {adicionais.length === 0 ? (
-                <Text style={s.semAdicionais}>Nenhum adicional disponível</Text>
+              {adicionaisLoading ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+                  <ActivityIndicator size="small" color={COLORS.primary} />
+                  <Text style={[s.semAdicionais, { marginBottom: 0 }]}>Carregando adicionais...</Text>
+                </View>
+              ) : adicionaisError ? (
+                <View style={{ marginBottom: 16 }}>
+                  <Text style={[s.semAdicionais, { marginBottom: 0 }]}>Não foi possível carregar os adicionais.</Text>
+                  <TouchableOpacity onPress={fetchAdicionais} disabled={adicionaisLoading} activeOpacity={0.7}>
+                    <Text style={{ color: COLORS.primary, fontWeight: '700', marginTop: 6 }}>Tentar novamente</Text>
+                  </TouchableOpacity>
+                </View>
               ) : (
                 categoriasAdicionais.map(({ categoria, itens }) => (
                   <View key={categoria} style={s.categoriaGroup}>
@@ -862,6 +946,7 @@ export default function ProdutoDetail() {
                 placeholder="Ex: sem cebola, maionese à parte..."
                 placeholderTextColor={COLORS.textMuted}
                 multiline
+                maxLength={300}
                 value={observacoes}
                 onChangeText={setObservacoes}
               />
@@ -891,11 +976,17 @@ export default function ProdutoDetail() {
         </View>
 
         <PrimaryButton
-          title={editCartItemId ? 'Salvar alterações' : 'Adicionar'}
+          title={
+            Boolean(editCartItemId) && adicionaisLoading
+              ? 'Carregando...'
+              : editCartItemId
+                ? 'Salvar alterações'
+                : 'Adicionar'
+          }
           rightText={formatPreco(calcularPrecoTotal())}
           leftIcon={<Ionicons name="cart-outline" size={22} color={COLORS.white} />}
           loading={isAdding}
-          disabled={isAdding}
+          disabled={isAdding || (Boolean(editCartItemId) && adicionaisLoading)}
           onPress={handleAdicionarAoCarrinho}
           spaceBetween
           style={s.primaryBtnCustom}
