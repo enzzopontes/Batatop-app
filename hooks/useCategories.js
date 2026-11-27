@@ -3,6 +3,10 @@ import { useFocusEffect } from 'expo-router';
 import { supabase } from '../supabaseConfig';
 import { normalizeCategorySlug } from '../utils/resolveCategoryIcon';
 
+export const CATEGORY_ICON_SCALE_MIN = 60;
+export const CATEGORY_ICON_SCALE_MAX = 150;
+export const CATEGORY_ICON_SCALE_DEFAULT = 100;
+
 export const DEFAULT_HOME_GRID_LAYOUT = {
   app_columns: 3,
   app_card_padding: 12,
@@ -27,6 +31,15 @@ function clampInt(value, min, max, fallback) {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, Math.round(n)));
+}
+
+export function normalizeCategoryIconScale(value) {
+  return clampInt(
+    value,
+    CATEGORY_ICON_SCALE_MIN,
+    CATEGORY_ICON_SCALE_MAX,
+    CATEGORY_ICON_SCALE_DEFAULT
+  );
 }
 
 export function normalizeHomeGridLayout(row) {
@@ -76,6 +89,7 @@ export const DEFAULT_CATEGORIES = [
     kind: 'home_shortcut',
     icon_url: '/assets/icones3d/icone cardapio.png',
     icon_type: 'preset_3d',
+    icon_scale: 100,
     fallback_icon: 'BookOpen',
     accent_color: '#E3A008',
     badge_text: null,
@@ -103,6 +117,7 @@ export const DEFAULT_CATEGORIES = [
     kind: 'product_category',
     icon_url: '/assets/icones3d/icone batata.png',
     icon_type: 'preset_3d',
+    icon_scale: 100,
     fallback_icon: 'Flame',
     accent_color: '#E3A008',
     badge_text: null,
@@ -130,6 +145,7 @@ export const DEFAULT_CATEGORIES = [
     kind: 'product_category',
     icon_url: '/assets/icones3d/icone macarrao.png',
     icon_type: 'preset_3d',
+    icon_scale: 100,
     fallback_icon: 'Utensils',
     accent_color: '#C1440E',
     badge_text: null,
@@ -157,6 +173,7 @@ export const DEFAULT_CATEGORIES = [
     kind: 'product_category',
     icon_url: '/assets/icones3d/icone bebidas geladas.png',
     icon_type: 'preset_3d',
+    icon_scale: 100,
     fallback_icon: 'CupSoda',
     accent_color: '#0284C7',
     badge_text: null,
@@ -184,6 +201,7 @@ export const DEFAULT_CATEGORIES = [
     kind: 'home_shortcut',
     icon_url: '/assets/icones3d/icone cupom.png',
     icon_type: 'preset_3d',
+    icon_scale: 100,
     fallback_icon: 'Ticket',
     accent_color: '#C1440E',
     badge_text: null,
@@ -211,6 +229,7 @@ export const DEFAULT_CATEGORIES = [
     kind: 'home_shortcut',
     icon_url: '/assets/icones3d/iconetodos.png',
     icon_type: 'preset_3d',
+    icon_scale: 100,
     fallback_icon: 'LayoutGrid',
     accent_color: '#E3A008',
     badge_text: null,
@@ -245,6 +264,7 @@ export function mapCategoryRow(row) {
     kind: row.kind === 'home_shortcut' ? 'home_shortcut' : 'product_category',
     icon_url: row.icon_url ?? null,
     icon_type: row.icon_type === 'upload' || row.icon_type === 'lucide' ? row.icon_type : 'preset_3d',
+    icon_scale: normalizeCategoryIconScale(row?.icon_scale),
     fallback_icon: row.fallback_icon || 'UtensilsCrossed',
     accent_color: normalizeHexColor(row.accent_color, '#E3A008'),
     badge_text: row.badge_text ?? null,

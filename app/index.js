@@ -33,7 +33,6 @@ import {
 import {
   normalizeCategorySlug,
   mapFallbackIconToMci,
-  resolveLocalPreset3DIcon,
 } from '../utils/resolveCategoryIcon';
 import BannerCarousel from '../components/BannerCarousel';
 import { ScrollReveal, useRevealScope } from '../components/ui/ScrollReveal';
@@ -588,7 +587,7 @@ export default function Home() {
                         </Text>
                       </View>
                     ) : null}
-                    <CategoryIcon category={cat} size={gridIconSize} />
+                    <CategoryIcon category={cat} iconScale={cat.icon_scale} size={gridIconSize} />
                     <Text
                       style={[
                         s.catGridLabel,
@@ -720,7 +719,8 @@ export default function Home() {
                 ? 'Massas artesanais com molhos irresistíveis'
                 : cat.description;
             const is3dCategory = slugNorm === 'batata' || slugNorm === 'macarrao';
-            const section3dIcon = is3dCategory ? resolveLocalPreset3DIcon(slugNorm) : null;
+            const has3dSectionIcon =
+              is3dCategory || (cat.icon_type !== 'lucide' && Boolean(cat.icon_url));
             const sectionMciIcon =
               slugNorm === 'batata'
                 ? 'carrot'
@@ -741,12 +741,12 @@ export default function Home() {
                 >
                   <View style={s.cardapioHeaderRow}>
                     <View style={s.cardapioHeaderLeft}>
-                      {section3dIcon ? (
-                        <ExpoImage
-                          source={section3dIcon}
+                      {has3dSectionIcon ? (
+                        <CategoryIcon
+                          category={cat}
+                          iconScale={cat.icon_scale}
+                          size={30}
                           style={s.section3dIcon}
-                          contentFit="contain"
-                          cachePolicy="memory-disk"
                         />
                       ) : (
                         <MaterialCommunityIcons

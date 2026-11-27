@@ -20,7 +20,7 @@ import { useProductRanking } from '../hooks/useProductRanking';
 import { useBuscarProdutos } from '../hooks/useProdutos';
 import { useCategories, matchProductToCategory } from '../hooks/useCategories';
 import CategoryIcon from '../components/CategoryIcon';
-import { normalizeCategorySlug, resolveLocalPreset3DIcon } from '../utils/resolveCategoryIcon';
+import { normalizeCategorySlug } from '../utils/resolveCategoryIcon';
 import { useCart } from '../utils/cartStore';
 import { ScrollReveal, useRevealScope, REVEAL_VIEWABILITY_CONFIG } from '../components/ui/ScrollReveal';
 
@@ -422,14 +422,14 @@ export default function Cardapio() {
                 <View style={s.tabLabelRow}>
                   {tab.isAll ? (
                     <>
-                      <CategoryIcon category={tab} size={22} />
+                      <CategoryIcon category={tab} iconScale={tab.icon_scale} size={22} />
                       <Text style={[s.tabTxt, ativo ? s.tabTxtAtivo : s.tabTxtInativo]} numberOfLines={1}>
                         {tab.name}
                       </Text>
                     </>
                   ) : (
                     <>
-                      <CategoryIcon category={tab} size={20} />
+                      <CategoryIcon category={tab} iconScale={tab.icon_scale} size={20} />
                       <Text style={[s.tabTxt, ativo ? s.tabTxtAtivo : s.tabTxtInativo]} numberOfLines={1}>
                         {tab.name}
                       </Text>
@@ -550,9 +550,7 @@ export default function Cardapio() {
           ) : (
             secoesComProdutos.map((secao) => {
               const slugNorm = normalizeCategorySlug(secao.slug);
-              const section3dIcon = (slugNorm === 'batata' || slugNorm === 'macarrao')
-                ? resolveLocalPreset3DIcon(slugNorm)
-                : null;
+              const is3dSection = slugNorm === 'batata' || slugNorm === 'macarrao';
               return (
                 <View
                   key={secao.id || secao.slug}
@@ -562,16 +560,12 @@ export default function Cardapio() {
                   <ScrollReveal scope={reveal} revealKey={`cardapio_header_${secao.slug}`} style={s.cardapioHeaderWrap}>
                     <View style={s.cardapioHeaderRow}>
                       <View style={s.cardapioHeaderLeft}>
-                        {section3dIcon ? (
-                          <ExpoImage
-                            source={section3dIcon}
-                            style={s.section3dIcon}
-                            contentFit="contain"
-                            cachePolicy="memory-disk"
-                          />
-                        ) : (
-                          <CategoryIcon category={secao} size={26} />
-                        )}
+                        <CategoryIcon
+                          category={secao}
+                          iconScale={secao.icon_scale}
+                          size={is3dSection ? 28 : 26}
+                          style={is3dSection ? s.section3dIcon : undefined}
+                        />
                         <Text style={s.cardapioTitle} numberOfLines={2}>{secao.name}</Text>
                         {Boolean(secao.badge_text) && (
                           <View
