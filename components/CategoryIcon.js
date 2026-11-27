@@ -28,7 +28,7 @@ export default function CategoryIcon({
 
   const safeScale = normalizeCategoryIconScale(iconScale ?? category?.icon_scale);
   const scaleFactor = safeScale / 100;
-  const boxSize = typeof size === 'number' && size > 0 ? size : 44;
+  const boxSize = typeof size === 'number' && Number.isFinite(size) && size > 0 ? size : 44;
 
   const source = resolveCategoryIconSource(category);
   const slugFallback =
@@ -73,6 +73,7 @@ export default function CategoryIcon({
     <View
       style={[
         styles.fallbackBox,
+        style,
         {
           width: boxSize,
           height: boxSize,

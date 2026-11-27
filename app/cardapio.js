@@ -196,7 +196,6 @@ export default function Cardapio() {
     categories,
     loading: loadingCategories,
     error: categoriesError,
-    isFallback: categoriesFallback,
     refresh: refreshCategories,
     getMenuCategories,
   } = useCategories();
@@ -258,7 +257,7 @@ export default function Cardapio() {
   const hasFatalError = Boolean(productsError) && produtos.length === 0 && !loading;
   const showFallbackBanner =
     !hasFatalError &&
-    ((categoriesFallback && Boolean(categoriesError)) ||
+    (Boolean(categoriesError) ||
       (Boolean(productsError) && produtos.length > 0));
 
   const tryAutoScrollToTarget = useCallback(
@@ -309,7 +308,7 @@ export default function Cardapio() {
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await Promise.all([refreshCategories(), refetch()]);
+      await Promise.allSettled([refreshCategories(), refetch()]);
     } finally {
       setRefreshing(false);
     }

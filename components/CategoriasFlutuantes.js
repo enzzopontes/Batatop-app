@@ -155,7 +155,7 @@ export default function CategoriasFlutuantes({
                 disabled={cat.disabled}
                 onPress={() => handleCategoriaPress(router, cat)}
               >
-                <CategoryIcon category={cat} size={circleIconSize} />
+                <CategoryIcon category={cat} iconScale={cat.icon_scale} size={circleIconSize} />
               </Pressable>
             ) : (
               <View key={itemKey} style={styles.pillSlot}>
@@ -178,7 +178,7 @@ export default function CategoriasFlutuantes({
                 </Pressable>
                 {/* ícone "flutuando" por cima da pill — tamanho 100% independente */}
                 <View style={styles.iconBadge} pointerEvents="none">
-                  <CategoryIcon category={cat} size={badgeIconSize} />
+                  <CategoryIcon category={cat} iconScale={cat.icon_scale} size={badgeIconSize} />
                 </View>
               </View>
             );

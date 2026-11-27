@@ -720,7 +720,7 @@ export default function Home() {
                 : cat.description;
             const is3dCategory = slugNorm === 'batata' || slugNorm === 'macarrao';
             const has3dSectionIcon =
-              is3dCategory || (cat.icon_type !== 'lucide' && Boolean(cat.icon_url));
+              cat.icon_type === 'lucide' || is3dCategory || Boolean(cat.icon_url);
             const sectionMciIcon =
               slugNorm === 'batata'
                 ? 'carrot'

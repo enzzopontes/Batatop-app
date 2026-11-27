@@ -70,18 +70,86 @@ function safeDecodeURIComponent(value) {
 }
 
 const CONTROL_CHARS_RE = /[\u0000-\u001f\u007f]/;
+const PERCENT_CONTROL_CHARS_RE = /%(?:0[0-9a-f]|1[0-9a-f]|7f)/i;
 const SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
 const SAFE_STORAGE_SEGMENT_RE = /^[a-zA-Z0-9._\-\s()]+$/;
+
+function isPrivateOrLocalHostname(hostname) {
+  if (!hostname || typeof hostname !== 'string') return true;
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.+$/, '');
+  if (!host) return true;
+  if (host === 'localhost' || host.endsWith('.local') || host.endsWith('.localhost')) {
+    return true;
+  }
+
+  const ipv4Match = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4Match) {
+    const a = Number(ipv4Match[1]);
+    const b = Number(ipv4Match[2]);
+    if (a === 0 || a === 10 || a === 127) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    return false;
+  }
+
+  if (host.includes(':')) {
+    if (host === '::' || host === '::1' || host === '0:0:0:0:0:0:0:1' || host === '0:0:0:0:0:0:0:0') {
+      return true;
+    }
+    if (/^(?:fc|fd)[0-9a-f]{0,2}:/.test(host)) return true;
+    if (/^fe[89ab][0-9a-f]:/.test(host)) return true;
+    if (host.startsWith('::ffff:')) {
+      const mapped = host.slice(7);
+      if (mapped.includes('.')) return isPrivateOrLocalHostname(mapped);
+      const hexParts = mapped.split(':');
+      if (hexParts.length === 2) {
+        const hi = parseInt(hexParts[0], 16);
+        const lo = parseInt(hexParts[1], 16);
+        if (!Number.isNaN(hi) && !Number.isNaN(lo)) {
+          const ipv4 = `${(hi >> 8) & 255}.${hi & 255}.${(lo >> 8) & 255}.${lo & 255}`;
+          return isPrivateOrLocalHostname(ipv4);
+        }
+      }
+    }
+  }
+
+  return false;
+}
 
 export function isSafeIconUrl(raw) {
   if (typeof raw !== 'string') return false;
   if (CONTROL_CHARS_RE.test(raw)) return false;
   const trimmed = raw.trim();
   if (!trimmed) return false;
+  if (PERCENT_CONTROL_CHARS_RE.test(trimmed)) return false;
   if (trimmed.includes('\\')) return false;
   if (trimmed.includes('..')) return false;
-  if (trimmed.startsWith('//')) return false;
-  if (SCHEME_RE.test(trimmed) && !/^https:\/\//i.test(trimmed)) return false;
+  const dec1 = safeDecodeURIComponent(trimmed);
+  if (CONTROL_CHARS_RE.test(dec1) || PERCENT_CONTROL_CHARS_RE.test(dec1) || dec1.includes('\\') || dec1.includes('..')) {
+    return false;
+  }
+  const dec2 = safeDecodeURIComponent(dec1);
+  if (CONTROL_CHARS_RE.test(dec2) || PERCENT_CONTROL_CHARS_RE.test(dec2) || dec2.includes('\\') || dec2.includes('..')) {
+    return false;
+  }
+  if (trimmed.startsWith('//') || dec1.startsWith('//') || dec2.startsWith('//')) return false;
+  if (
+    (SCHEME_RE.test(trimmed) && !/^https:\/\//i.test(trimmed)) ||
+    (SCHEME_RE.test(dec1) && !/^https:\/\//i.test(dec1)) ||
+    (SCHEME_RE.test(dec2) && !/^https:\/\//i.test(dec2))
+  ) {
+    return false;
+  }
+  if (/^https:\/\//i.test(trimmed)) {
+    try {
+      const parsed = new URL(trimmed);
+      if (parsed.protocol !== 'https:' || parsed.username || parsed.password) return false;
+      if (isPrivateOrLocalHostname(parsed.hostname)) return false;
+    } catch {
+      return false;
+    }
+  }
   return true;
 }
 
@@ -110,7 +178,7 @@ export function resolveCategoryIconSource(category) {
   if (/^https:\/\//i.test(trimmed)) {
     try {
       const url = new URL(trimmed);
-      if (url.protocol !== 'https:' || url.username || url.password) {
+      if (url.protocol !== 'https:' || url.username || url.password || isPrivateOrLocalHostname(url.hostname)) {
         return resolveLocalPreset3DIcon(category.slug);
       }
       return { uri: url.toString() };
@@ -136,6 +204,8 @@ export function resolveCategoryIconSource(category) {
       const dec = safeDecodeURIComponent(seg);
       const dec2 = safeDecodeURIComponent(dec);
       if (
+        CONTROL_CHARS_RE.test(dec) ||
+        CONTROL_CHARS_RE.test(dec2) ||
         dec === '.' ||
         dec === '..' ||
         dec.includes('..') ||
