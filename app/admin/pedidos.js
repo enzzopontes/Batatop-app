@@ -16,6 +16,7 @@ import { syncAdminPushRegistration } from '../../utils/pushNotifications';
 import { showThemedAlert, ThemedAlertHost } from '../../components/ThemedAlert';
 import SwipeableBottomSheetModal from '../../components/SwipeableBottomSheetModal';
 import { AdminListSkeleton } from '../../components/Skeleton';
+import { buildWazeNavigationUrl, isPickupDeliveryType, isSafeWazeUrl, parseCoordinate } from '../../utils/waze';
 
 // ─── Design Tokens Batata Top / iFood Gestor ────────────────────────
 const COLORS = {
@@ -65,7 +66,7 @@ const FILTERS = [
 
 // ─── Formatador de Comanda Térmica ─────────────────────────────────
 const generateThermalReceipt = (order) => {
-  const isDelivery = order.deliveryType === 'delivery';
+  const isDelivery = !isPickupDeliveryType(order.deliveryType);
   const divider = '------------------------------------------';
   const doubleDivider = '==========================================';
   const timeStr = order.createdAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -160,6 +161,8 @@ const mapOrderData = (o) => {
     address: o.customer_address,
     neighborhood: o.customer_neighborhood || '',
     complement: o.customer_complement || '',
+    deliveryLat: parseCoordinate(o.delivery_lat ?? o.metadata?.delivery_lat),
+    deliveryLng: parseCoordinate(o.delivery_lng ?? o.metadata?.delivery_lng),
     createdAt: new Date(o.created_at),
     notes: o.notes || '',
     discountAmount: Number(o.discount_amount || 0),
@@ -185,6 +188,57 @@ export default function AdminPedidos() {
   const [trackingState, setTrackingState] = useState({ isRunning: false });
   const [togglingTracking, setTogglingTracking] = useState(false);
   const [hasNotificationPermission, setHasNotificationPermission] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [openingWazeUrl, setOpeningWazeUrl] = useState(null);
+  const isLoadingRef = useRef(false);
+  const pendingReloadRef = useRef(false);
+  const openingWazeRef = useRef(false);
+  const wazeUnlockTimeoutRef = useRef(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (wazeUnlockTimeoutRef.current) {
+        clearTimeout(wazeUnlockTimeoutRef.current);
+        wazeUnlockTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  const handleOpenWaze = useCallback(async (url) => {
+    if (!url || !isSafeWazeUrl(url) || openingWazeRef.current) return;
+    openingWazeRef.current = true;
+    setOpeningWazeUrl(url);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      await Linking.openURL(url);
+    } catch {
+      if (isMountedRef.current) {
+        showThemedAlert(
+          'Não foi possível abrir o Waze',
+          'Verifique se o aplicativo Waze ou um navegador está disponível neste dispositivo.'
+        );
+      }
+    } finally {
+      if (wazeUnlockTimeoutRef.current) {
+        clearTimeout(wazeUnlockTimeoutRef.current);
+        wazeUnlockTimeoutRef.current = null;
+      }
+      if (!isMountedRef.current) {
+        openingWazeRef.current = false;
+        return;
+      }
+      wazeUnlockTimeoutRef.current = setTimeout(() => {
+        openingWazeRef.current = false;
+        if (isMountedRef.current) {
+          setOpeningWazeUrl(null);
+        }
+        wazeUnlockTimeoutRef.current = null;
+      }, 600);
+    }
+  }, []);
 
   const checkNotificationPermission = useCallback(async () => {
     try {
@@ -257,6 +311,11 @@ export default function AdminPedidos() {
 
   // ─── Carregar pedidos ───────────────────────────────────────────
   const loadOrders = useCallback(async () => {
+    if (isLoadingRef.current) {
+      pendingReloadRef.current = true;
+      return;
+    }
+    isLoadingRef.current = true;
     try {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -271,12 +330,25 @@ export default function AdminPedidos() {
       if (error) throw error;
 
       const mapped = (data || []).map(mapOrderData);
-      setOrders(mapped);
+      if (isMountedRef.current) {
+        setOrders(mapped);
+        setLoadError(null);
+      }
     } catch (e) {
       console.error('Erro ao carregar pedidos:', e);
+      if (isMountedRef.current) {
+        setLoadError('Não foi possível carregar os pedidos. Toque para tentar novamente.');
+      }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      isLoadingRef.current = false;
+      if (isMountedRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
+      if (pendingReloadRef.current && isMountedRef.current) {
+        pendingReloadRef.current = false;
+        loadOrders();
+      }
     }
   }, []);
 
@@ -567,14 +639,32 @@ export default function AdminPedidos() {
             />
           }
         >
+          {loadError && (
+            <Pressable
+              style={s.loadErrorBanner}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setRefreshing(true);
+                loadOrders();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Tentar recarregar pedidos"
+            >
+              <Ionicons name="alert-circle-outline" size={18} color="#DC2626" />
+              <Text style={s.loadErrorText}>{loadError}</Text>
+              <Ionicons name="refresh-outline" size={16} color="#991B1B" />
+            </Pressable>
+          )}
           {filtered.length === 0 ? (
-            <View style={s.empty}>
-              <View style={s.emptyIconCircle}>
-                <Ionicons name="receipt-outline" size={44} color="#CBD5E1" />
+            !(loadError && orders.length === 0) && (
+              <View style={s.empty}>
+                <View style={s.emptyIconCircle}>
+                  <Ionicons name="receipt-outline" size={44} color="#CBD5E1" />
+                </View>
+                <Text style={s.emptyTitle}>Nenhum pedido encontrado</Text>
+                <Text style={s.emptySub}>Aguardando novos pedidos entrarem na fila de preparo.</Text>
               </View>
-              <Text style={s.emptyTitle}>Nenhum pedido encontrado</Text>
-              <Text style={s.emptySub}>Aguardando novos pedidos entrarem na fila de preparo.</Text>
-            </View>
+            )
           ) : (
             filtered.map(order => (
               <OrderCard
@@ -593,6 +683,8 @@ export default function AdminPedidos() {
                   setReceiptOrder(order);
                 }}
                 onDelete={() => handleDelete(order)}
+                onOpenWaze={handleOpenWaze}
+                openingWazeUrl={openingWazeUrl}
               />
             ))
           )}
@@ -611,6 +703,8 @@ export default function AdminPedidos() {
           setReceiptOrder(selectedOrder);
         }}
         onDelete={() => selectedOrder && handleDelete(selectedOrder)}
+        onOpenWaze={handleOpenWaze}
+        openingWazeUrl={openingWazeUrl}
       />
 
       {/* Modal de Comanda / Impressão Térmica */}
@@ -625,9 +719,10 @@ export default function AdminPedidos() {
 }
 
 // ─── Card de Pedido iFood Gestor ────────────────────────────────────
-function OrderCard({ order, cfg, updatingId, onStatusChange, onPress, onOpenReceipt, onDelete }) {
+function OrderCard({ order, cfg, updatingId, onStatusChange, onPress, onOpenReceipt, onDelete, onOpenWaze, openingWazeUrl }) {
   const c = cfg(order.status);
-  const isDelivery = order.deliveryType === 'delivery';
+  const isDelivery = !isPickupDeliveryType(order.deliveryType);
+  const wazeUrl = isDelivery ? buildWazeNavigationUrl(order) : null;
   const fullAddress = isDelivery 
     ? `${order.address || ''}${order.neighborhood ? ', ' + order.neighborhood : ''}${order.complement ? ' - ' + order.complement : ''}`
     : 'Retirada no Balcão';
@@ -708,14 +803,32 @@ function OrderCard({ order, cfg, updatingId, onStatusChange, onPress, onOpenRece
 
         {/* Endereço */}
         <View style={s.addressRow}>
-          <Ionicons
-            name={isDelivery ? "location-outline" : "storefront-outline"}
-            size={13}
-            color={COLORS.textSub}
-          />
-          <Text style={s.addressText} numberOfLines={1}>
-            {fullAddress || 'Endereço não informado'}
-          </Text>
+          <View style={s.addressInfo}>
+            <Ionicons
+              name={isDelivery ? "location-outline" : "storefront-outline"}
+              size={13}
+              color={COLORS.textSub}
+            />
+            <Text style={s.addressText} numberOfLines={2}>
+              {fullAddress || 'Endereço não informado'}
+            </Text>
+          </View>
+          {isDelivery && wazeUrl && (
+            <Pressable
+              style={[s.wazeCompactBtn, openingWazeUrl === wazeUrl && s.wazeBtnDisabled]}
+              hitSlop={6}
+              accessibilityRole="link"
+              accessibilityLabel={`Abrir endereço do pedido #${order.orderNumber} no Waze`}
+              accessibilityState={{ disabled: openingWazeUrl === wazeUrl }}
+              onPress={(e) => {
+                e.stopPropagation?.();
+                onOpenWaze(wazeUrl);
+              }}
+            >
+              <Ionicons name="navigate-outline" size={15} color="#FFF" />
+              <Text style={s.wazeCompactBtnText}>Waze</Text>
+            </Pressable>
+          )}
         </View>
 
         {/* Badges Adicionais */}
@@ -821,16 +934,63 @@ function ActionBtn({ label, icon, color, outline, loading, onPress }) {
 }
 
 // ─── Modal de Detalhes do Pedido ────────────────────────────────────
-function OrderModal({ visible, order, cfg, updatingId, onClose, onStatusChange, onOpenReceipt, onDelete }) {
+function OrderModal({ visible, order, cfg, updatingId, onClose, onStatusChange, onOpenReceipt, onDelete, onOpenWaze, openingWazeUrl }) {
+  const openingWhatsAppRef = useRef(false);
+  const whatsappTimerRef = useRef(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (whatsappTimerRef.current) {
+        clearTimeout(whatsappTimerRef.current);
+        whatsappTimerRef.current = null;
+      }
+    };
+  }, []);
+
   if (!order) return null;
   const c = cfg(order.status);
-  const isDelivery = order.deliveryType === 'delivery';
+  const isDelivery = !isPickupDeliveryType(order.deliveryType);
+  const wazeUrl = isDelivery ? buildWazeNavigationUrl(order) : null;
 
-  const handleWhatsApp = () => {
+  const handleWhatsApp = async () => {
+    if (openingWhatsAppRef.current) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const cleanPhone = (order.customerPhone || '').replace(/\D/g, '');
-    const url = `https://wa.me/55${cleanPhone}`;
-    Linking.openURL(url).catch(() => showThemedAlert('Erro', 'Não foi possível abrir o WhatsApp.'));
+    const digits = (order.customerPhone || '').replace(/\D/g, '').replace(/^0+/, '');
+    let normalizedPhone = null;
+    if (digits.length >= 10 && digits.length <= 11) {
+      normalizedPhone = `55${digits}`;
+    } else if (digits.length >= 12 && digits.length <= 13 && digits.startsWith('55')) {
+      normalizedPhone = digits;
+    }
+    if (!normalizedPhone) {
+      showThemedAlert('Telefone inválido', 'O número de telefone do cliente não é válido para abrir no WhatsApp.');
+      return;
+    }
+    openingWhatsAppRef.current = true;
+    try {
+      const url = `https://wa.me/${normalizedPhone}`;
+      await Linking.openURL(url);
+    } catch {
+      if (isMountedRef.current) {
+        showThemedAlert('Erro', 'Não foi possível abrir o WhatsApp.');
+      }
+    } finally {
+      if (whatsappTimerRef.current) {
+        clearTimeout(whatsappTimerRef.current);
+        whatsappTimerRef.current = null;
+      }
+      if (!isMountedRef.current) {
+        openingWhatsAppRef.current = false;
+        return;
+      }
+      whatsappTimerRef.current = setTimeout(() => {
+        openingWhatsAppRef.current = false;
+        whatsappTimerRef.current = null;
+      }, 600);
+    }
   };
 
   return (
@@ -844,7 +1004,7 @@ function OrderModal({ visible, order, cfg, updatingId, onClose, onStatusChange, 
       <View style={s.modalContainer}>
         {/* Header do Modal */}
         <View style={[s.modalHeader, { backgroundColor: c.color }]}>
-            <View>
+            <View style={{ flex: 1, marginRight: 12 }}>
               <Text style={s.modalTitle}>Pedido #{order.orderNumber}</Text>
               <View style={s.modalStatusRow}>
                 <Ionicons name={c.icon} size={13} color="#FFF" />
@@ -906,6 +1066,20 @@ function OrderModal({ visible, order, cfg, updatingId, onClose, onStatusChange, 
                   : 'Retirada presencial no balcão'
               }
             />
+            {isDelivery && wazeUrl && (
+              <View style={s.modalWazeContainer}>
+                <Pressable
+                  style={[s.modalWazeBtn, openingWazeUrl === wazeUrl && s.wazeBtnDisabled]}
+                  onPress={() => onOpenWaze(wazeUrl)}
+                  disabled={openingWazeUrl === wazeUrl}
+                  accessibilityRole="link"
+                  accessibilityLabel={`Abrir endereço do pedido #${order.orderNumber} no Waze`}
+                >
+                  <Ionicons name="navigate-outline" size={18} color="#FFF" />
+                  <Text style={s.modalWazeBtnText}>Abrir no Waze</Text>
+                </Pressable>
+              </View>
+            )}
             <InfoRow icon="card-outline" label="Forma de Pagamento" value={(order.paymentMethod || '').toUpperCase()} />
 
             {/* Preferências */}
@@ -1276,6 +1450,24 @@ const s = StyleSheet.create({
   // Lista
   list: { flex: 1 },
   listContent: { padding: 14, gap: 12, paddingBottom: 40 },
+  loadErrorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    minHeight: 44,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  loadErrorText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#991B1B',
+  },
 
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   loadingText: { color: COLORS.textMuted, fontWeight: '600', fontSize: 13 },
@@ -1314,7 +1506,7 @@ const s = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F0F2F5',
   },
-  cardHeaderLeft: { flex: 1 },
+  cardHeaderLeft: { flex: 1, minWidth: 0, paddingRight: 8 },
   cardHeaderRight: { alignItems: 'flex-end', gap: 6 },
   cardHeaderTools: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   receiptQuickBtn: {
@@ -1324,7 +1516,7 @@ const s = StyleSheet.create({
   },
   deleteBtn: { padding: 6 },
 
-  badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6, flexWrap: 'wrap' },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1371,8 +1563,21 @@ const s = StyleSheet.create({
   itemShortName: { fontSize: 13, fontWeight: '700', color: COLORS.textMain, flex: 1 },
   itemShortPasta: { fontSize: 11, color: COLORS.primaryDark, fontWeight: '600' },
 
-  addressRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  addressRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  addressInfo: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 6 },
   addressText: { fontSize: 12, color: COLORS.textMuted, fontWeight: '600', flex: 1 },
+  wazeCompactBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    minHeight: 40,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: '#0369A1',
+  },
+  wazeCompactBtnText: { color: '#FFF', fontSize: 12, fontWeight: '800' },
+  wazeBtnDisabled: { opacity: 0.6 },
 
   metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   metaPill: {
@@ -1438,12 +1643,14 @@ const s = StyleSheet.create({
   modalBody: { flex: 1 },
   modalQuickActions: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
     paddingHorizontal: 16,
     paddingTop: 16,
   },
   whatsappBtn: {
     flex: 1,
+    minWidth: 160,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1454,6 +1661,7 @@ const s = StyleSheet.create({
   },
   whatsappBtnText: { color: '#FFF', fontSize: 13, fontWeight: '800' },
   receiptBtnLarge: {
+    flexGrow: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1503,6 +1711,23 @@ const s = StyleSheet.create({
   },
   infoLabel: { fontSize: 10, fontWeight: '700', color: COLORS.textSub, textTransform: 'uppercase' },
   infoValue: { fontSize: 14, fontWeight: '700', color: COLORS.textMain, marginTop: 2 },
+  modalWazeContainer: {
+    backgroundColor: '#FFF',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F6F8',
+  },
+  modalWazeBtn: {
+    minHeight: 44,
+    borderRadius: 12,
+    backgroundColor: '#0369A1',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  modalWazeBtnText: { color: '#FFF', fontSize: 14, fontWeight: '800' },
 
   itemsCardContainer: {
     marginHorizontal: 16,
