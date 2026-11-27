@@ -78,6 +78,12 @@ async function sendExpoPush(messages) {
   return { ok: response.ok, result };
 }
 
+const JSON_HEADERS = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' };
+
+function jsonResponse(body, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', {
@@ -120,6 +126,59 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Verificar se chamador é dono ou admin (e-mail do owner só vale se confirmado)
+    const ADMIN_EMAILS = ['enzzobaraldo2008@gmail.com', 'maraysis9010@gmail.com'];
+    const callerEmail = (user.email || '').toLowerCase();
+    let isAdmin = Boolean(user.email_confirmed_at) && ADMIN_EMAILS.includes(callerEmail);
+    if (!isAdmin) {
+      const { data: prof } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+      if (prof?.role === 'admin') {
+        isAdmin = true;
+      }
+    }
+
+    // Reserva atômica no banco: valida dono, status 'pending', limite de taxa e marca
+    // admin_push_sent (UPDATE condicional) ANTES de enviar o push.
+    const { data: claim, error: claimError } = await supabase.rpc('claim_admin_push', {
+      p_order_id: orderId,
+      p_user_id: user.id,
+      p_is_admin: isAdmin,
+    });
+    if (claimError) {
+      console.error('[notify-admin-order] claim_admin_push falhou:', claimError.message);
+      if (claimError.code === '22P02') {
+        return jsonResponse({ success: false, error: 'orderId invalido' }, 400);
+      }
+      return jsonResponse({ success: false, error: 'Erro interno' }, 500);
+    }
+    if (!claim?.claimed) {
+      const reason = claim?.reason;
+      if (reason === 'not_found') {
+        return jsonResponse({ success: false, error: 'Pedido nao encontrado' }, 404);
+      }
+      if (reason === 'forbidden') {
+        return jsonResponse({ success: false, error: 'Acesso negado: você não é dono nem admin deste pedido' }, 403);
+      }
+      if (reason === 'already_sent') {
+        return jsonResponse({ success: true, message: 'Notificação já enviada anteriormente', skipped: true }, 200);
+      }
+      if (reason === 'rate_limited') {
+        return jsonResponse({ success: false, skipped: true, error: 'Muitas notificações em pouco tempo' }, 429);
+      }
+      if (reason === 'invalid_status') {
+        return jsonResponse({ success: false, skipped: true, error: 'Pedido nao elegivel para notificacao' }, 409);
+      }
+      return jsonResponse({ success: false, error: 'Erro interno' }, 500);
+    }
+
+    const releaseClaim = async () => {
+      try {
+        await supabase.rpc('release_admin_push', { p_order_id: orderId });
+      } catch (releaseErr) {
+        console.error('[notify-admin-order] release_admin_push falhou:', releaseErr?.message || releaseErr);
+      }
+    };
+
     const { data: order, error: orderError } = await supabase
       .from('orders')
       .select('*, order_items (*)')
@@ -127,36 +186,8 @@ Deno.serve(async (req) => {
       .single();
 
     if (orderError || !order) {
-      return new Response(JSON.stringify({ success: false, error: 'Pedido nao encontrado' }), {
-        status: 404,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      });
-    }
-
-    // Verificar se chamador é dono ou admin
-    const ADMIN_EMAILS = ['enzzobaraldo2008@gmail.com', 'maraysis9010@gmail.com'];
-    let isAdmin = ADMIN_EMAILS.includes(user.email || '');
-    if (!isAdmin) {
-      const { data: prof } = await supabase.from('profiles').select('role').eq('id', user.id).single();
-      if (prof?.role === 'admin') {
-        isAdmin = true;
-      }
-    }
-    const isOwner = order.user_id === user.id;
-
-    if (!isAdmin && !isOwner) {
-      return new Response(JSON.stringify({ success: false, error: 'Acesso negado: você não é dono nem admin deste pedido' }), {
-        status: 403,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      });
-    }
-
-    // Anti-duplicação: se já foi notificado, ignora
-    if (order.metadata?.admin_push_sent) {
-      return new Response(JSON.stringify({ success: true, message: 'Notificação já enviada anteriormente', skipped: true }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      });
+      await releaseClaim();
+      return jsonResponse({ success: false, error: 'Pedido nao encontrado' }, 404);
     }
 
     const { data: tokens, error: tokenError } = await supabase
@@ -164,10 +195,9 @@ Deno.serve(async (req) => {
       .select('expo_push_token');
 
     if (tokenError) {
-      return new Response(JSON.stringify({ success: false, error: tokenError.message }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      await releaseClaim();
+      console.error('[notify-admin-order] admin_push_tokens falhou:', tokenError.message);
+      return jsonResponse({ success: false, error: 'Erro interno' }, 500);
     }
 
     const uniqueTokens = [...new Set((tokens || []).map((t) => t.expo_push_token).filter(Boolean))];
@@ -194,7 +224,21 @@ Deno.serve(async (req) => {
       },
     }));
 
-    const pushResult = await sendExpoPush(messages);
+    let pushResult;
+    try {
+      pushResult = await sendExpoPush(messages);
+    } catch (pushErr) {
+      await releaseClaim();
+      console.error('[notify-admin-order] envio Expo falhou:', pushErr?.message || pushErr);
+      return jsonResponse({ success: false, error: 'Falha ao enviar notificação' }, 502);
+    }
+
+    if (!pushResult.ok || messages.length === 0) {
+      await releaseClaim();
+    }
+    if (!pushResult.ok) {
+      return jsonResponse({ success: false, error: 'Falha ao enviar notificação' }, 502);
+    }
 
     return new Response(JSON.stringify({
       success: true,
@@ -207,7 +251,8 @@ Deno.serve(async (req) => {
       },
     });
   } catch (e) {
-    return new Response(JSON.stringify({ success: false, error: e?.message || 'Erro interno' }), {
+    console.error('[notify-admin-order] erro interno:', e?.message || e);
+    return new Response(JSON.stringify({ success: false, error: 'Erro interno' }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
     });
