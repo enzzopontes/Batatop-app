@@ -1,0 +1,22 @@
+node_modules/
+.expo/
+dist/
+build/
+android/build/
+android/app/build/
+android/.gradle/
+android/app/.cxx/
+
+# env files (gerenciados via EAS Env)
+.env*
+!.env.example
+*.pem
+
+# Local tooling & IDE
+.agents/
+.idea/
+
+# Firebase admin / service credentials (mantém google-services.json para o build)
+*-firebase-adminsdk-*.json
+device-streaming-*.json
+credentials.json
