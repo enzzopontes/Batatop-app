@@ -111,6 +111,7 @@ export default function ProdutoDetail() {
   const parsedInitialAdicionaisRef = useRef([]);
   const [bebidas, setBebidas] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [useFallback, setUseFallback] = useState(false);
   const [quantidade, setQuantidade] = useState(initialQty ? Math.max(1, Number(initialQty)) : 1);
   // { [adicionalId]: quantidade (0 = não selecionado) }
@@ -142,6 +143,7 @@ export default function ProdutoDetail() {
   useEffect(() => {
     adicionaisReqIdRef.current += 1;
     setUseFallback(false);
+    setLoadError(false);
     setAdicionais([]);
     setAdicionaisLoading(false);
     setAdicionaisError(false);
@@ -202,13 +204,14 @@ export default function ProdutoDetail() {
   const fetchProduto = async () => {
     try {
       setLoading(true);
+      setLoadError(false);
       setCategoryRule(null);
       const [{ data, error }, { data: statusRow }] = await Promise.all([
         supabase
           .from('products')
           .select('*')
           .eq('id', id)
-          .single(),
+          .maybeSingle(),
         supabase
           .from('store_settings')
           .select('setting_value')
@@ -217,6 +220,10 @@ export default function ProdutoDetail() {
       ]);
 
       if (error) throw error;
+      if (!data) {
+        setProduto(null);
+        return;
+      }
 
       const rule = await fetchCategoryRuleForProduct(data);
       setCategoryRule(rule);
@@ -252,6 +259,7 @@ export default function ProdutoDetail() {
       }
     } catch (err) {
       console.error('Erro ao buscar produto:', err);
+      setLoadError(true);
       showErrorAlert('Não foi possível carregar o produto.');
     } finally {
       setLoading(false);
@@ -714,13 +722,23 @@ export default function ProdutoDetail() {
     );
   }
 
-  if (!produto) {
+  if (loadError || !produto) {
     return (
       <View style={s.errorContainer}>
         <Ionicons name="alert-circle-outline" size={48} color={COLORS.textMuted} />
-        <Text style={s.errorText}>Produto não encontrado</Text>
-        <Pressable style={s.btnVoltar} onPress={() => router.back()}>
-          <Text style={s.btnVoltarText}>Voltar</Text>
+        <Text style={s.errorText}>
+          {loadError ? 'Não foi possível carregar o produto' : 'Produto não encontrado'}
+        </Text>
+        {loadError && (
+          <Pressable style={s.btnVoltar} onPress={fetchProduto}>
+            <Text style={s.btnVoltarText}>Tentar novamente</Text>
+          </Pressable>
+        )}
+        <Pressable
+          style={[s.btnVoltar, loadError && s.btnVoltarSecondary]}
+          onPress={() => router.back()}
+        >
+          <Text style={[s.btnVoltarText, loadError && s.btnVoltarSecondaryText]}>Voltar</Text>
         </Pressable>
       </View>
     );
@@ -1017,6 +1035,8 @@ const s = StyleSheet.create({
   errorText: { fontSize: 16, color: COLORS.textSecondary },
   btnVoltar: { backgroundColor: '#FFB800', paddingHorizontal: 30, paddingVertical: 12, borderRadius: RADIUS.lg, marginTop: 8 },
   btnVoltarText: { color: '#333', fontWeight: 'bold', fontSize: 15 },
+  btnVoltarSecondary: { backgroundColor: COLORS.background, borderWidth: 1, borderColor: COLORS.border, marginTop: 0 },
+  btnVoltarSecondaryText: { color: COLORS.textSecondary },
 
   // Imagem
   // Container com altura fixa e overflow escondido; a imagem é renderizada

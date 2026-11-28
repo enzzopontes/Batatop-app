@@ -47,6 +47,7 @@ export default function AdminAdministradores() {
   const [currentEmail, setCurrentEmail] = useState('');
   const [admins, setAdmins] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -95,11 +96,13 @@ export default function AdminAdministradores() {
   const loadAdmins = useCallback(async () => {
     try {
       setLoading(true);
+      setLoadError(false);
       const { data, error } = await supabase.rpc('admin_list_admins');
 
       if (error) {
         console.error('Erro ao listar administradores:', error);
         setAdmins([]);
+        setLoadError(true);
       } else if (Array.isArray(data)) {
         setAdmins(data);
       } else {
@@ -107,6 +110,7 @@ export default function AdminAdministradores() {
       }
     } catch (err) {
       console.error('Erro ao buscar administradores:', err);
+      setLoadError(true);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -133,7 +137,8 @@ export default function AdminAdministradores() {
       });
 
       if (error) {
-        const msg = ERROR_MESSAGES_ADD[error.message] || error.message || 'Erro ao adicionar administrador.';
+        console.error('Erro ao adicionar administrador:', error);
+        const msg = ERROR_MESSAGES_ADD[error.message] || 'Erro ao adicionar administrador.';
         showThemedAlert('Erro', msg);
       } else if (data && !data.ok) {
         const code = data.error || 'unknown';
@@ -176,7 +181,8 @@ export default function AdminAdministradores() {
       });
 
       if (error) {
-        const msg = ERROR_MESSAGES_REMOVE[error.message] || error.message || 'Erro ao remover administrador.';
+        console.error('Erro ao remover administrador:', error);
+        const msg = ERROR_MESSAGES_REMOVE[error.message] || 'Erro ao remover administrador.';
         showThemedAlert('Erro', msg);
       } else if (data && !data.ok) {
         const code = data.error || 'unknown';
@@ -349,6 +355,18 @@ export default function AdminAdministradores() {
           <View style={s.emptyContainer}>
             <ThreeDotsLoader color="#C1440E" dotSize={6} />
             <Text style={s.emptySub}>Sincronizando administradores...</Text>
+          </View>
+        ) : loadError ? (
+          <View style={s.emptyContainer}>
+            <Ionicons name="alert-circle-outline" size={38} color="#DC2626" />
+            <Text style={s.emptyTitle}>Erro ao carregar administradores</Text>
+            <Text style={s.emptySub}>
+              Não foi possível carregar a lista. Verifique sua conexão e tente novamente.
+            </Text>
+            <Pressable style={[s.refreshBtn, { marginTop: 12 }]} onPress={loadAdmins}>
+              <Ionicons name="refresh" size={14} color="#C1440E" />
+              <Text style={s.refreshBtnText}>Tentar novamente</Text>
+            </Pressable>
           </View>
         ) : filteredAdmins.length === 0 ? (
           <View style={s.emptyContainer}>

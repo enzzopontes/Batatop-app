@@ -35,14 +35,25 @@ export default function PaymentsScreen() {
   const [sheetVisible, setSheetVisible] = useState(false);
   const [wizardVisible, setWizardVisible] = useState(false);
   const [wizardCardType, setWizardCardType] = useState('cartão de crédito');
+  const [loadError, setLoadError] = useState(null);
+
+  const handleLoadCards = useCallback(async () => {
+    setLoadError(null);
+    try {
+      await loadCards({ strict: true });
+    } catch (err) {
+      console.error('[Payments] Erro ao carregar cartões:', err);
+      setLoadError('Não foi possível carregar seus cartões. Verifique sua conexão e tente novamente.');
+    }
+  }, [loadCards]);
 
   useFocusEffect(
     useCallback(() => {
-      loadCards();
+      handleLoadCards();
       StatusBar.setBarStyle('dark-content', true);
       StatusBar.setTranslucent(true);
       StatusBar.setBackgroundColor('transparent', true);
-    }, [loadCards])
+    }, [handleLoadCards])
   );
 
   function handleOpenAddSheet() {
@@ -65,7 +76,13 @@ export default function PaymentsScreen() {
           const result = await removeCard(card);
           if (!result?.success) {
             showThemedAlert('Erro', result?.error || 'Não foi possível remover o cartão.');
+            return;
           }
+          showThemedAlert.success(
+            card.last_four
+              ? `Cartão final ${card.last_four} removido com sucesso.`
+              : 'Cartão removido com sucesso.'
+          );
         },
       },
     ]);
@@ -82,7 +99,10 @@ export default function PaymentsScreen() {
           addCard={addCard}
           savingCard={savingCard}
           onClose={() => setWizardVisible(false)}
-          onSaved={() => setWizardVisible(false)}
+          onSaved={() => {
+            setWizardVisible(false);
+            setLoadError(null);
+          }}
         />
       ) : (
         <View style={s.container}>
@@ -151,6 +171,18 @@ export default function PaymentsScreen() {
 
             {loadingCards ? (
               <PaymentCardsSkeleton />
+            ) : loadError ? (
+              <View style={s.errorState}>
+                <Ionicons name="alert-circle-outline" size={32} color={COLORS.error} />
+                <Text style={s.emptyTitle}>Erro ao carregar cartões</Text>
+                <Text style={s.emptySubtitle}>{loadError}</Text>
+                <Pressable
+                  style={({ pressed }) => [s.retryButton, pressed && s.sheetOptionPressed]}
+                  onPress={handleLoadCards}
+                >
+                  <Text style={s.retryButtonText}>Tentar novamente</Text>
+                </Pressable>
+              </View>
             ) : cards.length === 0 ? (
               <View style={s.emptyState}>
                 <Image
@@ -350,6 +382,29 @@ const s = StyleSheet.create({
     textAlign: 'center',
     marginTop: SPACING[1],
     paddingHorizontal: SPACING[6],
+  },
+  errorState: {
+    alignItems: 'center',
+    paddingVertical: SPACING[6],
+    paddingHorizontal: SPACING[4],
+    marginTop: SPACING[4],
+    borderRadius: RADIUS.xl,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.backgroundElevated,
+    gap: SPACING[2],
+  },
+  retryButton: {
+    marginTop: SPACING[2],
+    paddingHorizontal: SPACING[5],
+    paddingVertical: SPACING[3],
+    borderRadius: RADIUS.lg,
+    backgroundColor: '#18181B',
+  },
+  retryButtonText: {
+    fontSize: TYPOGRAPHY.sizes.sm,
+    fontWeight: TYPOGRAPHY.weights.semibold,
+    color: '#FFFFFF',
   },
   fixedBottomBar: {
     backgroundColor: '#FFFFFF',

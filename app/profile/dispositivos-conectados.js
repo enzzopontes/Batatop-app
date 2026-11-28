@@ -48,19 +48,40 @@ export default function DispositivosConectados() {
   const [loading, setLoading] = useState(true);
   const [lastSignIn, setLastSignIn] = useState(null);
   const [provider, setProvider] = useState(null);
+  const [loadError, setLoadError] = useState(null);
+  const [unauthenticated, setUnauthenticated] = useState(false);
 
   useEffect(() => {
     loadData();
   }, []);
 
   async function loadData() {
+    setLoading(true);
+    setLoadError(null);
+    setUnauthenticated(false);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const { data, error } = await supabase.auth.getUser();
+      const user = data?.user;
+      if (error) {
+        const isMissingSession =
+          error.name === 'AuthSessionMissingError' ||
+          error.status === 401 ||
+          error.status === 403;
+        if (isMissingSession) {
+          setUnauthenticated(true);
+          return;
+        }
+        throw error;
+      }
+      if (!user) {
+        setUnauthenticated(true);
+        return;
+      }
       setLastSignIn(user.last_sign_in_at || null);
       setProvider(user.app_metadata?.provider || null);
     } catch (e) {
       console.error('Erro ao carregar dispositivo atual:', e);
+      setLoadError('Não foi possível carregar as informações do dispositivo.');
     } finally {
       setLoading(false);
     }
@@ -81,6 +102,26 @@ export default function DispositivosConectados() {
 
       {loading ? (
         <SettingsListSkeleton count={2} />
+      ) : unauthenticated ? (
+        <View style={[s.centerFill, s.stateBox]}>
+          <Ionicons name="lock-closed-outline" size={32} color={COLORS.textMuted} />
+          <Text style={s.stateTitle}>Sessão não encontrada</Text>
+          <Text style={s.stateMessage}>
+            Entre na sua conta para visualizar os dispositivos conectados.
+          </Text>
+          <Pressable style={s.retryBtn} onPress={() => router.back()}>
+            <Text style={s.retryBtnText}>Voltar</Text>
+          </Pressable>
+        </View>
+      ) : loadError ? (
+        <View style={[s.centerFill, s.stateBox]}>
+          <Ionicons name="alert-circle-outline" size={32} color={COLORS.textMuted} />
+          <Text style={s.stateTitle}>Erro ao carregar</Text>
+          <Text style={s.stateMessage}>{loadError}</Text>
+          <Pressable style={s.retryBtn} onPress={loadData}>
+            <Text style={s.retryBtnText}>Tentar novamente</Text>
+          </Pressable>
+        </View>
       ) : (
         <View style={s.content}>
           <Text style={s.title}>Sua conta foi conectada nestes dispositivos</Text>
@@ -92,7 +133,6 @@ export default function DispositivosConectados() {
                 <Text style={s.deviceName}>{deviceName}</Text>
                 <Text style={s.currentTag}>Dispositivo atual</Text>
               </View>
-              <Text style={s.deviceMeta}>Localização desconhecida</Text>
               <Text style={s.deviceMeta}>Login feito por {loginLabel}</Text>
               <Text style={s.deviceMeta}>
                 Última ação na conta há {formatRelativeTime(lastSignIn)}
@@ -185,5 +225,33 @@ const s = StyleSheet.create({
     height: 1,
     backgroundColor: COLORS.border,
     marginTop: SPACING[3],
+  },
+  stateBox: {
+    paddingHorizontal: SPACING[5],
+    gap: SPACING[2],
+  },
+  stateTitle: {
+    fontSize: TYPOGRAPHY.sizes.base,
+    fontWeight: '600',
+    color: COLORS.text,
+    textAlign: 'center',
+    marginTop: SPACING[2],
+  },
+  stateMessage: {
+    fontSize: TYPOGRAPHY.sizes.sm,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+  },
+  retryBtn: {
+    marginTop: SPACING[3],
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: SPACING[5],
+    paddingVertical: SPACING[3],
+    borderRadius: 8,
+  },
+  retryBtnText: {
+    fontSize: TYPOGRAPHY.sizes.sm,
+    fontWeight: '700',
+    color: COLORS.white,
   },
 });

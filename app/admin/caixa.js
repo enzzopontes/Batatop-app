@@ -266,8 +266,14 @@ export default function AdminCaixa() {
       showThemedAlert('Aviso', 'Nenhum dado para exportar.');
       return;
     }
+    const periodLabels = {
+      today: 'Hoje',
+      '7d': 'Últimos 7 dias',
+      '30d': 'Últimos 30 dias',
+      all: 'Todo o período',
+    };
     let text = `*BATATA TOP - FECHAMENTO DE CAIXA*\n`;
-    text += `Período: ${dateFilter.toUpperCase()}\n`;
+    text += `Período: ${periodLabels[dateFilter] || 'Todo o período'}\n`;
     text += `Total Faturado: R$ ${periodMetrics.totalRevenue.toFixed(2).replace('.', ',')}\n`;
     text += `Pedidos Entregues: ${periodMetrics.totalCount}\n`;
     text += `Ticket Médio: R$ ${periodMetrics.avgTicket.toFixed(2).replace('.', ',')}\n\n`;

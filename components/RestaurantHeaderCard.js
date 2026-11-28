@@ -52,6 +52,12 @@ function createInitialLoyaltyState() {
   };
 }
 
+function createUserError(message) {
+  const err = new Error(message);
+  err.isUserFacing = true;
+  return err;
+}
+
 class LoyaltyManager {
   getStorageKey(userId = null) {
     return userId ? `${STORAGE_KEY}_${userId}` : `${STORAGE_KEY}_guest`;
@@ -218,24 +224,25 @@ class LoyaltyManager {
     }
 
     if (!effectiveUserId) {
-      throw new Error('Faça login para resgatar sua batata grátis.');
+      throw createUserError('Faça login para resgatar sua batata grátis.');
     }
 
     const { data, error } = await supabase.rpc('redeem_loyalty_reward');
 
     if (error) {
+      console.error('Erro ao resgatar recompensa de fidelidade:', error);
       const rawMessage = `${error.message || ''} ${error.details || ''}`.toLowerCase();
       if (rawMessage.includes('loyalty_not_enough_orders')) {
-        throw new Error('Você ainda não completou 10 pedidos para resgatar.');
+        throw createUserError('Você ainda não completou 10 pedidos para resgatar.');
       }
       if (rawMessage.includes('unauthorized') || error.code === '42501') {
-        throw new Error('Faça login para resgatar sua batata grátis.');
+        throw createUserError('Faça login para resgatar sua batata grátis.');
       }
       if (rawMessage.includes('profile_not_found')) {
-        throw new Error('Perfil de fidelidade não encontrado. Faça login novamente.');
+        throw createUserError('Perfil de fidelidade não encontrado. Faça login novamente.');
       }
-      throw new Error(
-        error.message || 'Não foi possível resgatar sua batata grátis. Tente novamente.'
+      throw createUserError(
+        'Não foi possível resgatar sua batata grátis. Tente novamente.'
       );
     }
 
@@ -244,7 +251,7 @@ class LoyaltyManager {
       typeof rpcData?.coupon_code === 'string' ? rpcData.coupon_code.trim() : '';
 
     if (!couponCode) {
-      throw new Error('Não foi possível gerar o cupom de fidelidade. Tente novamente.');
+      throw createUserError('Não foi possível gerar o cupom de fidelidade. Tente novamente.');
     }
 
     let prevHistory = [];
@@ -383,7 +390,15 @@ export function useLoyalty() {
         'Batata Grátis Resgatada!'
       );
     } catch (e) {
-      showErrorAlert(e?.message || 'Tente novamente', 'Erro no resgate');
+      if (!e?.isUserFacing) {
+        console.error('Erro inesperado ao resgatar recompensa de fidelidade:', e);
+      }
+      showErrorAlert(
+        e?.isUserFacing && e?.message
+          ? e.message
+          : 'Não foi possível resgatar sua batata grátis. Tente novamente.',
+        'Erro no resgate'
+      );
     } finally {
       setIsRedeeming(false);
     }
@@ -451,7 +466,7 @@ export default function RestaurantHeaderCard({
   const [showRewardModal, setShowRewardModal] = useState(false);
 
   const [realOrdersCount, setRealOrdersCount] = useState(totalOrders);
-  const [realRating, setRealRating] = useState(4.9);
+  const [realRating, setRealRating] = useState(null);
   const [realReviewsCount, setRealReviewsCount] = useState(0);
   const [reviewsList, setReviewsList] = useState([]);
   const [isLoadingReviews, setIsLoadingReviews] = useState(false);
@@ -570,7 +585,7 @@ export default function RestaurantHeaderCard({
 
   const fetchRealStats = useCallback(async () => {
     let fetchedOrders = totalOrders;
-    let fetchedRating = 4.9;
+    let fetchedRating = null;
     let fetchedReviewsCount = 0;
     let fetchedReviews = [];
 
@@ -588,14 +603,18 @@ export default function RestaurantHeaderCard({
             if (typeof json.totalOrders === 'number') {
               fetchedOrders = Math.max(totalOrders, json.totalOrders);
             }
-            if (typeof json.averageRating === 'number' && json.averageRating > 0) {
-              fetchedRating = json.averageRating;
-            }
             if (typeof json.totalReviews === 'number') {
               fetchedReviewsCount = json.totalReviews;
             }
             if (Array.isArray(json.reviews)) {
               fetchedReviews = json.reviews;
+            }
+            if (
+              fetchedReviewsCount > 0 &&
+              typeof json.averageRating === 'number' &&
+              json.averageRating > 0
+            ) {
+              fetchedRating = json.averageRating;
             }
             return {
               totalOrders: fetchedOrders,
@@ -704,6 +723,19 @@ export default function RestaurantHeaderCard({
     }
   };
 
+  const hasRealReviews =
+    realReviewsCount > 0 && typeof realRating === 'number' && !isNaN(realRating);
+
+  const recommendPercent = (() => {
+    const validReviews = reviewsList.filter((review) => {
+      const r = Number(review?.rating);
+      return !isNaN(r) && r >= 1 && r <= 5;
+    });
+    if (validReviews.length === 0) return null;
+    const positiveCount = validReviews.filter((review) => Number(review.rating) >= 4).length;
+    return Math.round((positiveCount / validReviews.length) * 100);
+  })();
+
   const animatedWidth = progressAnim.interpolate({
     inputRange: [0, 100],
     outputRange: ['0%', '100%'],
@@ -740,14 +772,16 @@ export default function RestaurantHeaderCard({
                     Batata Top
                   </Text>
 
-                  <View style={s.ratingInline}>
-                    <Ionicons name="star" size={14} color="#FCBB00" />
-                    <Text style={s.ratingValue}>{realRating.toFixed(1)}</Text>
-                    <Text style={s.ordersCountText}>
-                      ({realOrdersCount}{' '}
-                      {realOrdersCount === 1 ? 'pedido feito' : 'pedidos feitos'})
-                    </Text>
-                  </View>
+                  {hasRealReviews && (
+                    <View style={s.ratingInline}>
+                      <Ionicons name="star" size={14} color="#FCBB00" />
+                      <Text style={s.ratingValue}>{realRating.toFixed(1)}</Text>
+                      <Text style={s.ordersCountText}>
+                        ({realOrdersCount}{' '}
+                        {realOrdersCount === 1 ? 'pedido feito' : 'pedidos feitos'})
+                      </Text>
+                    </View>
+                  )}
                 </View>
 
                 {/* Linha 2: Categorias */}
@@ -1015,46 +1049,48 @@ export default function RestaurantHeaderCard({
             </View>
 
             {/* Estatísticas Consolidadas */}
-            <View style={s.statsSummaryBox}>
-              <View style={s.statCol}>
-                <Text style={s.statBigValue}>{realRating.toFixed(1)}</Text>
-                <View style={s.starsMiniRow}>
-                  {[0, 1, 2, 3, 4].map((i) => (
-                    <Ionicons
-                      key={i}
-                      name="star"
-                      size={13}
-                      color={
-                        i < Math.round(realRating) ? '#FCBB00' : '#D4D4D8'
-                      }
-                    />
-                  ))}
+            {hasRealReviews && (
+              <View style={s.statsSummaryBox}>
+                <View style={s.statCol}>
+                  <Text style={s.statBigValue}>{realRating.toFixed(1)}</Text>
+                  <View style={s.starsMiniRow}>
+                    {[0, 1, 2, 3, 4].map((i) => (
+                      <Ionicons
+                        key={i}
+                        name="star"
+                        size={13}
+                        color={
+                          i < Math.round(realRating) ? '#FCBB00' : '#D4D4D8'
+                        }
+                      />
+                    ))}
+                  </View>
+                  <Text style={s.statLabel}>Média geral</Text>
                 </View>
-                <Text style={s.statLabel}>Média geral</Text>
+
+                <View style={s.statDivider} />
+
+                <View style={s.statCol}>
+                  <Text style={s.statBigValue}>{realReviewsCount}</Text>
+                  <Text style={[s.statLabel, { marginTop: 4 }]}>
+                    {realReviewsCount === 1 ? 'Avaliação' : 'Avaliações'}
+                  </Text>
+                </View>
+
+                {recommendPercent !== null && (
+                  <>
+                    <View style={s.statDivider} />
+
+                    <View style={s.statCol}>
+                      <Text style={[s.statBigValue, { color: '#27AE60' }]}>
+                        {recommendPercent}%
+                      </Text>
+                      <Text style={[s.statLabel, { marginTop: 4 }]}>Recomendam</Text>
+                    </View>
+                  </>
+                )}
               </View>
-
-              <View style={s.statDivider} />
-
-              <View style={s.statCol}>
-                <Text style={s.statBigValue}>{realReviewsCount}</Text>
-                <Text style={[s.statLabel, { marginTop: 4 }]}>
-                  {realReviewsCount === 1 ? 'Avaliação' : 'Avaliações'}
-                </Text>
-              </View>
-
-              <View style={s.statDivider} />
-
-              <View style={s.statCol}>
-                <Text style={[s.statBigValue, { color: '#27AE60' }]}>
-                  {realRating >= 4.5
-                    ? '99%'
-                    : realRating >= 4.0
-                    ? '95%'
-                    : '90%'}
-                </Text>
-                <Text style={[s.statLabel, { marginTop: 4 }]}>Recomendam</Text>
-              </View>
-            </View>
+            )}
 
             {/* Lista Real de Feedbacks dos Clientes */}
             <ScrollView

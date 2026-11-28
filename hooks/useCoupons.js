@@ -115,42 +115,48 @@ export function useCoupons(currentOrderTotal = 0) {
     setLoading(true);
     setError(null);
 
-    const session = await getEffectiveSession();
-    const userId = session?.user?.id ?? null;
+    try {
+      const session = await getEffectiveSession();
+      const userId = session?.user?.id ?? null;
 
-    const { data: activeCoupons, error: couponsErr } = await supabase
-      .from('coupons')
-      .select('*')
-      .eq('active', true)
-      .order('discount_value', { ascending: false });
+      const { data: activeCoupons, error: couponsErr } = await supabase
+        .from('coupons')
+        .select('*')
+        .eq('active', true)
+        .order('discount_value', { ascending: false });
 
-    if (couponsErr) {
-      setError(couponsErr.message);
+      if (couponsErr) {
+        console.error('Erro ao carregar cupons:', couponsErr);
+        setError('Não foi possível carregar os cupons. Tente novamente.');
+        return;
+      }
+
+      let free = [];
+      if (userId) {
+        const { data: freeData, error: freeErr } = await supabase
+          .from('free_coupons')
+          .select('*, coupons(*)')
+          .eq('user_id', userId)
+          .eq('is_used', false);
+
+        if (!freeErr) free = freeData ?? [];
+      }
+
+      const now = new Date();
+      const availableCoupons = (activeCoupons ?? []).filter((c) => {
+        if (c.expires_at && new Date(c.expires_at) < now) return false;
+        if (c.max_uses != null && (c.current_uses ?? 0) >= c.max_uses) return false;
+        return true;
+      });
+
+      setCoupons(availableCoupons);
+      setFreeCoupons(free);
+    } catch (err) {
+      console.error('Erro ao carregar cupons:', err);
+      setError('Não foi possível carregar os cupons. Tente novamente.');
+    } finally {
       setLoading(false);
-      return;
     }
-
-    let free = [];
-    if (userId) {
-      const { data: freeData, error: freeErr } = await supabase
-        .from('free_coupons')
-        .select('*, coupons(*)')
-        .eq('user_id', userId)
-        .eq('is_used', false);
-
-      if (!freeErr) free = freeData ?? [];
-    }
-
-    const now = new Date();
-    const availableCoupons = (activeCoupons ?? []).filter((c) => {
-      if (c.expires_at && new Date(c.expires_at) < now) return false;
-      if (c.max_uses != null && (c.current_uses ?? 0) >= c.max_uses) return false;
-      return true;
-    });
-
-    setCoupons(availableCoupons);
-    setFreeCoupons(free);
-    setLoading(false);
   }, []);
 
   useEffect(() => {

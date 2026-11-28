@@ -80,7 +80,8 @@ export default function ExcluirConta() {
     });
 
     if (error) {
-      throw new Error(error.message || 'Não foi possível concluir a exclusão da conta.');
+      console.error('Erro ao solicitar exclusão de conta via RPC:', error);
+      throw new Error('Ocorreu um erro ao processar sua solicitação. Tente novamente.');
     }
 
     const rpcProtocol = extractProtocol(data);
@@ -152,9 +153,8 @@ export default function ExcluirConta() {
       setProtocol(finalProtocol);
       await performLogout(false);
     } catch (err) {
-      showErrorAlert(
-        err?.message || 'Ocorreu um erro ao processar sua solicitação. Tente novamente.'
-      );
+      console.error('Erro ao processar exclusão de conta:', err);
+      showErrorAlert('Ocorreu um erro ao processar sua solicitação. Tente novamente.');
     } finally {
       setSubmitting(false);
     }

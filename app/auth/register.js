@@ -19,6 +19,59 @@ import { SHADOWS } from '../../constants/theme';
 import { ThemedAlertHost, showThemedAlert } from '../../components/ThemedAlert';
 import { signInWithGoogle } from '../../utils/googleAuth';
 
+const getSignUpErrorMessage = (error) => {
+  const code = String(error?.code || '').toLowerCase();
+  const message = String(error?.message || '').toLowerCase();
+
+  if (
+    code === 'user_already_exists' ||
+    code === 'email_exists' ||
+    message.includes('already registered') ||
+    message.includes('already exists')
+  ) {
+    return 'Este e-mail já está cadastrado. Tente entrar na sua conta.';
+  }
+
+  if (
+    code === 'email_address_invalid' ||
+    message.includes('invalid email') ||
+    message.includes('unable to validate email') ||
+    (message.includes('email address') && message.includes('invalid'))
+  ) {
+    return 'O endereço de e-mail informado não é válido.';
+  }
+
+  if (
+    code === 'weak_password' ||
+    (message.includes('password') &&
+      (message.includes('weak') || message.includes('short') || message.includes('least')))
+  ) {
+    return 'A senha escolhida é muito fraca. Use uma senha mais forte com pelo menos 6 caracteres.';
+  }
+
+  if (
+    code === 'over_email_send_rate_limit' ||
+    code === 'over_request_rate_limit' ||
+    error?.status === 429 ||
+    message.includes('rate limit') ||
+    message.includes('too many requests') ||
+    message.includes('for security purposes')
+  ) {
+    return 'Muitas tentativas em pouco tempo. Aguarde alguns instantes e tente novamente.';
+  }
+
+  if (
+    error?.name === 'AuthRetryableFetchError' ||
+    message.includes('network') ||
+    message.includes('fetch') ||
+    message.includes('timeout')
+  ) {
+    return 'Sem conexão com a internet. Verifique sua rede e tente novamente.';
+  }
+
+  return 'Não foi possível concluir o cadastro. Tente novamente em instantes.';
+};
+
 export default function RegisterScreen() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -55,23 +108,31 @@ export default function RegisterScreen() {
     }
 
     setLoading(true);
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: name,
+    try {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: name,
+          },
         },
-      },
-    });
+      });
 
-    if (error) {
-      showThemedAlert('Erro no Cadastro', error.message);
-      setLoading(false);
-    } else {
+      if (error) {
+        console.error('[Register] Erro no signUp:', error);
+        showThemedAlert('Erro no Cadastro', getSignUpErrorMessage(error));
+        return;
+      }
+
       showThemedAlert('Sucesso', 'Conta criada com sucesso! Verifique seu e-mail para confirmar o cadastro.', [
         { text: 'OK', onPress: () => router.replace({ pathname: '/auth/login', params: { email } }) }
       ]);
+    } catch (err) {
+      console.error('[Register] Exceção no signUp:', err);
+      showThemedAlert('Erro no Cadastro', getSignUpErrorMessage(err));
+    } finally {
+      setLoading(false);
     }
   };
 

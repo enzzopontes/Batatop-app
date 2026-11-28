@@ -52,8 +52,8 @@ async function callBackend(path, body, method = 'POST', timeoutMs = 18000) {
 
     return data;
   } catch (err) {
-    console.log(`[mercadoPago] Erro de conexão em "${path}":`, err.message);
-    return { success: false, error: err.message || 'Erro de conexão com o servidor' };
+    console.error(`[mercadoPago] Erro de conexão em "${path}":`, err);
+    return { success: false, error: 'Erro de conexão com o servidor. Verifique sua internet e tente novamente.' };
   }
 }
 
@@ -84,7 +84,8 @@ export async function checkPixStatus(id) {
   try {
     return await callBackend(`pix-status?id=${encodeURIComponent(id)}`, null, 'GET', 15000);
   } catch (err) {
-    return { success: false, error: err.message || 'Erro de conexão com o servidor' };
+    console.error('[mercadoPago] Erro ao consultar status do Pix:', err);
+    return { success: false, error: 'Erro de conexão com o servidor. Tente novamente.' };
   }
 }
 
@@ -137,7 +138,8 @@ export async function tokenizeCard({
 }) {
   try {
     if (!MERCADO_PAGO_PUBLIC_KEY) {
-      return { success: false, error: 'config: EXPO_PUBLIC_MERCADO_PAGO_PUBLIC_KEY ausente' };
+      console.error('[mercadoPago] Missing EXPO_PUBLIC_MERCADO_PAGO_PUBLIC_KEY');
+      return { success: false, error: 'Pagamento com cartão indisponível no momento. Tente novamente ou use Pix.' };
     }
 
     const cleanCardNumber = (cardNumber || '').replace(/\D/g, '');
@@ -170,10 +172,16 @@ export async function tokenizeCard({
       }
       return { success: true, token: data.id };
     } else {
-      return { success: false, error: data.cause?.[0]?.description || data.message || 'Erro ao tokenizar dados do cartão' };
+      console.error('[mercadoPago] Erro ao tokenizar cartão:', {
+        status: response.status,
+        message: data.message,
+        cause: data.cause,
+      });
+      return { success: false, error: 'Não foi possível validar os dados do cartão. Verifique as informações e tente novamente.' };
     }
   } catch (err) {
-    return { success: false, error: err.message || 'Erro de conexão com o Mercado Pago' };
+    console.error('[mercadoPago] Erro de conexão ao tokenizar cartão:', err);
+    return { success: false, error: 'Erro de conexão com o serviço de pagamento. Tente novamente.' };
   }
 }
 
@@ -183,7 +191,8 @@ export async function tokenizeCard({
 export async function tokenizeSavedCardCvv({ cardId, securityCode }) {
   try {
     if (!MERCADO_PAGO_PUBLIC_KEY) {
-      return { success: false, error: 'config: EXPO_PUBLIC_MERCADO_PAGO_PUBLIC_KEY ausente' };
+      console.error('[mercadoPago] Missing EXPO_PUBLIC_MERCADO_PAGO_PUBLIC_KEY');
+      return { success: false, error: 'Pagamento com cartão indisponível no momento. Tente novamente ou use Pix.' };
     }
 
     const response = await fetchWithTimeout(
@@ -203,12 +212,18 @@ export async function tokenizeSavedCardCvv({ cardId, securityCode }) {
     if (response.ok) {
       return { success: true, token: data.id };
     }
+    console.error('[mercadoPago] Erro ao validar CVV do cartão salvo:', {
+      status: response.status,
+      message: data.message,
+      cause: data.cause,
+    });
     return {
       success: false,
-      error: data.cause?.[0]?.description || data.message || 'Erro ao validar CVV do cartão salvo',
+      error: 'Não foi possível validar o código de segurança do cartão. Confira o CVV e tente novamente.',
     };
   } catch (err) {
-    return { success: false, error: err.message || 'Erro de conexão com o Mercado Pago' };
+    console.error('[mercadoPago] Erro de conexão ao validar CVV do cartão salvo:', err);
+    return { success: false, error: 'Erro de conexão com o serviço de pagamento. Tente novamente.' };
   }
 }
 

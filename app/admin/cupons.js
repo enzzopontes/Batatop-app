@@ -561,12 +561,18 @@ export default function AdminCupons() {
     }
     const nextVal = !coupon.is_banner_highlight;
     try {
-      await supabase.from('coupons').update({ is_banner_highlight: nextVal }).eq('id', coupon.id);
+      const { error } = await supabase.from('coupons').update({ is_banner_highlight: nextVal }).eq('id', coupon.id);
+      if (error) {
+        console.error('Erro ao atualizar destaque do cupom:', error);
+        showThemedAlert('Erro', 'Não foi possível atualizar o destaque do cupom. Tente novamente.');
+        return;
+      }
       setCoupons(prev => prev.map(c => c.id === coupon.id ? { ...c, is_banner_highlight: nextVal } : c));
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       showSuccessAlert(nextVal ? 'Banner ativado no carrossel da Home!' : 'Banner removido do carrossel da Home.', 'Pronto');
-    } catch {
-      showThemedAlert('Erro', 'Não foi possível atualizar o status do banner.');
+    } catch (e) {
+      console.error('Erro ao atualizar destaque do cupom:', e);
+      showThemedAlert('Erro', 'Não foi possível atualizar o destaque do cupom. Tente novamente.');
     }
   };
 

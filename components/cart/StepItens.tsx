@@ -244,7 +244,7 @@ export default function StepItens({
           ) : (
             <>
               <Text style={styles.couponTitle}>Nenhum cupom aplicado</Text>
-              <Text style={styles.couponSub}>1 disponível</Text>
+              <Text style={styles.couponSub}>Ver cupons</Text>
             </>
           )}
         </View>

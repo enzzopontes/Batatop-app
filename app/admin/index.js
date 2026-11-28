@@ -74,6 +74,7 @@ export default function AdminDashboard() {
   const insets = useSafeAreaInsets();
 
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [storeStatus, setStoreStatus] = useState(null);
   const [currentTime, setCurrentTime] = useState('');
   const [stats, setStats] = useState({
@@ -170,13 +171,16 @@ export default function AdminDashboard() {
   async function loadDashboard() {
     try {
       setLoading(true);
+      setLoadError(false);
 
       // 1. Carregar status da loja
-      const { data: settingsData } = await supabase
+      const { data: settingsData, error: settingsError } = await supabase
         .from('store_settings')
         .select('*')
         .eq('setting_key', 'store_status')
         .maybeSingle();
+
+      if (settingsError) throw settingsError;
 
       if (settingsData) {
         setStoreStatus(settingsData);
@@ -203,11 +207,13 @@ export default function AdminDashboard() {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      const { data: orders } = await supabase
+      const { data: orders, error: ordersError } = await supabase
         .from('orders')
         .select('status, total_amount')
         .neq('status', 'awaiting_payment')
         .gte('created_at', today.toISOString());
+
+      if (ordersError) throw ordersError;
 
       if (orders) {
         const total = orders.length;
@@ -221,6 +227,7 @@ export default function AdminDashboard() {
       }
     } catch (e) {
       console.error('Erro ao carregar painel admin:', e);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -454,6 +461,21 @@ export default function AdminDashboard() {
       </View>
 
       <ScrollView contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false}>
+        {loadError && (
+          <View style={s.errorBanner}>
+            <View style={s.errorBannerRow}>
+              <Ionicons name="alert-circle" size={18} color="#B91C1C" />
+              <Text style={s.errorBannerText}>
+                Não foi possível carregar os dados do painel.
+              </Text>
+            </View>
+            <Pressable style={s.errorRetryBtn} onPress={loadDashboard}>
+              <Ionicons name="refresh" size={14} color="#B91C1C" />
+              <Text style={s.errorRetryBtnText}>Tentar novamente</Text>
+            </Pressable>
+          </View>
+        )}
+
         {/* Card de Gestão de Horários & Status */}
         <View style={s.sectionCard}>
           <View style={s.cardHeaderRow}>
@@ -665,7 +687,7 @@ export default function AdminDashboard() {
             </View>
             <View style={s.menuItemTextCol}>
               <Text style={s.menuItemTitle}>Campanhas & Push</Text>
-              <Text style={s.menuItemDesc}>Notificações em massa com cupom e preview iFood</Text>
+              <Text style={s.menuItemDesc}>Notificações em massa com cupom e prévia da notificação</Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={COLORS.textMuted} />
           </Pressable>
@@ -1073,6 +1095,44 @@ const s = StyleSheet.create({
   scrollContent: {
     padding: 16,
     paddingBottom: 48,
+  },
+
+  errorBanner: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 16,
+    gap: 10,
+  },
+  errorBannerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  errorBannerText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#B91C1C',
+  },
+  errorRetryBtn: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  errorRetryBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#B91C1C',
   },
 
   // Card de Gestão de Horários

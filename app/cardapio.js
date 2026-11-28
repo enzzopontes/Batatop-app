@@ -103,16 +103,22 @@ const ProdutoCard = memo(function ProdutoCard({ produto }) {
           <Text style={s.prodNome} numberOfLines={2}>{produto.nome}</Text>
           <Text style={s.prodDesc} numberOfLines={2}>{produto.descricao}</Text>
         </View>
-        <View style={s.prodTags}>
-          <View style={s.prodTag}>
-            <Ionicons name="time-outline" size={10} color={COLORS.textMuted} />
-            <Text style={s.prodTagText}>{produto.tempo} min</Text>
+        {(Boolean(produto.tempo) || produto.avaliacoes != null) && (
+          <View style={s.prodTags}>
+            {Boolean(produto.tempo) && (
+              <View style={s.prodTag}>
+                <Ionicons name="time-outline" size={10} color={COLORS.textMuted} />
+                <Text style={s.prodTagText}>{produto.tempo} min</Text>
+              </View>
+            )}
+            {produto.avaliacoes != null && (
+              <View style={s.prodTag}>
+                <Ionicons name="star" size={10} color={COLORS.primary} />
+                <Text style={s.prodTagText}>{produto.avaliacoes}</Text>
+              </View>
+            )}
           </View>
-          <View style={s.prodTag}>
-            <Ionicons name="star" size={10} color={COLORS.primary} />
-            <Text style={s.prodTagText}>{produto.avaliacoes || '4.8'}</Text>
-          </View>
-        </View>
+        )}
         <View style={s.prodFooter}>
           <Text style={s.prodPreco} numberOfLines={1}>{produto.precoFormatado}</Text>
           <Pressable style={s.addBtn} onPress={() => router.push(`/produto/${produto.id}`)}>

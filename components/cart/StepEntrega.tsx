@@ -68,7 +68,7 @@ export default function StepEntrega({
                   </>
                 ) : (
                   <>
-                    <Text style={styles.addressEmptyTitle}>
+                    <Text style={loadingAddress ? styles.addressMain : styles.addressEmptyTitle}>
                       {loadingAddress ? 'Carregando endereço...' : 'Nenhum endereço selecionado'}
                     </Text>
                     <Text style={styles.addressSub}>

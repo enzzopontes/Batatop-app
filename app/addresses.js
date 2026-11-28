@@ -394,8 +394,18 @@ function AddressForm({ onSave, onCancel, saving, initialValues }) {
   };
 
   const handleSave = async () => {
+    const fieldLabels = {
+      cep: 'CEP',
+      street: 'Rua',
+      number: 'Número',
+      neighborhood: 'Bairro',
+      city: 'Cidade',
+      state: 'Estado',
+      complement: 'Complemento',
+      reference_point: 'Ponto de referência',
+    };
     const required = semCep ? ['street', 'number', 'neighborhood'] : ['cep', 'street', 'number', 'neighborhood'];
-    for (const f of required) { if (!form[f].trim()) { showThemedAlert('Campo obrigatório', `Preencha: ${f}`); return; } }
+    for (const f of required) { if (!form[f].trim()) { showThemedAlert('Campo obrigatório', `Preencha: ${fieldLabels[f] || f}`); return; } }
 
     setVerifying(true);
     setCityError('');

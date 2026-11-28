@@ -90,6 +90,14 @@ const formatProduto = (produto, promoCfg) => {
   const precoOriginal = Number.isFinite(rawBase) ? rawBase : 0;
   const resolved = resolveProductPrice(produto, promoCfg);
   const effectivePrice = Number.isFinite(resolved) ? resolved : precoOriginal;
+  const rawAvaliacoesCount = Number(
+    produto?.avaliacoes_count ?? produto?.avaliacoesCount ?? produto?.reviews_count ?? 0
+  );
+  const avaliacoesCount =
+    Number.isFinite(rawAvaliacoesCount) && rawAvaliacoesCount > 0 ? rawAvaliacoesCount : 0;
+  const rawAvaliacoes = produto?.avaliacoes ?? produto?.rating ?? null;
+  const avaliacoes = avaliacoesCount > 0 ? rawAvaliacoes : null;
+  const tempo = produto?.tempo ?? produto?.tempo_preparo ?? null;
 
   return {
     id: produto.id,
@@ -104,12 +112,29 @@ const formatProduto = (produto, promoCfg) => {
     category: produto.category,
     imagem: resolveProductImage(produto.image_url, null), // Fallback para URL vazia
     ranking: 0,
-    avaliacoes: 4.5,
-    avaliacoesCount: 0,
-    tempo: '15-20',
+    avaliacoes,
+    avaliacoesCount,
+    tempo,
     destaque: produto.available,
     disponivel: produto.available,
   };
+};
+
+const getFriendlyProductError = (err, fallbackMessage) => {
+  const raw = String(err?.message || '').toLowerCase();
+  if (
+    raw.includes('network') ||
+    raw.includes('failed to fetch') ||
+    raw.includes('fetch') ||
+    raw.includes('timeout') ||
+    raw.includes('offline')
+  ) {
+    return 'Sem conexão com a internet. Verifique sua rede e tente novamente.';
+  }
+  if (err?.code === 'PGRST116' || raw.includes('produto não encontrado')) {
+    return 'Produto não encontrado.';
+  }
+  return fallbackMessage;
 };
 
 export const useProdutos = () => {
@@ -142,7 +167,9 @@ export const useProdutos = () => {
       setError(null);
     } catch (err) {
       console.error('Erro ao buscar produtos:', err);
-      setError(err.message);
+      setError(
+        getFriendlyProductError(err, 'Não foi possível carregar os produtos. Tente novamente.')
+      );
     } finally {
       setLoading(false);
     }
@@ -194,7 +221,12 @@ export const useProdutoById = (id) => {
       setError(null);
     } catch (err) {
       console.error('Erro ao buscar produto:', err);
-      setError(err.message);
+      setError(
+        getFriendlyProductError(
+          err,
+          'Não foi possível carregar os detalhes do produto. Tente novamente.'
+        )
+      );
     } finally {
       setLoading(false);
     }
@@ -236,7 +268,12 @@ export const useProdutosPorCategoria = (categoria) => {
       setError(null);
     } catch (err) {
       console.error('Erro ao buscar produtos por categoria:', err);
-      setError(err.message);
+      setError(
+        getFriendlyProductError(
+          err,
+          'Não foi possível carregar os produtos desta categoria. Tente novamente.'
+        )
+      );
     } finally {
       setLoading(false);
     }
@@ -295,7 +332,9 @@ export const useBuscarProdutos = (termo) => {
     } catch (err) {
       if (!mountedRef.current || reqId !== requestIdRef.current) return;
       console.error('Erro ao buscar produtos:', err);
-      setError(err.message || 'Erro ao buscar produtos');
+      setError(
+        getFriendlyProductError(err, 'Não foi possível buscar os produtos. Tente novamente.')
+      );
     } finally {
       if (mountedRef.current && reqId === requestIdRef.current) {
         setLoading(false);

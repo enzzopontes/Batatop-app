@@ -537,6 +537,7 @@ export default function PedidosScreen() {
   const [authLoading, setAuthLoading] = useState(true);
   const [initialLoading, setInitialLoading] = useState(true);
   const [orders, setOrders] = useState([]);
+  const [loadError, setLoadError] = useState(false);
   const [feedbackMap, setFeedbackMap] = useState({});
 
   // Modais
@@ -560,12 +561,14 @@ export default function PedidosScreen() {
         setUserId(currentUid);
         if (!currentUid) {
           setOrders([]);
+          setLoadError(false);
           setInitialLoading(false);
         }
       } catch (err) {
         if (isMounted) {
           setUserId(null);
           setOrders([]);
+          setLoadError(false);
           setInitialLoading(false);
         }
       } finally {
@@ -619,18 +622,24 @@ export default function PedidosScreen() {
     async (uid, { silent = false } = {}) => {
       if (!uid) {
         setOrders([]);
+        setLoadError(false);
         setInitialLoading(false);
         return;
       }
       if (!silent) {
+        setLoadError(false);
         setInitialLoading((prev) => (orders.length === 0 ? true : false));
       }
       const res = await buscarPedidosPorUsuario(uid);
       if (res.success) {
+        setLoadError(false);
         setOrders(res.data);
         await fetchFeedbacks(uid);
-      } else if (!silent) {
-        showThemedAlert('Erro', 'Não foi possível carregar seus pedidos.');
+      } else {
+        setLoadError(true);
+        if (!silent && orders.length > 0) {
+          showThemedAlert('Erro', 'Não foi possível carregar seus pedidos.');
+        }
       }
       setInitialLoading(false);
     },
@@ -841,6 +850,26 @@ export default function PedidosScreen() {
           </Text>
           <Pressable onPress={() => router.push('/cardapio')} hitSlop={8}>
             <Text style={es.ctaText}>Fazer pedido</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
+  // ── Erro ao Carregar Pedidos ─────────────────────────────────────────────────
+  if (!initialLoading && loadError && orders.length === 0) {
+    return (
+      <View style={styles.screen}>
+        <StatusBar barStyle="dark-content" backgroundColor="#FFF" />
+        <MinimalHeader />
+        <View style={es.wrap}>
+          <Image source={batataDormindo} style={es.image} resizeMode="contain" />
+          <Text style={es.title}>Não foi possível carregar seus pedidos</Text>
+          <Text style={es.sub}>
+            Verifique sua conexão com a internet e tente novamente em instantes.
+          </Text>
+          <Pressable onPress={() => fetchOrders(userId)} hitSlop={8}>
+            <Text style={es.ctaText}>Tentar novamente</Text>
           </Pressable>
         </View>
       </View>

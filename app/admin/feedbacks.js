@@ -155,10 +155,6 @@ export default function AdminFeedbacks() {
         <View style={{ flex: 1 }}>
           <View style={s.headerTitleRow}>
             <Text style={s.headerTitle}>Avaliações & Reputação</Text>
-            <View style={s.ifoodBadge}>
-              <Ionicons name="sparkles" size={10} color="#B45309" />
-              <Text style={s.ifoodBadgeText}>iFood Standard</Text>
-            </View>
           </View>
           <Text style={s.headerSub}>Monitore a satisfação dos clientes</Text>
         </View>

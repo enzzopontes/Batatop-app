@@ -19,6 +19,8 @@ export default function CuponsScreen() {
     coupons,
     freeCoupons,
     loading,
+    error,
+    reload,
     validateCoupon,
     getCouponMissingAmount,
   } = useCoupons(total / 100);
@@ -138,6 +140,28 @@ export default function CuponsScreen() {
 
         {loading ? (
           <CuponsSkeleton count={3} />
+        ) : error ? (
+          <View style={s.stateBox}>
+            <Ionicons name="alert-circle-outline" size={40} color={COLORS.error} />
+            <Text style={s.stateTitle}>Não foi possível carregar os cupons</Text>
+            <Text style={s.stateMessage}>Verifique sua conexão e tente novamente.</Text>
+            <Pressable style={s.stateButton} onPress={reload}>
+              <Text style={s.stateButtonText}>Tentar novamente</Text>
+            </Pressable>
+          </View>
+        ) : coupons.length === 0 ? (
+          <View style={s.stateBox}>
+            <Ionicons name="ticket-outline" size={40} color={COLORS.textMuted} />
+            <Text style={s.stateTitle}>Nenhum cupom disponível no momento</Text>
+            <Text style={s.stateMessage}>
+              {freeCoupons.length > 0
+                ? 'Você ainda pode usar seus cupons grátis acima ou digitar um código.'
+                : 'Digite um código acima ou explore o cardápio para ver nossas ofertas.'}
+            </Text>
+            <Pressable style={s.stateButton} onPress={() => router.push('/cardapio')}>
+              <Text style={s.stateButtonText}>Ver cardápio</Text>
+            </Pressable>
+          </View>
         ) : coupons.map((coupon) => (
           <CouponCard
             key={coupon.id}
@@ -241,5 +265,36 @@ const s = StyleSheet.create({
   rejectText: {
     fontSize: TYPOGRAPHY.sizes.sm,
     color: COLORS.textSecondary,
+  },
+  stateBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: SPACING[8],
+    paddingHorizontal: SPACING[4],
+    gap: SPACING[2],
+  },
+  stateTitle: {
+    fontSize: TYPOGRAPHY.sizes.base,
+    fontWeight: TYPOGRAPHY.weights.bold,
+    color: COLORS.text,
+    textAlign: 'center',
+    marginTop: SPACING[1],
+  },
+  stateMessage: {
+    fontSize: TYPOGRAPHY.sizes.sm,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+  },
+  stateButton: {
+    marginTop: SPACING[2],
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: SPACING[5],
+    paddingVertical: SPACING[3],
+    borderRadius: RADIUS.lg,
+  },
+  stateButtonText: {
+    fontSize: TYPOGRAPHY.sizes.sm,
+    fontWeight: TYPOGRAPHY.weights.bold,
+    color: COLORS.white,
   },
 });

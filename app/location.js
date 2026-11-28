@@ -81,7 +81,7 @@ export default function LocationScreen() {
       {/* Textos de permissão */}
       <Text style={styles.permissionTitle}>Permitir localização</Text>
       <Text style={styles.permissionSubtitle}>
-        Para descobrir restaurantes que entregam na sua região
+        Para verificar a entrega da Batata Top na sua região
       </Text>
 
       {/* Espaço flexível empurrando os botões pro rodapé */}

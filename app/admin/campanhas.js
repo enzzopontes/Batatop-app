@@ -36,6 +36,7 @@ export default function AdminCampanhas() {
 
   const [checkingAdmin, setCheckingAdmin] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [campaigns, setCampaigns] = useState([]);
   const [tokenCount, setTokenCount] = useState(0);
@@ -67,6 +68,7 @@ export default function AdminCampanhas() {
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
+      setLoadError(false);
 
       // 1. Busca campanhas com cupom relacionado
       const { data: camps, error: campErr } = await supabase
@@ -76,6 +78,7 @@ export default function AdminCampanhas() {
 
       if (campErr) {
         console.warn('Erro ao carregar campanhas:', campErr.message);
+        setLoadError(true);
       } else {
         setCampaigns(camps || []);
       }
@@ -90,6 +93,7 @@ export default function AdminCampanhas() {
       }
     } catch (err) {
       console.error('Erro geral ao carregar dados:', err);
+      setLoadError(true);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -141,7 +145,7 @@ export default function AdminCampanhas() {
               loadData();
             } catch (err) {
               console.error('Erro ao disparar campanha:', err);
-              showThemedAlert('Erro', err.message || 'Falha ao acionar disparo.');
+              showThemedAlert('Erro', 'Falha ao acionar disparo. Tente novamente.');
             } finally {
               setActionLoadingId(null);
             }
@@ -344,6 +348,18 @@ export default function AdminCampanhas() {
       >
         {loading && !refreshing ? (
           <ActivityIndicator size="small" color={THEME.terracotta} style={{ marginTop: 20 }} />
+        ) : loadError ? (
+          <View style={s.emptyState}>
+            <Ionicons name="alert-circle-outline" size={48} color={THEME.error} />
+            <Text style={s.emptyTitle}>Erro ao carregar campanhas</Text>
+            <Text style={s.emptySub}>
+              Não foi possível carregar os dados. Verifique sua conexão e tente novamente.
+            </Text>
+            <Pressable style={[s.createBtn, { marginTop: 14 }]} onPress={loadData}>
+              <Ionicons name="refresh" size={16} color="#FFF" />
+              <Text style={s.createBtnText}>Tentar novamente</Text>
+            </Pressable>
+          </View>
         ) : currentList.length === 0 ? (
           <View style={s.emptyState}>
             <Ionicons name="notifications-off-outline" size={48} color={THEME.textMuted} />

@@ -162,16 +162,24 @@ export default function LoginScreen() {
   const sendCode = async () => {
     setLoading(true);
     hideThemedAlert();
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { shouldCreateUser: true },
-    });
-    setLoading(false);
-    if (error) {
-      showThemedAlert.error('Não foi possível enviar o código. Tente novamente.');
+    try {
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: { shouldCreateUser: true },
+      });
+      if (error) {
+        console.error('[Login] Erro ao enviar código OTP:', error);
+        showThemedAlert.error('Não foi possível enviar o código. Tente novamente.');
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.error('[Login] Exceção ao enviar código OTP:', err);
+      showThemedAlert.error('Sem conexão ou erro ao enviar o código. Verifique sua internet e tente novamente.');
       return false;
+    } finally {
+      setLoading(false);
     }
-    return true;
   };
 
   const handleEmailContinue = async () => {
@@ -212,30 +220,37 @@ export default function LoginScreen() {
 
   const verifyCode = async (token) => {
     setLoading(true);
-    const { data, error } = await supabase.auth.verifyOtp({ email, token, type: 'email' });
-    setLoading(false);
-    if (error) {
-      // Código errado, expirado ou muitas tentativas — todos tratados como falha de verificação
-      showThemedAlert.error('Código inválido ou expirado. Tente novamente.');
-      setCode(['', '', '', '', '', '']);
-      setTimeout(() => codeRefs.current[0]?.focus(), 100);
-      return;
+    try {
+      const { data, error } = await supabase.auth.verifyOtp({ email, token, type: 'email' });
+      if (error) {
+        console.error('[Login] Erro ao verificar código OTP:', error);
+        // Código errado, expirado ou muitas tentativas — todos tratados como falha de verificação
+        showThemedAlert.error('Código inválido ou expirado. Tente novamente.');
+        setTimeout(() => codeRefs.current[5]?.focus(), 100);
+        return;
+      }
+
+      const fullName = data?.user?.user_metadata?.full_name;
+
+      if (fullName) {
+        // Usuário já tinha nome salvo (não é o primeiro login) — grava o
+        // "continuar como" e segue direto pro sucesso. refresh_token vem
+        // direto da resposta do verifyOtp, sem precisar de outra chamada.
+        await persistSavedUser({ name: fullName, email, userId: data?.user?.id });
+        goToHome();
+        return;
+      }
+
+      // Usuário novo (primeiro login) — precisa pedir o nome antes de continuar.
+      hideThemedAlert();
+      setStep('name');
+    } catch (err) {
+      console.error('[Login] Exceção ao verificar código OTP:', err);
+      showThemedAlert.error('Sem conexão ou erro ao verificar o código. Verifique sua internet e tente novamente.');
+      setTimeout(() => codeRefs.current[5]?.focus(), 100);
+    } finally {
+      setLoading(false);
     }
-
-    const fullName = data?.user?.user_metadata?.full_name;
-
-    if (fullName) {
-      // Usuário já tinha nome salvo (não é o primeiro login) — grava o
-      // "continuar como" e segue direto pro sucesso. refresh_token vem
-      // direto da resposta do verifyOtp, sem precisar de outra chamada.
-      await persistSavedUser({ name: fullName, email, userId: data?.user?.id });
-      goToHome();
-      return;
-    }
-
-    // Usuário novo (primeiro login) — precisa pedir o nome antes de continuar.
-    hideThemedAlert();
-    setStep('name');
   };
 
   const handleNameContinue = async () => {
@@ -314,9 +329,9 @@ export default function LoginScreen() {
       codeRefs.current[index + 1]?.focus();
     }
 
-    if (digit && index === 5) {
-      const token = next.join('');
-      if (token.length === 6) verifyCode(token);
+    const token = next.join('');
+    if (digit && token.length === 6) {
+      verifyCode(token);
     }
   };
 
@@ -458,6 +473,18 @@ export default function LoginScreen() {
                 <Text style={styles.resendText}>
                   Para reenviar o código, espere {formatTime(secondsLeft)}
                 </Text>
+              )}
+
+              {code.join('').length === 6 && !loading && (
+                <TouchableOpacity
+                  style={[styles.continueButton, styles.continueButtonActive, { marginTop: 24 }]}
+                  onPress={() => verifyCode(code.join(''))}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.continueButtonText, styles.continueButtonTextActive]}>
+                    Verificar código
+                  </Text>
+                </TouchableOpacity>
               )}
             </>
           )}

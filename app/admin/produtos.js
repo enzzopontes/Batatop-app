@@ -220,18 +220,20 @@ export default function AdminProdutos() {
         .delete()
         .eq('product_id', productId);
       if (deleteAdicErr) {
-        throw new Error(
-          `Produto salvo, mas falhou ao atualizar adicionais: ${deleteAdicErr.message || 'erro desconhecido'}`
-        );
+        console.error('Erro ao atualizar adicionais do produto:', deleteAdicErr);
+        const safeErr = new Error('Produto salvo, mas não foi possível atualizar os adicionais.');
+        safeErr.isUserSafe = true;
+        throw safeErr;
       }
       if (selectedAdicionais.length > 0) {
         const { error: insertAdicErr } = await supabase.from('product_adicionais').insert(
           selectedAdicionais.map((aid) => ({ product_id: productId, adicional_id: aid }))
         );
         if (insertAdicErr) {
-          throw new Error(
-            `Produto salvo, mas falhou ao vincular adicionais: ${insertAdicErr.message || 'erro desconhecido'}`
-          );
+          console.error('Erro ao vincular adicionais do produto:', insertAdicErr);
+          const safeErr = new Error('Produto salvo, mas não foi possível vincular os adicionais.');
+          safeErr.isUserSafe = true;
+          throw safeErr;
         }
       }
 
@@ -239,8 +241,11 @@ export default function AdminProdutos() {
       setProdModalVisible(false);
       await loadProducts();
     } catch (e) {
-      showThemedAlert('Erro', e?.message || 'Não foi possível salvar o produto.');
       console.error(e);
+      showThemedAlert(
+        'Erro',
+        e?.isUserSafe ? e.message : 'Não foi possível salvar o produto. Tente novamente.'
+      );
     } finally {
       setSaving(false);
     }
@@ -265,8 +270,8 @@ export default function AdminProdutos() {
             if (error) throw error;
             await loadProducts();
           } catch (e) {
-            showThemedAlert('Erro', e?.message || 'Não foi possível deletar.');
             console.error(e);
+            showThemedAlert('Erro', 'Não foi possível deletar o produto. Tente novamente.');
           }
         },
       },
@@ -287,8 +292,8 @@ export default function AdminProdutos() {
         .eq('id', product.id);
       if (error) throw error;
     } catch (e) {
-      showThemedAlert('Erro', e?.message || 'Não foi possível alterar a disponibilidade.');
       console.error(e);
+      showThemedAlert('Erro', 'Não foi possível alterar a disponibilidade. Tente novamente.');
       await loadProducts();
     }
   };
@@ -344,8 +349,8 @@ export default function AdminProdutos() {
       setAdicModalVisible(false);
       await loadProducts();
     } catch (e) {
-      showThemedAlert('Erro', e?.message || 'Não foi possível salvar.');
       console.error(e);
+      showThemedAlert('Erro', 'Não foi possível salvar o adicional. Tente novamente.');
     } finally {
       setSaving(false);
     }
@@ -374,8 +379,8 @@ export default function AdminProdutos() {
 
             await loadProducts();
           } catch (e) {
-            showThemedAlert('Erro', e?.message || 'Não foi possível deletar.');
             console.error(e);
+            showThemedAlert('Erro', 'Não foi possível deletar o adicional. Tente novamente.');
           }
         },
       },

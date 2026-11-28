@@ -70,6 +70,45 @@ const ERROR_MESSAGES: Record<string, string> = {
   coupon_type_unsupported: 'Tipo de cupom não suportado.',
   online_total_must_be_positive: 'O valor total para pagamento online deve ser maior que zero.',
 };
+
+const SAFE_PAYMENT_ERROR_MESSAGES: Record<string, string> = {
+  ...ERROR_MESSAGES,
+  order_status_not_payable: 'Este pedido não está mais disponível para pagamento. Tente finalizar novamente.',
+  order_not_found: 'Pedido não encontrado. Tente finalizar novamente.',
+  invalid_card_data: 'Não foi possível validar os dados do cartão. Verifique as informações e tente novamente.',
+  invalid_cvv: 'Código de segurança (CVV) inválido. Verifique e tente novamente.',
+  card_tokenization_failed: 'Não foi possível validar os dados do cartão. Verifique as informações e tente novamente.',
+  payment_unavailable: 'O serviço de pagamento está temporariamente indisponível. Escolha outra forma de pagamento.',
+};
+
+const KNOWN_SAFE_PTBR_ERRORS = new Set([
+  'Número do cartão inválido na validação bancária.',
+  'Pagamento com cartão indisponível no momento. Tente novamente ou use Pix.',
+  'Não foi possível validar os dados do cartão. Verifique as informações e tente novamente.',
+  'Não foi possível validar o código de segurança do cartão. Confira o CVV e tente novamente.',
+  'Erro de conexão com o servidor. Verifique sua internet e tente novamente.',
+  'Erro de conexão com o servidor. Tente novamente.',
+  'Erro de conexão com o serviço de pagamento. Tente novamente.',
+]);
+
+function getSafePaymentErrorMessage(result: any, fallback: string): string {
+  const code = typeof result?.code === 'string' ? result.code : '';
+  const rawError = typeof result?.error === 'string' ? result.error.trim() : '';
+
+  if (result?.httpStatus === 429 || code === 'rate_limit_exceeded' || rawError.includes('Limite de tentativas')) {
+    return 'Limite de tentativas excedido. Aguarde alguns instantes e tente novamente.';
+  }
+  if (code && SAFE_PAYMENT_ERROR_MESSAGES[code]) {
+    return SAFE_PAYMENT_ERROR_MESSAGES[code];
+  }
+  if (rawError && SAFE_PAYMENT_ERROR_MESSAGES[rawError]) {
+    return SAFE_PAYMENT_ERROR_MESSAGES[rawError];
+  }
+  if (rawError && KNOWN_SAFE_PTBR_ERRORS.has(rawError)) {
+    return rawError;
+  }
+  return fallback;
+}
 export type DeliveryType = 'delivery' | 'retirada';
 export type PaymentMethod =
   | 'pix'
@@ -841,8 +880,9 @@ export function useCheckoutFlow() {
         try {
           mappedItems = mapCartItemsToOrderItems(items);
         } catch (itemErr: any) {
+          console.error('[checkout] Erro ao mapear itens do pedido:', itemErr);
           setSubmitting(false);
-          const err = 'Itens inválidos: ' + (itemErr?.message || 'erro de mapeamento');
+          const err = 'Não foi possível registrar os itens do pedido. Tente novamente.';
           setErrorMessage(err);
           showThemedAlert('Itens inválidos', err);
           return;
@@ -871,7 +911,9 @@ export function useCheckoutFlow() {
         if (rpcError || !rpcData?.order_id) {
           setSubmitting(false);
           const rawMsg = rpcError?.message || 'Erro ao criar pedido';
-          const mappedMsg = ERROR_MESSAGES[rawMsg] || rawMsg;
+          console.error('[useCheckoutFlow] Erro ao criar pedido:', rawMsg);
+          const mappedMsg =
+            ERROR_MESSAGES[rawMsg] || 'Ocorreu um erro ao processar seu pedido. Tente novamente.';
           setErrorMessage(mappedMsg);
           showThemedAlert('Erro no pedido', mappedMsg);
           return;
@@ -893,10 +935,11 @@ export function useCheckoutFlow() {
             pendingOrderIdRef.current = null;
             pendingOrderTotalRef.current = null;
           }
+          console.error('[checkout] Erro no pagamento PIX:', pixResult);
           const isConfigErr = pixResult.error?.startsWith('config:');
           const err = isConfigErr
             ? 'O serviço de pagamento está temporariamente indisponível. Por favor, tente outra forma de pagamento.'
-            : (pixResult.error || 'Erro ao gerar chave PIX');
+            : getSafePaymentErrorMessage(pixResult, 'Não foi possível gerar o código PIX. Tente novamente.');
           setErrorMessage(err);
           showThemedAlert(isConfigErr ? 'Serviço indisponível' : 'Erro no PIX', err);
           return;
@@ -951,11 +994,15 @@ export function useCheckoutFlow() {
             });
 
             if (!tokenResult.success || !tokenResult.token) {
+              console.error('[checkout] Erro ao tokenizar cartão:', tokenResult);
               setSubmitting(false);
               const isConfigErr = tokenResult.error?.startsWith('config:');
               const err = isConfigErr
                 ? 'O serviço de pagamento está temporariamente indisponível. Escolha outra forma de pagamento.'
-                : (tokenResult.error || 'Erro ao processar dados do cartão');
+                : getSafePaymentErrorMessage(
+                    tokenResult,
+                    'Não foi possível validar os dados do cartão. Verifique as informações e tente novamente.'
+                  );
               setErrorMessage(err);
               showThemedAlert(isConfigErr ? 'Serviço indisponível' : 'Erro no cartão', err);
               return;
@@ -1026,11 +1073,15 @@ export function useCheckoutFlow() {
         }
 
         if (!cardResult?.success) {
+          console.error('[checkout] Erro ao processar pagamento com cartão:', cardResult);
           setSubmitting(false);
           const isConfigErr = cardResult?.error?.startsWith('config:');
           const err = isConfigErr
             ? 'O serviço de pagamento está temporariamente indisponível. Escolha outra forma de pagamento.'
-            : (cardResult?.error || 'Erro ao processar pagamento do cartão');
+            : getSafePaymentErrorMessage(
+                cardResult,
+                'Não foi possível processar o pagamento com cartão. Tente novamente ou escolha outra forma de pagamento.'
+              );
           setErrorMessage(err);
           showThemedAlert(isConfigErr ? 'Serviço indisponível' : 'Erro no cartão', err);
           return;
@@ -1099,7 +1150,8 @@ export function useCheckoutFlow() {
       router.replace(`/pedidos/${finalOrderId}`);
     } catch (e: any) {
       console.error('Erro ao finalizar pedido:', e);
-      const msg = e?.message || 'Erro inesperado ao criar o pedido. Tente novamente.';
+      const mappedMsg = typeof e?.message === 'string' ? ERROR_MESSAGES[e.message] : undefined;
+      const msg = mappedMsg || 'Erro inesperado ao criar o pedido. Tente novamente.';
       setErrorMessage(msg);
       showThemedAlert('Erro', msg);
     } finally {

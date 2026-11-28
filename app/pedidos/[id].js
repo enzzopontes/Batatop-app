@@ -794,6 +794,7 @@ export default function DetalhesPedido() {
   const [pedido, setPedido] = useState(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [erro, setErro] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [copied, setCopied] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const cancellingOrderRef = useRef(false);
@@ -873,10 +874,12 @@ export default function DetalhesPedido() {
         );
         carregarPedidoRef.current?.({ silent: true });
       } else {
-        setPixGenError(res?.error || 'Não foi possível gerar o QR Code Pix.');
+        console.error('[PedidoDetalhes] Falha ao gerar QR Code Pix:', res?.error);
+        setPixGenError('Não foi possível gerar o QR Code Pix. Tente novamente.');
       }
     } catch (e) {
-      setPixGenError(e?.message || 'Erro ao gerar QR Code Pix.');
+      console.error('[PedidoDetalhes] Erro ao gerar QR Code Pix:', e);
+      setPixGenError('Não foi possível gerar o QR Code Pix. Tente novamente.');
     } finally {
       setGeneratingPix(false);
     }
@@ -1115,7 +1118,11 @@ export default function DetalhesPedido() {
 
   const carregarPedido = useCallback(async ({ silent = false } = {}) => {
     if (!id) return null;
-    if (!silent) setInitialLoading(true);
+    if (!silent) {
+      setInitialLoading(true);
+      setErro(false);
+      setLoadError(false);
+    }
     try {
       const resultado = await buscarPedidoPorId(id);
       if (resultado.success && resultado.data) {
@@ -1151,10 +1158,19 @@ export default function DetalhesPedido() {
         setPedido(fetched);
         return fetched;
       } else if (!silent) {
+        const errMsg = String(resultado?.error || '');
+        const isNotFound =
+          resultado?.success === true ||
+          resultado?.notFound === true ||
+          /não encontrado|no rows|0 rows|single json object|multiple \(or no\) rows|pgrst116/i.test(errMsg);
+        setLoadError(!isNotFound);
         setErro(true);
       }
     } catch {
-      if (!silent) setErro(true);
+      if (!silent) {
+        setLoadError(true);
+        setErro(true);
+      }
     } finally {
       if (!silent) setInitialLoading(false);
     }
@@ -1395,7 +1411,8 @@ export default function DetalhesPedido() {
       });
 
       if (error) {
-        const msg = CANCEL_ERROR_MESSAGES[error.message] || error.message || 'Não foi possível cancelar o pedido.';
+        console.error('[PedidoDetalhes] Erro ao cancelar pedido:', error);
+        const msg = CANCEL_ERROR_MESSAGES[error.message] || 'Não foi possível cancelar o pedido. Tente novamente.';
         showThemedAlert('Atenção', msg);
         return;
       }
@@ -1403,7 +1420,8 @@ export default function DetalhesPedido() {
       await carregarPedido({ silent: true });
       showThemedAlert('Pedido cancelado', 'Seu pedido foi cancelado com sucesso.');
     } catch (err) {
-      const msg = CANCEL_ERROR_MESSAGES[err?.message] || err?.message || 'Não foi possível cancelar o pedido. Entre em contato pelo WhatsApp.';
+      console.error('[PedidoDetalhes] Exceção ao cancelar pedido:', err);
+      const msg = CANCEL_ERROR_MESSAGES[err?.message] || 'Não foi possível cancelar o pedido. Entre em contato pelo WhatsApp.';
       showThemedAlert('Erro', msg);
     } finally {
       cancellingOrderRef.current = false;
@@ -1435,9 +1453,16 @@ export default function DetalhesPedido() {
     return (
       <View style={s.centered}>
         <Ionicons name="alert-circle-outline" size={56} color={COLORS.border} />
-        <Text style={s.errorTitle}>Pedido não encontrado</Text>
-        <Pressable style={s.backBtn} onPress={() => router.back()}>
-          <Text style={s.backBtnText}>Voltar</Text>
+        <Text style={s.errorTitle}>
+          {loadError ? 'Não foi possível carregar o pedido' : 'Pedido não encontrado'}
+        </Text>
+        {loadError && (
+          <Pressable style={s.backBtn} onPress={() => carregarPedido()}>
+            <Text style={s.backBtnText}>Tentar novamente</Text>
+          </Pressable>
+        )}
+        <Pressable style={loadError ? s.backBtnSecondary : s.backBtn} onPress={() => router.back()}>
+          <Text style={loadError ? s.backBtnSecondaryText : s.backBtnText}>Voltar</Text>
         </Pressable>
       </View>
     );
@@ -2249,6 +2274,20 @@ const s = StyleSheet.create({
   },
   backBtnText: {
     color: '#FFF',
+    fontWeight: '700',
+    fontSize: TYPOGRAPHY.sizes.base ?? 16,
+  },
+  backBtnSecondary: {
+    marginTop: SPACING[2] ?? 8,
+    paddingHorizontal: SPACING[6] ?? 24,
+    paddingVertical: SPACING[3] ?? 12,
+    borderRadius: RADIUS.xl ?? 16,
+    backgroundColor: COLORS.white ?? '#FFF',
+    borderWidth: 1,
+    borderColor: COLORS.border ?? '#E5E5E5',
+  },
+  backBtnSecondaryText: {
+    color: COLORS.text ?? '#111',
     fontWeight: '700',
     fontSize: TYPOGRAPHY.sizes.base ?? 16,
   },

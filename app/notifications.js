@@ -54,6 +54,7 @@ export default function NotificationsScreen() {
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState([]);
   const [userId, setUserId] = useState(null);
+  const [loadError, setLoadError] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -62,6 +63,7 @@ export default function NotificationsScreen() {
   );
 
   async function loadNotifications() {
+    setLoadError(false);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -86,6 +88,7 @@ export default function NotificationsScreen() {
       setItems(data || []);
     } catch (e) {
       console.error('Erro ao carregar notificações:', e);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -145,10 +148,28 @@ export default function NotificationsScreen() {
 
       {loading ? (
         <NotificationsSkeleton />
+      ) : loadError && items.length === 0 ? (
+        <View style={s.centerFill}>
+          <Ionicons name="alert-circle-outline" size={40} color={COLORS.error} />
+          <Text style={s.errorTitle}>Não foi possível carregar as notificações</Text>
+          <Text style={s.emptyText}>Verifique sua conexão e tente novamente.</Text>
+          <Pressable
+            style={s.ctaButton}
+            onPress={() => {
+              setLoading(true);
+              loadNotifications();
+            }}
+          >
+            <Text style={s.ctaButtonText}>Tentar novamente</Text>
+          </Pressable>
+        </View>
       ) : items.length === 0 ? (
         <View style={s.centerFill}>
           <Ionicons name="notifications-outline" size={40} color={COLORS.textMuted} />
           <Text style={s.emptyText}>Você ainda não tem notificações</Text>
+          <Pressable style={s.ctaButton} onPress={() => router.push('/cardapio')}>
+            <Text style={s.ctaButtonText}>Explorar cardápio</Text>
+          </Pressable>
         </View>
       ) : (
         <FlatList
@@ -237,6 +258,25 @@ const s = StyleSheet.create({
     fontSize: TYPOGRAPHY.sizes.sm,
     color: COLORS.textMuted,
     textAlign: 'center',
+  },
+  errorTitle: {
+    marginTop: SPACING[3],
+    fontSize: TYPOGRAPHY.sizes.base,
+    fontWeight: '700',
+    color: COLORS.text,
+    textAlign: 'center',
+  },
+  ctaButton: {
+    marginTop: SPACING[4],
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: SPACING[5],
+    paddingVertical: SPACING[3],
+    borderRadius: 12,
+  },
+  ctaButtonText: {
+    fontSize: TYPOGRAPHY.sizes.sm,
+    fontWeight: '700',
+    color: COLORS.white,
   },
   item: {
     flexDirection: 'row',

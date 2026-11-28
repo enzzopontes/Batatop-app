@@ -125,6 +125,23 @@ async function checkAndAutoCancelPix(order) {
   return order;
 }
 
+const getFriendlyOrderError = (err, fallbackMessage) => {
+  const raw = String(err?.message || '').toLowerCase();
+  if (
+    raw.includes('network') ||
+    raw.includes('failed to fetch') ||
+    raw.includes('fetch') ||
+    raw.includes('timeout') ||
+    raw.includes('offline')
+  ) {
+    return 'Sem conexão com a internet. Verifique sua rede e tente novamente.';
+  }
+  if (err?.code === 'PGRST116') {
+    return 'Pedido não encontrado.';
+  }
+  return fallbackMessage;
+};
+
 export const usePedidos = () => {
   const [error, setError] = useState(null);
 
@@ -152,8 +169,12 @@ export const usePedidos = () => {
       return { success: true, data: checked };
     } catch (err) {
       console.error('Erro ao buscar pedidos do usuário:', err);
-      setError(err.message);
-      return { success: false, error: err.message, data: [] };
+      const friendlyError = getFriendlyOrderError(
+        err,
+        'Não foi possível carregar seus pedidos. Tente novamente.'
+      );
+      setError(friendlyError);
+      return { success: false, error: friendlyError, data: [] };
     }
   }, []);
 
@@ -177,8 +198,12 @@ export const usePedidos = () => {
       return { success: true, data: checked };
     } catch (err) {
       console.error('Erro ao buscar pedido:', err);
-      setError(err.message);
-      return { success: false, error: err.message };
+      const friendlyError = getFriendlyOrderError(
+        err,
+        'Não foi possível carregar os detalhes do pedido. Tente novamente.'
+      );
+      setError(friendlyError);
+      return { success: false, error: friendlyError, notFound: err?.code === 'PGRST116' };
     }
   }, []);
 

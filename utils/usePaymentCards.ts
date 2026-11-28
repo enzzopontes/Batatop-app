@@ -53,7 +53,7 @@ export function usePaymentCards() {
   const [loadingCards, setLoadingCards] = useState(false);
   const [savingCard, setSavingCard] = useState(false);
 
-  const loadCards = useCallback(async (): Promise<SavedCard[]> => {
+  const loadCards = useCallback(async (options?: { strict?: boolean }): Promise<SavedCard[]> => {
     setLoadingCards(true);
     try {
       const session = await getEffectiveSession();
@@ -73,6 +73,9 @@ export function usePaymentCards() {
       if (error) {
         console.error('Erro ao carregar cartões salvos:', error);
         setCards([]);
+        if (options?.strict) {
+          throw error;
+        }
         return [];
       }
 

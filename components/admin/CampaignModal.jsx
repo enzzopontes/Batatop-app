@@ -263,7 +263,7 @@ export default function CampaignModal({
             <Text
               style={[s.tabText, activeTab === 'preview' && s.tabTextActive]}
             >
-              Preview iFood
+              Prévia no Celular
             </Text>
           </Pressable>
         </View>
